@@ -150,12 +150,12 @@ These are the models used when no `-m` override is specified:
 
 | Provider | CLI Mode | API Mode (`-g`) |
 |----------|----------|-----------------|
-| gemini | gemini-2.5-pro | gemini-3-pro-preview |
-| openai | gpt-4o | gpt-5.2 |
-| claude | sonnet | claude-opus-4-5-20251101 |
-| perplexity | sonar-pro | sonar-pro |
-| grok | grok-3 | grok-4-1-fast-reasoning |
-| glm | glm-4.7 | glm-4.7 (disabled) |
+| gemini | `gemini-2.5-pro` | `gemini-3-pro-preview` |
+| openai | `gpt-5.2` | `gpt-5.2` |
+| claude | `sonnet` | `claude-opus-4-5-20251101` |
+| perplexity | `sonar-pro` | `sonar-pro` |
+| grok | `grok-code-fast-1` | `grok-4-1-fast-reasoning` |
+| glm | `zai-coding-plan/glm-4.7` | `glm-4.7` (disabled) |
 
 ---
 
