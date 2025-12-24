@@ -2,6 +2,8 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"time"
 )
 
@@ -21,6 +23,12 @@ func NewGrokProvider() *GrokProvider {
 	}
 }
 
+// grokMessage represents a message in grok's JSONL output
+type grokMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // Query executes a prompt using Grok CLI
 // Command: grok -p "{prompt}" -m {model}
 func (p *GrokProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, error) {
@@ -33,5 +41,38 @@ func (p *GrokProvider) Query(ctx context.Context, prompt string, model string) (
 	output, err := runCommand(ctx, "grok", args, nil)
 	duration := time.Since(start)
 
-	return output, duration, err
+	if err != nil {
+		return output, duration, err
+	}
+
+	// Parse JSONL output to extract assistant response
+	return parseGrokOutput(output), duration, nil
+}
+
+// parseGrokOutput extracts the assistant's content from grok's JSONL output
+func parseGrokOutput(output string) string {
+	var responses []string
+
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		var msg grokMessage
+		if err := json.Unmarshal([]byte(line), &msg); err != nil {
+			continue
+		}
+
+		if msg.Role == "assistant" && msg.Content != "" {
+			responses = append(responses, msg.Content)
+		}
+	}
+
+	if len(responses) > 0 {
+		return strings.Join(responses, "\n")
+	}
+
+	// Fallback: return original if parsing failed
+	return output
 }
