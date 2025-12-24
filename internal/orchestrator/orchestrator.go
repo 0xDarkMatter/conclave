@@ -9,10 +9,14 @@ import (
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
 
+// ProgressCallback is called when a provider starts or completes
+type ProgressCallback func(provider string, started bool, duration time.Duration, err error)
+
 // Orchestrator manages parallel provider execution
 type Orchestrator struct {
 	providers []providers.Provider
 	timeout   time.Duration
+	onProgress ProgressCallback
 }
 
 // New creates a new orchestrator
@@ -21,6 +25,12 @@ func New(providerList []providers.Provider, timeoutSeconds int) *Orchestrator {
 		providers: providerList,
 		timeout:   time.Duration(timeoutSeconds) * time.Second,
 	}
+}
+
+// WithProgress sets a progress callback
+func (o *Orchestrator) WithProgress(cb ProgressCallback) *Orchestrator {
+	o.onProgress = cb
+	return o
 }
 
 // Run executes the prompt against all providers in parallel
@@ -35,6 +45,11 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 		go func(idx int, provider providers.Provider) {
 			defer wg.Done()
 
+			// Notify start
+			if o.onProgress != nil {
+				o.onProgress(provider.Name(), true, 0, nil)
+			}
+
 			// Create timeout context for this provider
 			providerCtx, cancel := context.WithTimeout(ctx, o.timeout)
 			defer cancel()
@@ -44,6 +59,11 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 
 			mu.Lock()
 			defer mu.Unlock()
+
+			// Notify completion
+			if o.onProgress != nil {
+				o.onProgress(provider.Name(), false, duration, err)
+			}
 
 			if err != nil {
 				results[idx] = providers.Response{

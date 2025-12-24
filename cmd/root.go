@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
 	"github.com/0xDarkMatter/conclave-cli/internal/context"
 	"github.com/0xDarkMatter/conclave-cli/internal/judge"
 	"github.com/0xDarkMatter/conclave-cli/internal/orchestrator"
 	"github.com/0xDarkMatter/conclave-cli/internal/output"
+	"github.com/0xDarkMatter/conclave-cli/internal/progress"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 	"github.com/spf13/cobra"
 )
@@ -32,6 +34,7 @@ var (
 	flagNoStdin       bool
 	flagAll           bool
 	flagBlind         bool
+	flagGeneral       bool
 )
 
 func SetVersion(v string) {
@@ -61,7 +64,11 @@ Examples:
   conclave gemini,openai "Compare these" -f impl_a.go -f impl_b.go
 
   # JSON output
-  conclave gemini,openai "Analyze" --judge claude --json`,
+  conclave gemini,openai "Analyze" --judge claude --json
+
+  # General mode (API-based, no coding restrictions)
+  conclave -g gemini,openai,claude "Is democracy under threat?" --judge claude
+  conclave --all --general "Explain the trolley problem" --judge claude`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		// Allow no args if --list-providers is set
 		listProviders, _ := cmd.Flags().GetBool("list-providers")
@@ -99,6 +106,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&flagNoStdin, "no-stdin", false, "Ignore stdin even if piped")
 	rootCmd.Flags().BoolVarP(&flagAll, "all", "a", false, "Use all available providers")
 	rootCmd.Flags().BoolVar(&flagBlind, "blind", false, "Anonymize provider names for unbiased judging")
+	rootCmd.Flags().BoolVarP(&flagGeneral, "general", "g", false, "General mode: use API providers (no coding restrictions)")
 
 	rootCmd.Version = version
 }
@@ -127,13 +135,22 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	var prompt string
 
 	if flagAll {
-		// Get all available providers dynamically from registry
-		for _, p := range providers.AllProviders() {
+		// Get all available providers dynamically based on mode
+		var allProviders []providers.Provider
+		if flagGeneral {
+			allProviders = providers.AllAPIProviders()
+		} else {
+			allProviders = providers.AllCLIProviders()
+		}
+		for _, p := range allProviders {
 			if p.IsAvailable() {
 				providerNames = append(providerNames, p.Name())
 			}
 		}
 		if len(providerNames) == 0 {
+			if flagGeneral {
+				return fmt.Errorf("no providers available (check API keys)")
+			}
 			return fmt.Errorf("no providers available (check CLI installations)")
 		}
 		prompt = args[0]
@@ -162,22 +179,39 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get provider instances
-	registry := providers.NewRegistry(cfg)
+	registry := providers.NewRegistry(cfg, flagGeneral)
 	providerList, err := registry.GetProviders(providerNames, modelOverrides)
 	if err != nil {
 		return err
 	}
 
-	// Run orchestration
-	orch := orchestrator.New(providerList, flagTimeout)
+	// Initialize progress display (quiet if JSON output)
+	prog := progress.New(flagJSON || flagQuiet)
+
+	// Phase 1: Query providers
+	prog.Phase(fmt.Sprintf("Querying %d providers...", len(providerNames)))
+
+	// Set up progress callback
+	progressCallback := func(provider string, started bool, duration time.Duration, err error) {
+		if started {
+			prog.ProviderStart(provider)
+		} else {
+			prog.ProviderDone(provider, duration, err)
+		}
+	}
+
+	// Run orchestration with progress
+	orch := orchestrator.New(providerList, flagTimeout).WithProgress(progressCallback)
 	results, err := orch.Run(cmd.Context(), fullPrompt)
 	if err != nil {
 		return err
 	}
 
-	// Judge synthesis (unless --no-judge or single provider)
+	// Phase 2: Judge synthesis (unless --no-judge or single provider)
 	var verdict *judge.Verdict
 	if !flagNoJudge && len(providerList) > 1 {
+		prog.Phase("Synthesizing verdict...")
+
 		judgeProvider, err := registry.GetProvider(flagJudge, modelOverrides)
 		if err != nil {
 			return fmt.Errorf("judge provider error: %w", err)
@@ -186,9 +220,13 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		j := judge.New(judgeProvider)
 		verdict, err = j.Synthesize(cmd.Context(), prompt, results, flagTimeout, flagBlind)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: judge synthesis failed: %v\n", err)
+			prog.Error(fmt.Sprintf("synthesis failed: %v", err))
+		} else {
+			prog.Success("Verdict ready")
 		}
 	}
+
+	prog.Complete()
 
 	// Format output
 	out := output.New(output.Options{
@@ -213,14 +251,26 @@ func runConclave(cmd *cobra.Command, args []string) error {
 }
 
 func listProviders() {
-	fmt.Println("Available providers:")
-	fmt.Println()
-	for _, p := range providers.AllProviders() {
-		available := "not installed"
+	var providerList []providers.Provider
+	var modeLabel, notAvailableMsg string
+
+	if flagGeneral {
+		providerList = providers.AllAPIProviders()
+		modeLabel = "API (general mode)"
+		notAvailableMsg = "no API key"
+	} else {
+		providerList = providers.AllCLIProviders()
+		modeLabel = "CLI (coding mode)"
+		notAvailableMsg = "not installed"
+	}
+
+	fmt.Printf("Available providers (%s):\n\n", modeLabel)
+	for _, p := range providerList {
+		status := notAvailableMsg
 		if p.IsAvailable() {
-			available = "ready"
+			status = "ready"
 		}
-		fmt.Printf("  %-12s  %-25s  [%s]\n", p.Name(), p.DefaultModel(), available)
+		fmt.Printf("  %-12s  %-30s  [%s]\n", p.Name(), p.DefaultModel(), status)
 	}
 }
 

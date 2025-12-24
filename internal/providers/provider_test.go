@@ -61,7 +61,7 @@ func TestProviderDefaultModels(t *testing.T) {
 
 func TestRegistryGetProvider(t *testing.T) {
 	cfg := config.DefaultConfig()
-	registry := NewRegistry(cfg)
+	registry := NewRegistry(cfg, false) // CLI mode
 
 	// Test getting existing provider
 	p, err := registry.GetProvider("gemini", nil)
@@ -77,7 +77,7 @@ func TestRegistryGetProvider(t *testing.T) {
 
 func TestRegistryGetProviderUnknown(t *testing.T) {
 	cfg := config.DefaultConfig()
-	registry := NewRegistry(cfg)
+	registry := NewRegistry(cfg, false) // CLI mode
 
 	_, err := registry.GetProvider("unknown", nil)
 	if err == nil {
@@ -87,7 +87,7 @@ func TestRegistryGetProviderUnknown(t *testing.T) {
 
 func TestRegistryGetProviders(t *testing.T) {
 	cfg := config.DefaultConfig()
-	registry := NewRegistry(cfg)
+	registry := NewRegistry(cfg, false) // CLI mode
 
 	// This will only work if the CLIs are installed
 	// So we just test that it doesn't panic

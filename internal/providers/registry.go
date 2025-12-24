@@ -10,25 +10,40 @@ import (
 type Registry struct {
 	config    *config.Config
 	providers map[string]Provider
+	general   bool // true = API mode, false = CLI mode
 }
 
 // NewRegistry creates a new provider registry
-func NewRegistry(cfg *config.Config) *Registry {
+// If general is true, uses API-based providers for general-purpose queries
+func NewRegistry(cfg *config.Config, general bool) *Registry {
 	r := &Registry{
 		config:    cfg,
 		providers: make(map[string]Provider),
+		general:   general,
 	}
 
-	// Register all providers
-	for _, p := range AllProviders() {
+	// Register providers based on mode
+	var providerList []Provider
+	if general {
+		providerList = AllAPIProviders()
+	} else {
+		providerList = AllCLIProviders()
+	}
+
+	for _, p := range providerList {
 		r.providers[p.Name()] = p
 	}
 
 	return r
 }
 
-// AllProviders returns all known providers
+// AllProviders returns all known providers (CLI mode, for backwards compatibility)
 func AllProviders() []Provider {
+	return AllCLIProviders()
+}
+
+// AllCLIProviders returns CLI-based providers (coding-focused)
+func AllCLIProviders() []Provider {
 	return []Provider{
 		NewGeminiProvider(),
 		NewOpenAIProvider(),
@@ -36,6 +51,18 @@ func AllProviders() []Provider {
 		NewPerplexityProvider(),
 		NewGrokProvider(),
 		NewGLMProvider(),
+	}
+}
+
+// AllAPIProviders returns API-based providers (general-purpose)
+func AllAPIProviders() []Provider {
+	return []Provider{
+		NewGeminiAPIProvider(),
+		NewOpenAIAPIProvider(),
+		NewAnthropicAPIProvider(),
+		NewPerplexityAPIProvider(),
+		NewGrokAPIProvider(),
+		NewGLMAPIProvider(),
 	}
 }
 
@@ -47,11 +74,22 @@ func (r *Registry) GetProvider(name string, modelOverrides map[string]string) (P
 	}
 
 	if !p.IsAvailable() {
+		if r.general {
+			return nil, fmt.Errorf("provider %s not available (API key not set)", name)
+		}
 		return nil, fmt.Errorf("provider %s not available (CLI not installed)", name)
 	}
 
-	// Wrap with model override if specified
-	model := r.config.GetModel(name, modelOverrides[name])
+	// Get model override - only use config defaults for CLI mode
+	// For API mode, use the provider's built-in defaults unless explicitly overridden
+	var model string
+	if override, ok := modelOverrides[name]; ok && override != "" {
+		model = override // Explicit override from -m flag
+	} else if !r.general {
+		model = r.config.GetModel(name, "") // CLI mode: use config defaults
+	}
+	// For API mode without explicit override: model stays empty, provider uses its default
+
 	return &modelOverrideProvider{Provider: p, model: model}, nil
 }
 
@@ -95,30 +133,44 @@ var providerCompanies = map[string]string{
 
 // modelDisplayNames maps raw model names to formatted display names
 var modelDisplayNames = map[string]string{
-	// Gemini
+	// Gemini (CLI)
 	"gemini-2.5-pro":   "Gemini 2.5 Pro",
 	"gemini-2.5-flash": "Gemini 2.5 Flash",
 	"gemini-2.0-pro":   "Gemini 2.0 Pro",
+	// Gemini (API)
+	"gemini-2.0-flash":       "Gemini 2.0 Flash",
+	"gemini-3-flash-preview": "Gemini 3 Flash",
+	"gemini-3-pro":           "Gemini 3 Pro",
 	// OpenAI
-	"gpt-5.2":     "GPT-5.2",
-	"gpt-4o":      "GPT-4o",
-	"o1":          "o1",
-	"o1-mini":     "o1-mini",
-	"o3":          "o3",
-	// Claude
-	"sonnet":      "Claude Sonnet",
-	"opus":        "Claude Opus",
-	"haiku":       "Claude Haiku",
+	"gpt-5.2": "GPT-5.2",
+	"gpt-4o":  "GPT-4o",
+	"o1":      "o1",
+	"o1-mini": "o1-mini",
+	"o3":      "o3",
+	// Claude (CLI)
+	"sonnet": "Claude Sonnet",
+	"opus":   "Claude Opus",
+	"haiku":  "Claude Haiku",
+	// Claude (API)
+	"claude-opus-4-5-20251101":   "Claude Opus 4.5",
+	"claude-sonnet-4-5-20250929": "Claude Sonnet 4.5",
 	// Perplexity
-	"sonar-pro":   "Sonar Pro",
-	"sonar":       "Sonar",
-	// Grok
-	"grok-3":            "Grok 3",
-	"grok-code-fast-1":  "Grok Code Fast",
-	"grok-4-latest":     "Grok 4",
-	// GLM
+	"sonar-pro":          "Sonar Pro",
+	"sonar":              "Sonar",
+	"sonar-reasoning":    "Sonar Reasoning",
+	"sonar-reasoning-pro": "Sonar Reasoning Pro",
+	// Grok (CLI)
+	"grok-3":           "Grok 3",
+	"grok-code-fast-1": "Grok Code Fast",
+	"grok-4-latest":    "Grok 4",
+	// Grok (API)
+	"grok-4-1-fast-reasoning": "Grok 4.1 Fast",
+	"grok-4-1-fast-non-reasoning": "Grok 4.1 Fast (No Reasoning)",
+	// GLM (CLI)
 	"zai-coding-plan/glm-4.7": "GLM-4.7",
-	"glm-4":                    "GLM-4",
+	"glm-4":                   "GLM-4",
+	// GLM (API)
+	"glm-4.7": "GLM-4.7",
 }
 
 // DisplayName returns a formatted name: {Company} {Model}
