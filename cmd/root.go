@@ -142,8 +142,17 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		} else {
 			allProviders = providers.AllCLIProviders()
 		}
+
+		// Check for excluded providers (CONCLAVE_EXCLUDE=glm,grok)
+		excluded := make(map[string]bool)
+		if ex := os.Getenv("CONCLAVE_EXCLUDE"); ex != "" {
+			for _, name := range strings.Split(ex, ",") {
+				excluded[strings.TrimSpace(name)] = true
+			}
+		}
+
 		for _, p := range allProviders {
-			if p.IsAvailable() {
+			if p.IsAvailable() && !excluded[p.Name()] {
 				providerNames = append(providerNames, p.Name())
 			}
 		}
