@@ -35,8 +35,8 @@ func New(provider providers.Provider) *Judge {
 }
 
 // Synthesize creates a verdict from provider responses
-func (j *Judge) Synthesize(ctx context.Context, query string, responses []providers.Response, timeoutSeconds int) (*Verdict, error) {
-	prompt := BuildPrompt(query, responses)
+func (j *Judge) Synthesize(ctx context.Context, query string, responses []providers.Response, timeoutSeconds int, blind bool) (*Verdict, error) {
+	prompt := BuildPrompt(query, responses, blind)
 
 	// Create timeout context
 	judgeCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)

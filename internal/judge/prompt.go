@@ -36,17 +36,30 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format (no markdown code b
   "recommendations": ["action 1", "action 2"]
 }`
 
+// expertLabel returns an anonymous label for blind mode
+func expertLabel(index int) string {
+	if index < 26 {
+		return fmt.Sprintf("Expert %c", 'A'+index)
+	}
+	return fmt.Sprintf("Expert %d", index+1)
+}
+
 // BuildPrompt constructs the judge prompt
-func BuildPrompt(query string, responses []providers.Response) string {
+func BuildPrompt(query string, responses []providers.Response, blind bool) string {
 	var analyses []string
 
-	for _, r := range responses {
-		if r.Status == "success" {
-			analyses = append(analyses, fmt.Sprintf("### %s (%s)\n%s",
-				r.Provider, r.Model, r.Response))
+	for i, r := range responses {
+		var header string
+		if blind {
+			header = expertLabel(i)
 		} else {
-			analyses = append(analyses, fmt.Sprintf("### %s (%s)\n[Error: %s]",
-				r.Provider, r.Model, r.Error))
+			header = fmt.Sprintf("%s (%s)", r.Provider, r.Model)
+		}
+
+		if r.Status == "success" {
+			analyses = append(analyses, fmt.Sprintf("### %s\n%s", header, r.Response))
+		} else {
+			analyses = append(analyses, fmt.Sprintf("### %s\n[Error: %s]", header, r.Error))
 		}
 	}
 

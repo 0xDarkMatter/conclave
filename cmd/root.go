@@ -31,6 +31,7 @@ var (
 	flagMaxContext    int64
 	flagNoStdin       bool
 	flagAll           bool
+	flagBlind         bool
 )
 
 func SetVersion(v string) {
@@ -97,6 +98,7 @@ func init() {
 	rootCmd.Flags().Int64Var(&flagMaxContext, "max-context", 500000, "Max total context size in bytes")
 	rootCmd.Flags().BoolVar(&flagNoStdin, "no-stdin", false, "Ignore stdin even if piped")
 	rootCmd.Flags().BoolVarP(&flagAll, "all", "a", false, "Use all available providers")
+	rootCmd.Flags().BoolVar(&flagBlind, "blind", false, "Anonymize provider names for unbiased judging")
 
 	rootCmd.Version = version
 }
@@ -128,10 +130,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		// Get all available providers dynamically from registry
 		for _, p := range providers.AllProviders() {
 			if p.IsAvailable() {
-				// Exclude the judge from query providers to avoid duplication
-				if p.Name() != flagJudge {
-					providerNames = append(providerNames, p.Name())
-				}
+				providerNames = append(providerNames, p.Name())
 			}
 		}
 		if len(providerNames) == 0 {
@@ -185,7 +184,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		}
 
 		j := judge.New(judgeProvider)
-		verdict, err = j.Synthesize(cmd.Context(), prompt, results, flagTimeout)
+		verdict, err = j.Synthesize(cmd.Context(), prompt, results, flagTimeout, flagBlind)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: judge synthesis failed: %v\n", err)
 		}

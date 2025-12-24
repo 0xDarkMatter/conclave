@@ -175,7 +175,7 @@ func TestBuildPrompt(t *testing.T) {
 		},
 	}
 
-	prompt := BuildPrompt("Is this code secure?", responses)
+	prompt := BuildPrompt("Is this code secure?", responses, false)
 
 	// Check that the prompt contains expected elements
 	if !contains(prompt, "Is this code secure?") {
@@ -192,6 +192,39 @@ func TestBuildPrompt(t *testing.T) {
 	}
 	if !contains(prompt, "IMPORTANT: Respond ONLY with valid JSON") {
 		t.Error("prompt should contain JSON instruction")
+	}
+}
+
+func TestBuildPromptBlind(t *testing.T) {
+	responses := []providers.Response{
+		{
+			Provider: "gemini",
+			Model:    "gemini-2.5-pro",
+			Status:   "success",
+			Response: "Answer from Gemini",
+		},
+		{
+			Provider: "claude",
+			Model:    "sonnet",
+			Status:   "success",
+			Response: "Answer from Claude",
+		},
+	}
+
+	prompt := BuildPrompt("What is 2+2?", responses, true)
+
+	// Blind mode should use Expert A, Expert B instead of provider names
+	if !contains(prompt, "Expert A") {
+		t.Error("blind prompt should contain 'Expert A'")
+	}
+	if !contains(prompt, "Expert B") {
+		t.Error("blind prompt should contain 'Expert B'")
+	}
+	if contains(prompt, "gemini") {
+		t.Error("blind prompt should NOT contain provider name 'gemini'")
+	}
+	if contains(prompt, "claude") {
+		t.Error("blind prompt should NOT contain provider name 'claude'")
 	}
 }
 
