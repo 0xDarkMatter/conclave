@@ -3,6 +3,7 @@ package progress
 import (
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"strings"
 	"sync"
@@ -22,6 +23,25 @@ var synthVerbs = []string{
 	"Cogitating",
 	"Harmonizing",
 	"Crystallizing",
+	"Ruminating",
+	"Deliberating",
+	"Distilling",
+	"Condensing",
+	"Amalgamating",
+	"Coalescing",
+	"Fermenting",
+	"Marinating",
+	"Simmering",
+	"Brewing",
+	"Concocting",
+	"Weaving",
+	"Untangling",
+	"Deciphering",
+	"Pondering",
+	"Contemplating",
+	"Mulling",
+	"Calibrating",
+	"Recombobulating",
 }
 
 // ANSI color codes
@@ -291,8 +311,11 @@ func (p *Progress) StartSynthesis() {
 	p.synthStart = time.Now()
 	p.synthInProgress = true
 
+	// Random starting verb
+	startVerb := synthVerbs[rand.Intn(len(synthVerbs))]
+
 	if p.isTTY {
-		fmt.Fprintf(p.out, "\n%s▸ %s...%s %s", colorCyan, synthVerbs[0], colorReset, spinnerFrames[0])
+		fmt.Fprintf(p.out, "\n%s▸ %s...%s %s", colorCyan, startVerb, colorReset, spinnerFrames[0])
 	} else {
 		fmt.Fprintf(p.out, "\n▸ Synthesizing...\n")
 	}
@@ -313,7 +336,7 @@ func (p *Progress) runSynthSpinner() {
 	defer ticker.Stop()
 
 	spinnerIdx := 0
-	verbIdx := 0
+	verbIdx := rand.Intn(len(synthVerbs)) // Random start
 	lastVerbChange := time.Now()
 
 	for {
@@ -324,9 +347,9 @@ func (p *Progress) runSynthSpinner() {
 			spinnerIdx = (spinnerIdx + 1) % len(spinnerFrames)
 			elapsed := time.Since(p.synthStart)
 
-			// Change verb every 2 seconds
-			if time.Since(lastVerbChange) > 2*time.Second {
-				verbIdx = (verbIdx + 1) % len(synthVerbs)
+			// Change verb every 1.5 seconds
+			if time.Since(lastVerbChange) > 1500*time.Millisecond {
+				verbIdx = rand.Intn(len(synthVerbs)) // Random next verb
 				lastVerbChange = time.Now()
 			}
 
