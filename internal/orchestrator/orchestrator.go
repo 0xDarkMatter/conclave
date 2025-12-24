@@ -1,0 +1,98 @@
+package orchestrator
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/0xDarkMatter/conclave-cli/internal/providers"
+)
+
+// Orchestrator manages parallel provider execution
+type Orchestrator struct {
+	providers []providers.Provider
+	timeout   time.Duration
+}
+
+// New creates a new orchestrator
+func New(providerList []providers.Provider, timeoutSeconds int) *Orchestrator {
+	return &Orchestrator{
+		providers: providerList,
+		timeout:   time.Duration(timeoutSeconds) * time.Second,
+	}
+}
+
+// Run executes the prompt against all providers in parallel
+func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Response, error) {
+	results := make([]providers.Response, len(o.providers))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstError error
+
+	for i, p := range o.providers {
+		wg.Add(1)
+		go func(idx int, provider providers.Provider) {
+			defer wg.Done()
+
+			// Create timeout context for this provider
+			providerCtx, cancel := context.WithTimeout(ctx, o.timeout)
+			defer cancel()
+
+			model := provider.DefaultModel()
+			response, duration, err := provider.Query(providerCtx, prompt, model)
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if err != nil {
+				results[idx] = providers.Response{
+					Provider: provider.Name(),
+					Model:    model,
+					Status:   "error",
+					Error:    err.Error(),
+					Duration: duration,
+				}
+				if firstError == nil {
+					firstError = fmt.Errorf("%s: %w", provider.Name(), err)
+				}
+			} else {
+				results[idx] = providers.Response{
+					Provider: provider.Name(),
+					Model:    model,
+					Status:   "success",
+					Response: response,
+					Duration: duration,
+				}
+			}
+		}(i, p)
+	}
+
+	wg.Wait()
+
+	// Count successful responses
+	successCount := 0
+	for _, r := range results {
+		if r.Status == "success" {
+			successCount++
+		}
+	}
+
+	// If all providers failed, return an error
+	if successCount == 0 && len(o.providers) > 0 {
+		return results, fmt.Errorf("all providers failed")
+	}
+
+	return results, nil
+}
+
+// TotalDuration returns the total execution time
+func TotalDuration(responses []providers.Response) time.Duration {
+	var max time.Duration
+	for _, r := range responses {
+		if r.Duration > max {
+			max = r.Duration
+		}
+	}
+	return max
+}
