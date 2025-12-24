@@ -14,8 +14,16 @@ import (
 type Provider interface {
 	Name() string
 	DefaultModel() string
-	Query(ctx context.Context, prompt string, model string) (string, time.Duration, error)
+	Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error)
 	IsAvailable() bool
+}
+
+// Metrics holds optional usage metrics from providers
+type Metrics struct {
+	InputTokens  int     `json:"input_tokens,omitempty"`
+	OutputTokens int     `json:"output_tokens,omitempty"`
+	CacheTokens  int     `json:"cache_tokens,omitempty"`
+	CostUSD      float64 `json:"cost_usd,omitempty"`
 }
 
 // Response holds a provider's query result
@@ -26,6 +34,7 @@ type Response struct {
 	Response string        `json:"response,omitempty"`
 	Error    string        `json:"error,omitempty"`
 	Duration time.Duration `json:"duration_ms"`
+	Metrics  *Metrics      `json:"metrics,omitempty"`
 }
 
 // baseProvider provides common functionality

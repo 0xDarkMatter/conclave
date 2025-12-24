@@ -20,15 +20,15 @@ type mockProvider struct {
 func (m *mockProvider) Name() string         { return m.name }
 func (m *mockProvider) DefaultModel() string { return m.model }
 func (m *mockProvider) IsAvailable() bool    { return true }
-func (m *mockProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, error) {
+func (m *mockProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *providers.Metrics, error) {
 	if m.delay > 0 {
 		select {
 		case <-time.After(m.delay):
 		case <-ctx.Done():
-			return "", m.delay, ctx.Err()
+			return "", m.delay, nil, ctx.Err()
 		}
 	}
-	return m.response, m.delay, m.err
+	return m.response, m.delay, nil, m.err
 }
 
 func TestOrchestratorRun(t *testing.T) {

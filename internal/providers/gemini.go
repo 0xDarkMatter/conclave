@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -21,17 +22,62 @@ func NewGeminiProvider() *GeminiProvider {
 	}
 }
 
-// Query executes a prompt using Gemini CLI
-// Command: gemini -m {model} "{prompt}"
-func (p *GeminiProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, error) {
+// geminiTokens represents token usage for a model
+type geminiTokens struct {
+	Prompt     int `json:"prompt"`
+	Candidates int `json:"candidates"`
+	Total      int `json:"total"`
+	Cached     int `json:"cached"`
+}
+
+// geminiModelStats represents stats for a single model
+type geminiModelStats struct {
+	Tokens geminiTokens `json:"tokens"`
+}
+
+// geminiJSONOutput represents Gemini's JSON output structure
+type geminiJSONOutput struct {
+	Response string `json:"response"`
+	Stats    struct {
+		Models map[string]geminiModelStats `json:"models"`
+	} `json:"stats"`
+}
+
+// Query executes a prompt using Gemini CLI with JSON output for metrics
+// Command: gemini -o json -m {model} "{prompt}"
+func (p *GeminiProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
 	}
 
 	start := time.Now()
-	args := []string{"-m", model, prompt}
+	args := []string{"-o", "json", "-m", model, prompt}
 	output, err := runCommand(ctx, "gemini", args, nil)
 	duration := time.Since(start)
 
-	return output, duration, err
+	if err != nil {
+		return output, duration, nil, err
+	}
+
+	// Parse JSON to extract response and metrics
+	var result geminiJSONOutput
+	if jsonErr := json.Unmarshal([]byte(output), &result); jsonErr != nil {
+		// If JSON parsing fails, return raw output
+		return output, duration, nil, nil
+	}
+
+	// Aggregate metrics across all models used
+	var metrics Metrics
+	for _, m := range result.Stats.Models {
+		metrics.InputTokens += m.Tokens.Prompt
+		metrics.OutputTokens += m.Tokens.Candidates
+		metrics.CacheTokens += m.Tokens.Cached
+	}
+
+	// Return nil metrics if nothing was captured
+	if metrics.InputTokens == 0 && metrics.OutputTokens == 0 {
+		return result.Response, duration, nil, nil
+	}
+
+	return result.Response, duration, &metrics, nil
 }

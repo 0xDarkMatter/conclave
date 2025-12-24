@@ -23,7 +23,7 @@ func NewGLMProvider() *GLMProvider {
 
 // Query executes a prompt using OpenCode CLI
 // Command: opencode run "{message}" --model {model}
-func (p *GLMProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, error) {
+func (p *GLMProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
 	}
@@ -33,5 +33,5 @@ func (p *GLMProvider) Query(ctx context.Context, prompt string, model string) (s
 	output, err := runCommand(ctx, "opencode", args, nil)
 	duration := time.Since(start)
 
-	return output, duration, err
+	return output, duration, nil, err
 }

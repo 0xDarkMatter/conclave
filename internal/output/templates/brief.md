@@ -1,0 +1,1 @@
+{{if .Verdict}}{{.Verdict.Result}} ({{.Verdict.Confidence}}): {{.Verdict.Reasoning}}{{if .Verdict.Recommendations}} {{range $i, $r := .Verdict.Recommendations}}{{if lt $i 2}}{{if $i}}, {{end}}{{$r}}{{end}}{{end}}{{end}}{{else}}{{range .Responses}}{{if eq .Status "success"}}{{truncate .Response 500}}{{end}}{{end}}{{end}}

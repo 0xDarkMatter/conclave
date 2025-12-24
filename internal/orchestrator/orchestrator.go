@@ -40,7 +40,7 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 			defer cancel()
 
 			model := provider.DefaultModel()
-			response, duration, err := provider.Query(providerCtx, prompt, model)
+			response, duration, metrics, err := provider.Query(providerCtx, prompt, model)
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -63,6 +63,7 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 					Status:   "success",
 					Response: response,
 					Duration: duration,
+					Metrics:  metrics,
 				}
 			}
 		}(i, p)

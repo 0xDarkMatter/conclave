@@ -43,7 +43,7 @@ func (j *Judge) Synthesize(ctx context.Context, query string, responses []provid
 	defer cancel()
 
 	model := j.provider.DefaultModel()
-	response, duration, err := j.provider.Query(judgeCtx, prompt, model)
+	response, duration, _, err := j.provider.Query(judgeCtx, prompt, model)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -21,9 +22,19 @@ func NewClaudeProvider() *ClaudeProvider {
 	}
 }
 
-// Query executes a prompt using Claude CLI
-// Command: claude --print "{prompt}" --model {model} --output-format text
-func (p *ClaudeProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, error) {
+// claudeJSONOutput represents Claude's JSON output structure
+type claudeJSONOutput struct {
+	Result       string  `json:"result"`
+	TotalCostUSD float64 `json:"total_cost_usd"`
+	Usage        struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
+// Query executes a prompt using Claude CLI with JSON output for metrics
+// Command: claude --print "{prompt}" --model {model} --output-format json
+func (p *ClaudeProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
 	}
@@ -32,10 +43,27 @@ func (p *ClaudeProvider) Query(ctx context.Context, prompt string, model string)
 	args := []string{
 		"--print", prompt,
 		"--model", model,
-		"--output-format", "text",
+		"--output-format", "json",
 	}
 	output, err := runCommand(ctx, "claude", args, nil)
 	duration := time.Since(start)
 
-	return output, duration, err
+	if err != nil {
+		return output, duration, nil, err
+	}
+
+	// Parse JSON to extract response and metrics
+	var result claudeJSONOutput
+	if jsonErr := json.Unmarshal([]byte(output), &result); jsonErr != nil {
+		// If JSON parsing fails, return raw output
+		return output, duration, nil, nil
+	}
+
+	metrics := &Metrics{
+		InputTokens:  result.Usage.InputTokens,
+		OutputTokens: result.Usage.OutputTokens,
+		CostUSD:      result.TotalCostUSD,
+	}
+
+	return result.Result, duration, metrics, nil
 }

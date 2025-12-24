@@ -23,7 +23,7 @@ func NewOpenAIProvider() *OpenAIProvider {
 
 // Query executes a prompt using Codex CLI
 // Command: codex exec "{prompt}" -m {model} --skip-git-repo-check
-func (p *OpenAIProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, error) {
+func (p *OpenAIProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
 	}
@@ -33,5 +33,5 @@ func (p *OpenAIProvider) Query(ctx context.Context, prompt string, model string)
 	output, err := runCommand(ctx, "codex", args, nil)
 	duration := time.Since(start)
 
-	return output, duration, err
+	return output, duration, nil, err
 }

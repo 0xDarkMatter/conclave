@@ -31,7 +31,7 @@ type grokMessage struct {
 
 // Query executes a prompt using Grok CLI
 // Command: grok -p "{prompt}" -m {model}
-func (p *GrokProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, error) {
+func (p *GrokProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
 	}
@@ -42,11 +42,11 @@ func (p *GrokProvider) Query(ctx context.Context, prompt string, model string) (
 	duration := time.Since(start)
 
 	if err != nil {
-		return output, duration, err
+		return output, duration, nil, err
 	}
 
 	// Parse JSONL output to extract assistant response
-	return parseGrokOutput(output), duration, nil
+	return parseGrokOutput(output), duration, nil, nil
 }
 
 // parseGrokOutput extracts the assistant's content from grok's JSONL output

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/context"
@@ -14,10 +15,11 @@ import (
 
 // Options configures output formatting
 type Options struct {
-	JSON    bool
-	Verbose bool
-	Brief   bool
-	Quiet   bool
+	JSON     bool
+	Verbose  bool
+	Brief    bool
+	Quiet    bool
+	Template string // Custom template name
 }
 
 // Result holds all data for output
@@ -45,13 +47,121 @@ func (f *Formatter) Render(r Result) error {
 	if f.opts.JSON {
 		return f.renderJSON(r)
 	}
-	if f.opts.Brief {
-		return f.renderBrief(r)
-	}
 	if f.opts.Quiet {
 		return f.renderQuiet(r)
 	}
-	return f.renderHuman(r)
+
+	// Use templates for human-readable output
+	templateName := "human.md"
+	if f.opts.Brief {
+		templateName = "brief.md"
+	} else if f.opts.Verbose {
+		templateName = "verbose.md"
+	}
+	if f.opts.Template != "" {
+		templateName = f.opts.Template
+	}
+
+	return f.renderTemplate(r, templateName)
+}
+
+// buildTemplateData converts Result to TemplateData
+func buildTemplateData(r Result) TemplateData {
+	data := TemplateData{
+		Query:     r.Query,
+		Providers: r.Providers,
+		JudgeName: r.JudgeName,
+	}
+
+	// Context sources
+	if r.Context != nil {
+		for _, s := range r.Context.Sources {
+			if s.Error == "" {
+				data.ContextSources = append(data.ContextSources, SourceInfo{
+					Name:      s.Name,
+					Size:      formatBytes(s.SizeBytes),
+					Truncated: s.Truncated,
+				})
+			}
+		}
+		data.TotalBytes = r.Context.TotalBytes
+	}
+
+	// Responses and metrics
+	for _, resp := range r.Responses {
+		rd := ResponseData{
+			Provider: resp.Provider,
+			Model:    resp.Model,
+			Status:   resp.Status,
+			Response: resp.Response,
+			Error:    resp.Error,
+			Duration: fmt.Sprintf("%.1fs", resp.Duration.Seconds()),
+		}
+
+		// Add metrics if available
+		if resp.Metrics != nil {
+			rd.Metrics = &MetricsData{
+				InputTokens:  resp.Metrics.InputTokens,
+				OutputTokens: resp.Metrics.OutputTokens,
+				CacheTokens:  resp.Metrics.CacheTokens,
+				CostUSD:      resp.Metrics.CostUSD,
+				HasMetrics:   true,
+			}
+			// Aggregate totals
+			data.TotalInputTokens += resp.Metrics.InputTokens
+			data.TotalOutputTokens += resp.Metrics.OutputTokens
+			data.TotalTokens += resp.Metrics.InputTokens + resp.Metrics.OutputTokens
+			data.TotalCostUSD += resp.Metrics.CostUSD
+			data.HasMetrics = true
+		}
+
+		data.Responses = append(data.Responses, rd)
+		data.Timings = append(data.Timings, TimingData{
+			Provider: resp.Provider,
+			Duration: fmt.Sprintf("%.1fs", resp.Duration.Seconds()),
+		})
+	}
+
+	// Verdict
+	if r.Verdict != nil {
+		data.Verdict = &VerdictData{
+			Result:          r.Verdict.Result,
+			Confidence:      r.Verdict.Confidence,
+			Reasoning:       r.Verdict.Reasoning,
+			Agreements:      r.Verdict.Agreements,
+			Disagreements:   r.Verdict.Disagreements,
+			Recommendations: r.Verdict.Recommendations,
+		}
+		data.Timings = append(data.Timings, TimingData{
+			Provider: "judge",
+			Duration: fmt.Sprintf("%.1fs", r.Verdict.JudgeDuration.Seconds()),
+		})
+	}
+
+	return data
+}
+
+// Template functions
+var templateFuncs = template.FuncMap{
+	"add": func(a, b int) int { return a + b },
+	"truncate": func(s string, max int) string {
+		if len(s) <= max {
+			return s
+		}
+		return s[:max-3] + "..."
+	},
+	"hasCost": func(cost float64) bool { return cost > 0 },
+}
+
+func (f *Formatter) renderTemplate(r Result, templateName string) error {
+	tmpl, err := loadTemplateWithFuncs(templateName, templateFuncs)
+	if err != nil {
+		// Fallback to hardcoded output if template fails
+		return f.renderHuman(r)
+	}
+
+	data := buildTemplateData(r)
+	return tmpl.Execute(os.Stdout, data)
 }
 
 // JSONOutput is the structured JSON output
