@@ -213,12 +213,12 @@ func TestBuildPromptBlind(t *testing.T) {
 
 	prompt := BuildPrompt("What is 2+2?", responses, true)
 
-	// Blind mode should use Expert A, Expert B instead of provider names
-	if !contains(prompt, "Expert A") {
-		t.Error("blind prompt should contain 'Expert A'")
+	// Blind mode should use Provider A, Provider B instead of provider names
+	if !contains(prompt, "Provider A") {
+		t.Error("blind prompt should contain 'Provider A'")
 	}
-	if !contains(prompt, "Expert B") {
-		t.Error("blind prompt should contain 'Expert B'")
+	if !contains(prompt, "Provider B") {
+		t.Error("blind prompt should contain 'Provider B'")
 	}
 	if contains(prompt, "gemini") {
 		t.Error("blind prompt should NOT contain provider name 'gemini'")

@@ -82,3 +82,57 @@ func (p *modelOverrideProvider) DefaultModel() string {
 	}
 	return p.Provider.DefaultModel()
 }
+
+// providerCompanies maps provider names to company names
+var providerCompanies = map[string]string{
+	"gemini":     "Google",
+	"openai":     "OpenAI",
+	"claude":     "Anthropic",
+	"perplexity": "Perplexity",
+	"grok":       "xAI",
+	"glm":        "Zhipu",
+}
+
+// modelDisplayNames maps raw model names to formatted display names
+var modelDisplayNames = map[string]string{
+	// Gemini
+	"gemini-2.5-pro":   "Gemini 2.5 Pro",
+	"gemini-2.5-flash": "Gemini 2.5 Flash",
+	"gemini-2.0-pro":   "Gemini 2.0 Pro",
+	// OpenAI
+	"gpt-5.2":     "GPT-5.2",
+	"gpt-4o":      "GPT-4o",
+	"o1":          "o1",
+	"o1-mini":     "o1-mini",
+	"o3":          "o3",
+	// Claude
+	"sonnet":      "Claude Sonnet",
+	"opus":        "Claude Opus",
+	"haiku":       "Claude Haiku",
+	// Perplexity
+	"sonar-pro":   "Sonar Pro",
+	"sonar":       "Sonar",
+	// Grok
+	"grok-3":            "Grok 3",
+	"grok-code-fast-1":  "Grok Code Fast",
+	"grok-4-latest":     "Grok 4",
+	// GLM
+	"zai-coding-plan/glm-4.7": "GLM-4.7",
+	"glm-4":                    "GLM-4",
+}
+
+// DisplayName returns a formatted name: {Company} {Model}
+func DisplayName(provider, model string) string {
+	company := providerCompanies[provider]
+	if company == "" {
+		company = provider
+	}
+
+	// Try to get formatted model name
+	displayModel := modelDisplayNames[model]
+	if displayModel == "" {
+		displayModel = model // fallback to raw model name
+	}
+
+	return fmt.Sprintf("%s %s", company, displayModel)
+}

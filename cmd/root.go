@@ -196,6 +196,8 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		Verbose: flagVerbose,
 		Brief:   flagBrief,
 		Quiet:   flagQuiet,
+		Blind:   flagBlind,
+		Timeout: flagTimeout,
 	})
 
 	return out.Render(output.Result{
@@ -205,6 +207,8 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		JudgeName: flagJudge,
 		Responses: results,
 		Verdict:   verdict,
+		Blind:     flagBlind,
+		Timeout:   flagTimeout,
 	})
 }
 

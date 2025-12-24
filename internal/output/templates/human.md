@@ -1,37 +1,26 @@
+{{.HeaderPanel}}
 {{if .Verdict}}
-=================================================================
-CONCLAVE VERDICT: {{.Verdict.Result}} ({{.Verdict.Confidence}} confidence)
-=================================================================
-{{else}}
-=================================================================
-CONCLAVE RESULTS
-=================================================================
-{{end}}
+══════════════════════════════════════════════════════════════════
+ VERDICT: {{.Verdict.Result}} ({{.Verdict.Confidence}} confidence)
+══════════════════════════════════════════════════════════════════
 
-Query: {{.Query}}
-{{if .ContextSources}}Context: {{range $i, $s := .ContextSources}}{{if $i}}, {{end}}{{$s.Name}} ({{$s.Size}}){{end}}
-{{end}}Providers: {{range $i, $p := .Providers}}{{if $i}}, {{end}}{{$p}}{{end}}
-{{if .Verdict}}Judge: {{.JudgeName}}
-{{end}}
-{{if .Verdict}}
-REASONING:
 {{.Verdict.Reasoning}}
 
 {{if .Verdict.Agreements}}AGREEMENTS:
-{{range .Verdict.Agreements}}  - {{.}}
+{{range .Verdict.Agreements}}  • {{.}}
 {{end}}
 {{end}}{{if .Verdict.Disagreements}}DISAGREEMENTS:
-{{range .Verdict.Disagreements}}  - {{.}}
+{{range .Verdict.Disagreements}}  • {{.}}
 {{end}}
 {{end}}{{if .Verdict.Recommendations}}RECOMMENDATIONS:
 {{range $i, $r := .Verdict.Recommendations}}  {{add $i 1}}. {{$r}}
 {{end}}
 {{end}}{{else}}{{range .Responses}}
------------------------------------------------------------------
+──────────────────────────────────────────────────────────────────
 {{.Provider}} ({{.Model}}) - {{.Status}}
------------------------------------------------------------------
+──────────────────────────────────────────────────────────────────
 {{if eq .Status "success"}}{{.Response}}{{else}}Error: {{.Error}}{{end}}
 {{end}}{{end}}
------------------------------------------------------------------
-Completed | {{range $i, $t := .Timings}}{{if $i}}, {{end}}{{$t.Provider}}: {{$t.Duration}}{{end}}
+──────────────────────────────────────────────────────────────────
+Completed in {{.TotalTime}} | {{range $i, $t := .Timings}}{{if $i}}, {{end}}{{$t.Provider}}: {{$t.Duration}}{{end}}
 {{if .HasMetrics}}Tokens: {{.TotalInputTokens}} in / {{.TotalOutputTokens}} out{{if hasCost .TotalCostUSD}} | Cost: ${{printf "%.4f" .TotalCostUSD}}{{end}}{{end}}

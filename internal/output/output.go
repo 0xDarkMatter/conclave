@@ -20,6 +20,8 @@ type Options struct {
 	Brief    bool
 	Quiet    bool
 	Template string // Custom template name
+	Blind    bool
+	Timeout  int
 }
 
 // Result holds all data for output
@@ -30,6 +32,8 @@ type Result struct {
 	JudgeName string
 	Responses []providers.Response
 	Verdict   *judge.Verdict
+	Blind     bool
+	Timeout   int
 }
 
 // Formatter handles output rendering
@@ -68,9 +72,41 @@ func (f *Formatter) Render(r Result) error {
 // buildTemplateData converts Result to TemplateData
 func buildTemplateData(r Result) TemplateData {
 	data := TemplateData{
+		Timestamp: time.Now().Format("02-01-2006 15:04"),
 		Query:     r.Query,
 		Providers: r.Providers,
 		JudgeName: r.JudgeName,
+		Blind:     r.Blind,
+		Timeout:   r.Timeout,
+	}
+
+	// Build provider list with display names
+	var maxDuration time.Duration
+	for _, resp := range r.Responses {
+		data.ProviderList = append(data.ProviderList, ProviderInfo{
+			Name:        resp.Provider,
+			Model:       resp.Model,
+			DisplayName: providers.DisplayName(resp.Provider, resp.Model),
+		})
+		if resp.Duration > maxDuration {
+			maxDuration = resp.Duration
+		}
+	}
+
+	// Judge display name (use judge name with first response's model pattern if available)
+	if r.JudgeName != "" {
+		// Find the judge's model from responses if it participated
+		judgeModel := ""
+		for _, resp := range r.Responses {
+			if resp.Provider == r.JudgeName {
+				judgeModel = resp.Model
+				break
+			}
+		}
+		if judgeModel == "" {
+			judgeModel = "default"
+		}
+		data.JudgeDisplay = providers.DisplayName(r.JudgeName, judgeModel)
 	}
 
 	// Context sources
@@ -85,6 +121,12 @@ func buildTemplateData(r Result) TemplateData {
 			}
 		}
 		data.TotalBytes = r.Context.TotalBytes
+
+		// Build context summary
+		if len(data.ContextSources) > 0 {
+			data.ContextSummary = fmt.Sprintf("%d file(s) (%s)",
+				len(data.ContextSources), formatBytes(r.Context.TotalBytes))
+		}
 	}
 
 	// Responses and metrics
@@ -122,6 +164,12 @@ func buildTemplateData(r Result) TemplateData {
 		})
 	}
 
+	// Calculate total time
+	if r.Verdict != nil {
+		maxDuration += r.Verdict.JudgeDuration
+	}
+	data.TotalTime = fmt.Sprintf("%.1fs", maxDuration.Seconds())
+
 	// Verdict
 	if r.Verdict != nil {
 		data.Verdict = &VerdictData{
@@ -138,7 +186,86 @@ func buildTemplateData(r Result) TemplateData {
 		})
 	}
 
+	// Build header panel
+	data.HeaderPanel = buildHeaderPanel(data)
+
 	return data
+}
+
+// buildHeaderPanel creates a formatted two-column header
+func buildHeaderPanel(data TemplateData) string {
+	const width = 72
+	const colWidth = 34
+
+	var sb strings.Builder
+
+	// Top border with title and timestamp
+	sb.WriteString("╭" + strings.Repeat("─", width) + "╮\n")
+	title := fmt.Sprintf("│ CONCLAVE%s%s │\n", strings.Repeat(" ", width-10-len(data.Timestamp)), data.Timestamp)
+	sb.WriteString(title)
+	sb.WriteString("├" + strings.Repeat("─", colWidth) + "┬" + strings.Repeat("─", width-colWidth-1) + "┤\n")
+
+	// Build left column (providers) and right column (settings)
+	var leftCol, rightCol []string
+
+	leftCol = append(leftCol, "Providers:")
+	for _, p := range data.ProviderList {
+		leftCol = append(leftCol, "  • "+p.DisplayName)
+	}
+
+	rightCol = append(rightCol, "Settings:")
+	if data.JudgeDisplay != "" {
+		rightCol = append(rightCol, "  Judge: "+data.JudgeDisplay)
+	}
+	if data.Blind {
+		rightCol = append(rightCol, "  Blind: Yes")
+	} else {
+		rightCol = append(rightCol, "  Blind: No")
+	}
+	rightCol = append(rightCol, fmt.Sprintf("  Timeout: %ds", data.Timeout))
+	if data.ContextSummary != "" {
+		rightCol = append(rightCol, "  Context: "+data.ContextSummary)
+	}
+
+	// Pad columns to same length
+	maxRows := len(leftCol)
+	if len(rightCol) > maxRows {
+		maxRows = len(rightCol)
+	}
+	for len(leftCol) < maxRows {
+		leftCol = append(leftCol, "")
+	}
+	for len(rightCol) < maxRows {
+		rightCol = append(rightCol, "")
+	}
+
+	// Render rows
+	for i := 0; i < maxRows; i++ {
+		left := leftCol[i]
+		right := rightCol[i]
+		// Truncate if too long
+		if len(left) > colWidth-3 {
+			left = left[:colWidth-6] + "..."
+		}
+		if len(right) > width-colWidth-4 {
+			right = right[:width-colWidth-7] + "..."
+		}
+		// Pad to width
+		leftPadded := left + strings.Repeat(" ", colWidth-2-len(left))
+		rightPadded := right + strings.Repeat(" ", width-colWidth-3-len(right))
+		sb.WriteString(fmt.Sprintf("│ %s│ %s│\n", leftPadded, rightPadded))
+	}
+
+	// Query row
+	sb.WriteString("├" + strings.Repeat("─", colWidth) + "┴" + strings.Repeat("─", width-colWidth-1) + "┤\n")
+	query := data.Query
+	if len(query) > width-4 {
+		query = query[:width-7] + "..."
+	}
+	sb.WriteString(fmt.Sprintf("│ %s%s │\n", query, strings.Repeat(" ", width-2-len(query))))
+	sb.WriteString("╰" + strings.Repeat("─", width) + "╯")
+
+	return sb.String()
 }
 
 // Template functions

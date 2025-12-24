@@ -10,16 +10,35 @@ import (
 //go:embed templates/*.md
 var embeddedTemplates embed.FS
 
+// ProviderInfo holds display info for a provider
+type ProviderInfo struct {
+	Name        string // short name (gemini, claude, etc.)
+	Model       string // model name
+	DisplayName string // full display: "Google Gemini 2.5 Pro"
+}
+
 // TemplateData holds all data available to templates
 type TemplateData struct {
+	// Header info
+	Timestamp string // dd-mm-yyyy hh:mm format
+
 	// Query info
 	Query     string
 	Providers []string
 	JudgeName string
 
+	// Provider details with display names
+	ProviderList []ProviderInfo
+	JudgeDisplay string // full judge display name
+
+	// Settings
+	Blind   bool
+	Timeout int
+
 	// Context info
 	ContextSources []SourceInfo
 	TotalBytes     int64
+	ContextSummary string // e.g., "2 files (15.2 KB)"
 
 	// Responses from each provider
 	Responses []ResponseData
@@ -28,14 +47,18 @@ type TemplateData struct {
 	Verdict *VerdictData
 
 	// Timing
-	Timings []TimingData
+	Timings      []TimingData
+	TotalTime    string // total wall clock time
 
 	// Aggregate metrics
-	TotalTokens      int
-	TotalInputTokens int
+	TotalTokens       int
+	TotalInputTokens  int
 	TotalOutputTokens int
-	TotalCostUSD     float64
-	HasMetrics       bool
+	TotalCostUSD      float64
+	HasMetrics        bool
+
+	// Pre-formatted header panel
+	HeaderPanel string
 }
 
 type SourceInfo struct {
