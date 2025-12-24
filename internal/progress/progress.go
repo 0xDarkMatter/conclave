@@ -59,6 +59,10 @@ type Progress struct {
 	synthStop       chan struct{}
 	synthDone       chan struct{}
 	synthInProgress bool
+	synthTokens     int
+
+	// Totals
+	totalTokens int
 }
 
 // New creates a new Progress instance
@@ -100,12 +104,16 @@ func (p *Progress) Start() {
 	p.started = true
 
 	// Print header
-	fmt.Fprintf(p.out, "\n▸ Querying %d providers...\n\n", len(p.providers))
+	fmt.Fprintf(p.out, "\n▸ Querying %d providers...\n", len(p.providers))
 
 	if p.isTTY {
-		// In TTY mode, print initial state for each provider (will be updated in-place)
-		for _, ps := range p.providers {
-			fmt.Fprintf(p.out, "  ○ %s\n", ps.info.DisplayName)
+		// In TTY mode, print initial state for each provider with tree structure
+		for i, ps := range p.providers {
+			prefix := "├──"
+			if i == len(p.providers)-1 {
+				prefix = "└──"
+			}
+			fmt.Fprintf(p.out, "  %s ○ %s\n", prefix, ps.info.DisplayName)
 		}
 	}
 	p.mu.Unlock()
@@ -147,22 +155,28 @@ func (p *Progress) redraw() {
 	// Move cursor up to first provider line
 	fmt.Fprintf(p.out, "\033[%dA", len(p.providers))
 
-	for _, ps := range p.providers {
+	for i, ps := range p.providers {
+		// Tree prefix
+		prefix := "├──"
+		if i == len(p.providers)-1 {
+			prefix = "└──"
+		}
+
 		// Clear line and move to start
 		fmt.Fprintf(p.out, "\033[2K\r")
 
 		switch ps.status {
 		case StatusPending:
-			fmt.Fprintf(p.out, "  ○ %s", ps.info.DisplayName)
+			fmt.Fprintf(p.out, "  %s ○ %s", prefix, ps.info.DisplayName)
 		case StatusRunning:
 			elapsed := time.Since(ps.startTime)
 			spinner := spinnerFrames[p.spinnerIdx]
-			fmt.Fprintf(p.out, "  %s %s %s", spinner, ps.info.DisplayName, formatElapsed(elapsed))
+			fmt.Fprintf(p.out, "  %s %s %s %s", prefix, spinner, ps.info.DisplayName, formatElapsed(elapsed))
 		case StatusSuccess:
-			fmt.Fprintf(p.out, "  ✓ %s %s", ps.info.DisplayName, formatStats(ps.duration, ps.tokens))
+			fmt.Fprintf(p.out, "  %s ✓ %s %s", prefix, ps.info.DisplayName, formatStats(ps.duration, ps.tokens))
 		case StatusError:
 			errStr := truncate(ps.err.Error(), 40)
-			fmt.Fprintf(p.out, "  ✗ %s: %s", ps.info.DisplayName, errStr)
+			fmt.Fprintf(p.out, "  %s ✗ %s: %s", prefix, ps.info.DisplayName, errStr)
 		}
 
 		// Move to next line
@@ -203,15 +217,28 @@ func (p *Progress) ProviderDone(name string, duration time.Duration, tokens int,
 		}
 		p.providers[idx].duration = duration
 		p.providers[idx].tokens = tokens
+		p.totalTokens += tokens
 
-		// In non-TTY mode, print completion immediately
+		// In non-TTY mode, print completion immediately with tree structure
 		if !p.isTTY {
+			// Determine tree prefix based on how many are done
+			doneCount := 0
+			for _, ps := range p.providers {
+				if ps.status == StatusSuccess || ps.status == StatusError {
+					doneCount++
+				}
+			}
+			prefix := "├──"
+			if doneCount == len(p.providers) {
+				prefix = "└──"
+			}
+
 			ps := p.providers[idx]
 			if ps.status == StatusSuccess {
-				fmt.Fprintf(p.out, "  ✓ %s %s\n", ps.info.DisplayName, formatStats(ps.duration, ps.tokens))
+				fmt.Fprintf(p.out, "  %s ✓ %s %s\n", prefix, ps.info.DisplayName, formatStats(ps.duration, ps.tokens))
 			} else {
 				errStr := truncate(ps.err.Error(), 40)
-				fmt.Fprintf(p.out, "  ✗ %s: %s\n", ps.info.DisplayName, errStr)
+				fmt.Fprintf(p.out, "  %s ✗ %s: %s\n", prefix, ps.info.DisplayName, errStr)
 			}
 		}
 	}
@@ -285,7 +312,7 @@ func (p *Progress) runSynthSpinner() {
 }
 
 // StopSynthesis ends the synthesis phase
-func (p *Progress) StopSynthesis(err error) {
+func (p *Progress) StopSynthesis(tokens int, err error) {
 	if p.quiet || !p.synthInProgress {
 		return
 	}
@@ -299,6 +326,9 @@ func (p *Progress) StopSynthesis(err error) {
 	defer p.mu.Unlock()
 
 	elapsed := time.Since(p.synthStart)
+	p.synthTokens = tokens
+	p.totalTokens += tokens
+
 	if p.isTTY {
 		fmt.Fprintf(p.out, "\r\033[2K") // Clear the spinner line
 	}
@@ -307,7 +337,7 @@ func (p *Progress) StopSynthesis(err error) {
 		errStr := truncate(err.Error(), 50)
 		fmt.Fprintf(p.out, "✗ Synthesis failed: %s\n", errStr)
 	} else {
-		fmt.Fprintf(p.out, "✓ Synthesized (%.1fs)\n", elapsed.Seconds())
+		fmt.Fprintf(p.out, "✓ Synthesized %s\n", formatStats(elapsed, tokens))
 	}
 	p.synthInProgress = false
 }
@@ -350,7 +380,7 @@ func (p *Progress) Complete() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	elapsed := time.Since(p.startTime)
-	fmt.Fprintf(p.out, "\n✓ Complete (%.1fs)\n\n", elapsed.Seconds())
+	fmt.Fprintf(p.out, "\n✓ Complete %s\n\n", formatStats(elapsed, p.totalTokens))
 }
 
 // formatStats formats duration and tokens as [00.00s / 000000 tokens]

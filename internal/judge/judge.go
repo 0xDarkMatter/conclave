@@ -21,6 +21,7 @@ type Verdict struct {
 	JudgeProvider   string        `json:"judge_provider"`
 	JudgeModel      string        `json:"judge_model"`
 	JudgeDuration   time.Duration `json:"judge_duration_ms"`
+	JudgeTokens     int           `json:"judge_tokens"`
 	RawResponse     string        `json:"-"` // For debugging
 }
 
@@ -43,9 +44,15 @@ func (j *Judge) Synthesize(ctx context.Context, query string, responses []provid
 	defer cancel()
 
 	model := j.provider.DefaultModel()
-	response, duration, _, err := j.provider.Query(judgeCtx, prompt, model)
+	response, duration, metrics, err := j.provider.Query(judgeCtx, prompt, model)
 	if err != nil {
 		return nil, err
+	}
+
+	// Calculate total tokens
+	var totalTokens int
+	if metrics != nil {
+		totalTokens = metrics.InputTokens + metrics.OutputTokens
 	}
 
 	verdict, err := parseVerdict(response)
@@ -59,12 +66,14 @@ func (j *Judge) Synthesize(ctx context.Context, query string, responses []provid
 			JudgeProvider: j.provider.Name(),
 			JudgeModel:    model,
 			JudgeDuration: duration,
+			JudgeTokens:   totalTokens,
 		}, nil
 	}
 
 	verdict.JudgeProvider = j.provider.Name()
 	verdict.JudgeModel = model
 	verdict.JudgeDuration = duration
+	verdict.JudgeTokens = totalTokens
 	verdict.RawResponse = response
 
 	return verdict, nil

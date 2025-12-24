@@ -236,7 +236,11 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		prog.StartSynthesis()
 		j := judge.New(judgeProvider)
 		verdict, err = j.Synthesize(cmd.Context(), prompt, results, flagTimeout, flagBlind)
-		prog.StopSynthesis(err)
+		var synthTokens int
+		if verdict != nil {
+			synthTokens = verdict.JudgeTokens
+		}
+		prog.StopSynthesis(synthTokens, err)
 	}
 
 	prog.Complete()
