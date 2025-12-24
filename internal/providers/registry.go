@@ -62,7 +62,7 @@ func AllAPIProviders() []Provider {
 		NewAnthropicAPIProvider(),
 		NewPerplexityAPIProvider(),
 		NewGrokAPIProvider(),
-		NewGLMAPIProvider(),
+		// NewGLMAPIProvider(), // Disabled: too slow (~20s response times)
 	}
 }
 
