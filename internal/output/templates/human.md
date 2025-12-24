@@ -1,7 +1,7 @@
 {{.HeaderPanel}}
 {{if .Verdict}}
 ══════════════════════════════════════════════════════════════════
- VERDICT: {{.Verdict.Result}} ({{.Verdict.Confidence}} confidence)
+ {{.Verdict.Result}} ({{.Verdict.Confidence}} confidence)
 ══════════════════════════════════════════════════════════════════
 
 {{.Verdict.Reasoning}}

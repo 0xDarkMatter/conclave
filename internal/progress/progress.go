@@ -52,6 +52,12 @@ type Progress struct {
 	stopSpinner chan struct{}
 	spinnerDone chan struct{}
 	started     bool
+
+	// Synthesis phase
+	synthStart      time.Time
+	synthStop       chan struct{}
+	synthDone       chan struct{}
+	synthInProgress bool
 }
 
 // New creates a new Progress instance
@@ -229,7 +235,82 @@ func (p *Progress) Stop() {
 	}
 }
 
-// Phase prints a phase header (for judge phase)
+// StartSynthesis begins the synthesis phase with spinner
+func (p *Progress) StartSynthesis() {
+	if p.quiet {
+		return
+	}
+
+	p.mu.Lock()
+	p.synthStart = time.Now()
+	p.synthInProgress = true
+
+	if p.isTTY {
+		fmt.Fprintf(p.out, "\n▸ Synthesizing... %s", spinnerFrames[0])
+	} else {
+		fmt.Fprintf(p.out, "\n▸ Synthesizing...\n")
+	}
+	p.mu.Unlock()
+
+	if p.isTTY {
+		p.synthStop = make(chan struct{})
+		p.synthDone = make(chan struct{})
+		go p.runSynthSpinner()
+	}
+}
+
+// runSynthSpinner animates the synthesis spinner
+func (p *Progress) runSynthSpinner() {
+	defer close(p.synthDone)
+
+	ticker := time.NewTicker(80 * time.Millisecond)
+	defer ticker.Stop()
+
+	idx := 0
+	for {
+		select {
+		case <-p.synthStop:
+			return
+		case <-ticker.C:
+			idx = (idx + 1) % len(spinnerFrames)
+			elapsed := time.Since(p.synthStart)
+			p.mu.Lock()
+			// Move to start of line, clear, and rewrite
+			fmt.Fprintf(p.out, "\r\033[2K▸ Synthesizing... %s (%.1fs)", spinnerFrames[idx], elapsed.Seconds())
+			p.mu.Unlock()
+		}
+	}
+}
+
+// StopSynthesis ends the synthesis phase
+func (p *Progress) StopSynthesis(err error) {
+	if p.quiet || !p.synthInProgress {
+		return
+	}
+
+	if p.isTTY && p.synthStop != nil {
+		close(p.synthStop)
+		<-p.synthDone
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	elapsed := time.Since(p.synthStart)
+	if p.isTTY {
+		fmt.Fprintf(p.out, "\r\033[2K") // Clear the spinner line
+	}
+
+	if err != nil {
+		errStr := truncate(err.Error(), 50)
+		fmt.Fprintf(p.out, "✗ Synthesis failed: %s\n", errStr)
+	} else {
+		fmt.Fprintf(p.out, "✓ Synthesized (%.1fs)\n", elapsed.Seconds())
+	}
+	p.synthInProgress = false
+}
+
+// Phase prints a phase header (for other phases)
 func (p *Progress) Phase(message string) {
 	if p.quiet {
 		return

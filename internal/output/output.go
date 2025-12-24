@@ -416,7 +416,7 @@ func (f *Formatter) renderHuman(r Result) error {
 	// Header
 	if r.Verdict != nil {
 		fmt.Println(strings.Repeat("=", 65))
-		fmt.Printf("CONCLAVE VERDICT: %s (%s confidence)\n", r.Verdict.Result, r.Verdict.Confidence)
+		fmt.Printf("CONCLAVE: %s (%s confidence)\n", r.Verdict.Result, r.Verdict.Confidence)
 		fmt.Println(strings.Repeat("=", 65))
 	} else {
 		fmt.Println(strings.Repeat("=", 65))

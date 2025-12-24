@@ -219,20 +219,15 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// Phase 2: Judge synthesis (unless --no-judge or single provider)
 	var verdict *judge.Verdict
 	if !flagNoJudge && len(providerList) > 1 {
-		prog.Phase("Synthesizing verdict...")
-
 		judgeProvider, err := registry.GetProvider(flagJudge, modelOverrides)
 		if err != nil {
 			return fmt.Errorf("judge provider error: %w", err)
 		}
 
+		prog.StartSynthesis()
 		j := judge.New(judgeProvider)
 		verdict, err = j.Synthesize(cmd.Context(), prompt, results, flagTimeout, flagBlind)
-		if err != nil {
-			prog.Error(fmt.Sprintf("synthesis failed: %v", err))
-		} else {
-			prog.Success("Verdict ready")
-		}
+		prog.StopSynthesis(err)
 	}
 
 	prog.Complete()

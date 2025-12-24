@@ -1,6 +1,6 @@
 {{if .Verdict}}
 =================================================================
-CONCLAVE VERDICT: {{.Verdict.Result}} ({{.Verdict.Confidence}} confidence)
+CONCLAVE: {{.Verdict.Result}} ({{.Verdict.Confidence}} confidence)
 =================================================================
 {{else}}
 =================================================================
