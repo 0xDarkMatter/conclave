@@ -152,7 +152,7 @@ These are the models used when no `-m` override is specified:
 |----------|----------|-----------------|
 | gemini | `gemini-3-pro-preview` | `gemini-3-pro-preview` |
 | openai | `gpt-5.2` | `gpt-5.2` |
-| claude | `sonnet` | `claude-opus-4-5-20251101` |
+| claude | `opus` | `claude-opus-4-5-20251101` |
 | perplexity | `sonar-pro` | `sonar-pro` |
 | grok | `grok-code-fast-1` | `grok-4-1-fast-reasoning` |
 | glm | `zai-coding-plan/glm-4.7` | `glm-4.7` (disabled) |
