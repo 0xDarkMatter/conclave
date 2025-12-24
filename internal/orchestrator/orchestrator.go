@@ -10,7 +10,8 @@ import (
 )
 
 // ProgressCallback is called when a provider starts or completes
-type ProgressCallback func(provider string, started bool, duration time.Duration, err error)
+// tokens is the total token count (input + output) when completed, 0 otherwise
+type ProgressCallback func(provider string, started bool, duration time.Duration, tokens int, err error)
 
 // Orchestrator manages parallel provider execution
 type Orchestrator struct {
@@ -47,7 +48,7 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 
 			// Notify start
 			if o.onProgress != nil {
-				o.onProgress(provider.Name(), true, 0, nil)
+				o.onProgress(provider.Name(), true, 0, 0, nil)
 			}
 
 			// Create timeout context for this provider
@@ -60,9 +61,15 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 			mu.Lock()
 			defer mu.Unlock()
 
+			// Calculate total tokens
+			var totalTokens int
+			if metrics != nil {
+				totalTokens = metrics.InputTokens + metrics.OutputTokens
+			}
+
 			// Notify completion
 			if o.onProgress != nil {
-				o.onProgress(provider.Name(), false, duration, err)
+				o.onProgress(provider.Name(), false, duration, totalTokens, err)
 			}
 
 			if err != nil {

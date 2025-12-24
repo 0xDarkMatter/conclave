@@ -36,6 +36,7 @@ type providerState struct {
 	status    Status
 	startTime time.Time
 	duration  time.Duration
+	tokens    int
 	err       error
 }
 
@@ -156,9 +157,9 @@ func (p *Progress) redraw() {
 		case StatusRunning:
 			elapsed := time.Since(ps.startTime)
 			spinner := spinnerFrames[p.spinnerIdx]
-			fmt.Fprintf(p.out, "  %s %s (%.1fs)", spinner, ps.info.DisplayName, elapsed.Seconds())
+			fmt.Fprintf(p.out, "  %s %s %s", spinner, ps.info.DisplayName, formatElapsed(elapsed))
 		case StatusSuccess:
-			fmt.Fprintf(p.out, "  ✓ %s (%.1fs)", ps.info.DisplayName, ps.duration.Seconds())
+			fmt.Fprintf(p.out, "  ✓ %s %s", ps.info.DisplayName, formatStats(ps.duration, ps.tokens))
 		case StatusError:
 			errStr := truncate(ps.err.Error(), 40)
 			fmt.Fprintf(p.out, "  ✗ %s: %s", ps.info.DisplayName, errStr)
@@ -185,7 +186,7 @@ func (p *Progress) ProviderStart(name string) {
 }
 
 // ProviderDone marks a provider as complete
-func (p *Progress) ProviderDone(name string, duration time.Duration, err error) {
+func (p *Progress) ProviderDone(name string, duration time.Duration, tokens int, err error) {
 	if p.quiet {
 		return
 	}
@@ -201,12 +202,13 @@ func (p *Progress) ProviderDone(name string, duration time.Duration, err error) 
 			p.providers[idx].status = StatusSuccess
 		}
 		p.providers[idx].duration = duration
+		p.providers[idx].tokens = tokens
 
 		// In non-TTY mode, print completion immediately
 		if !p.isTTY {
 			ps := p.providers[idx]
 			if ps.status == StatusSuccess {
-				fmt.Fprintf(p.out, "  ✓ %s (%.1fs)\n", ps.info.DisplayName, ps.duration.Seconds())
+				fmt.Fprintf(p.out, "  ✓ %s %s\n", ps.info.DisplayName, formatStats(ps.duration, ps.tokens))
 			} else {
 				errStr := truncate(ps.err.Error(), 40)
 				fmt.Fprintf(p.out, "  ✗ %s: %s\n", ps.info.DisplayName, errStr)
@@ -349,6 +351,19 @@ func (p *Progress) Complete() {
 	defer p.mu.Unlock()
 	elapsed := time.Since(p.startTime)
 	fmt.Fprintf(p.out, "\n✓ Complete (%.1fs)\n\n", elapsed.Seconds())
+}
+
+// formatStats formats duration and tokens as [00.00s / 000000 tokens]
+func formatStats(d time.Duration, tokens int) string {
+	if tokens > 0 {
+		return fmt.Sprintf("[%05.2fs / %06d tokens]", d.Seconds(), tokens)
+	}
+	return fmt.Sprintf("[%05.2fs]", d.Seconds())
+}
+
+// formatElapsed formats elapsed time for spinner display
+func formatElapsed(d time.Duration) string {
+	return fmt.Sprintf("[%05.2fs]", d.Seconds())
 }
 
 // truncate shortens a string if needed

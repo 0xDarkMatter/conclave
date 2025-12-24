@@ -200,11 +200,11 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	prog.Start()
 
 	// Set up progress callback
-	progressCallback := func(provider string, started bool, duration time.Duration, err error) {
+	progressCallback := func(provider string, started bool, duration time.Duration, tokens int, err error) {
 		if started {
 			prog.ProviderStart(provider)
 		} else {
-			prog.ProviderDone(provider, duration, err)
+			prog.ProviderDone(provider, duration, tokens, err)
 		}
 	}
 
