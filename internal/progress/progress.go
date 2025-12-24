@@ -14,6 +14,23 @@ import (
 // Spinner frames for animation
 var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
+// Synthesis verbs - rotated during synthesis phase
+var synthVerbs = []string{
+	"Synthesizing",
+	"Percolating",
+	"Triangulating",
+	"Cogitating",
+	"Harmonizing",
+	"Crystallizing",
+}
+
+// ANSI color codes
+const (
+	colorReset  = "\033[0m"
+	colorCyan   = "\033[36m"
+	colorYellow = "\033[33m"
+)
+
 // Status represents a provider's status
 type Status int
 
@@ -275,7 +292,7 @@ func (p *Progress) StartSynthesis() {
 	p.synthInProgress = true
 
 	if p.isTTY {
-		fmt.Fprintf(p.out, "\n▸ Synthesizing... %s", spinnerFrames[0])
+		fmt.Fprintf(p.out, "\n%s▸ %s...%s %s", colorCyan, synthVerbs[0], colorReset, spinnerFrames[0])
 	} else {
 		fmt.Fprintf(p.out, "\n▸ Synthesizing...\n")
 	}
@@ -288,24 +305,36 @@ func (p *Progress) StartSynthesis() {
 	}
 }
 
-// runSynthSpinner animates the synthesis spinner
+// runSynthSpinner animates the synthesis spinner with rotating verbs
 func (p *Progress) runSynthSpinner() {
 	defer close(p.synthDone)
 
 	ticker := time.NewTicker(80 * time.Millisecond)
 	defer ticker.Stop()
 
-	idx := 0
+	spinnerIdx := 0
+	verbIdx := 0
+	lastVerbChange := time.Now()
+
 	for {
 		select {
 		case <-p.synthStop:
 			return
 		case <-ticker.C:
-			idx = (idx + 1) % len(spinnerFrames)
+			spinnerIdx = (spinnerIdx + 1) % len(spinnerFrames)
 			elapsed := time.Since(p.synthStart)
+
+			// Change verb every 2 seconds
+			if time.Since(lastVerbChange) > 2*time.Second {
+				verbIdx = (verbIdx + 1) % len(synthVerbs)
+				lastVerbChange = time.Now()
+			}
+
 			p.mu.Lock()
-			// Move to start of line, clear, and rewrite
-			fmt.Fprintf(p.out, "\r\033[2K▸ Synthesizing... %s (%.1fs)", spinnerFrames[idx], elapsed.Seconds())
+			// Move to start of line, clear, and rewrite with color
+			fmt.Fprintf(p.out, "\r\033[2K%s▸ %s...%s %s %s",
+				colorCyan, synthVerbs[verbIdx], colorReset,
+				spinnerFrames[spinnerIdx], formatElapsed(elapsed))
 			p.mu.Unlock()
 		}
 	}
