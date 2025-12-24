@@ -188,8 +188,16 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// Initialize progress display (quiet if JSON output)
 	prog := progress.New(flagJSON || flagQuiet)
 
-	// Phase 1: Query providers
-	prog.Phase(fmt.Sprintf("Querying %d providers...", len(providerNames)))
+	// Build provider info for progress display
+	var providerInfos []progress.ProviderInfo
+	for _, p := range providerList {
+		providerInfos = append(providerInfos, progress.ProviderInfo{
+			Name:        p.Name(),
+			DisplayName: providers.DisplayName(p.Name(), p.DefaultModel()),
+		})
+	}
+	prog.RegisterProviders(providerInfos)
+	prog.Start()
 
 	// Set up progress callback
 	progressCallback := func(provider string, started bool, duration time.Duration, err error) {
@@ -203,6 +211,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// Run orchestration with progress
 	orch := orchestrator.New(providerList, flagTimeout).WithProgress(progressCallback)
 	results, err := orch.Run(cmd.Context(), fullPrompt)
+	prog.Stop() // Stop spinner before moving on
 	if err != nil {
 		return err
 	}
