@@ -150,7 +150,7 @@ These are the models used when no `-m` override is specified:
 
 | Provider | CLI Mode | API Mode (`-g`) |
 |----------|----------|-----------------|
-| gemini | `gemini-2.5-pro` | `gemini-3-pro-preview` |
+| gemini | `gemini-3-pro-preview` | `gemini-3-pro-preview` |
 | openai | `gpt-5.2` | `gpt-5.2` |
 | claude | `sonnet` | `claude-opus-4-5-20251101` |
 | perplexity | `sonar-pro` | `sonar-pro` |
