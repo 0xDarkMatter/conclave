@@ -140,7 +140,7 @@ var modelDisplayNames = map[string]string{
 	// Gemini (API)
 	"gemini-2.0-flash":       "Gemini 2.0 Flash",
 	"gemini-3-flash-preview": "Gemini 3 Flash",
-	"gemini-3-pro":           "Gemini 3 Pro",
+	"gemini-3-pro-preview":   "Gemini 3 Pro",
 	// OpenAI
 	"gpt-5.2": "GPT-5.2",
 	"gpt-4o":  "GPT-4o",
