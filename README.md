@@ -1,111 +1,290 @@
-# Conclave CLI
+# Conclave
 
-> Universal multi-LLM consensus tool. Query multiple AI models in parallel, synthesize verdicts.
+> Multi-LLM consensus engine. Query multiple AI models in parallel, synthesize verdicts.
+
+Conclave sends your prompt to multiple LLMs simultaneously, then uses a judge model to synthesize their responses into a single verdict with confidence levels, points of agreement, and actionable recommendations.
+
+## Why Conclave?
+
+- **Reduce bias** - No single model's quirks dominate the response
+- **Increase confidence** - Agreement across models = higher signal
+- **Catch blind spots** - Different models notice different issues
+- **Faster iteration** - Parallel queries, one synthesized answer
 
 ## Installation
 
 ```bash
-# From source
-git clone https://github.com/0xDarkMatter/conclave-cli
-cd conclave-cli
+git clone https://github.com/0xDarkMatter/conclave
+cd conclave
 make install  # installs to ~/.local/bin
-
-# Or with sudo for global install
-sudo make install-global  # installs to /usr/local/bin
 ```
 
-## Usage
+## Quick Start
 
 ```bash
-# Single provider (no judge)
-conclave gemini "What does this code do?"
+# First run - interactive setup for API keys
+conclave init
 
-# Multiple providers with judge
-conclave gemini,openai,glm "Is this secure?" --judge claude
+# Query multiple providers
+conclave gemini,openai,claude "Is this code secure?" -f auth.go --judge claude
 
-# Pipe file content
-cat src/auth.ts | conclave gemini,openai "Review this code" --judge claude
+# Use all available providers
+conclave --all "Review this architecture" -f design.md --judge claude
+```
 
-# Multiple files
-conclave gemini,openai "Compare these" -f impl_a.go -f impl_b.go
+## Modes
 
-# JSON output
-conclave gemini,openai "Analyze" --judge claude --json
+### CLI Mode (Default)
 
-# Brief output
-conclave gemini,openai "Is this correct?" --judge claude --brief
+Uses coding-focused CLI tools (`gemini`, `claude`, `codex`, etc.). Best for code review and technical queries.
 
-# List available providers
-conclave --list-providers
+```bash
+conclave gemini,claude "Explain this function" -f utils.go
+```
+
+### General Mode (`-g`)
+
+Uses raw APIs without coding restrictions. Best for general-purpose queries, research, and non-technical topics.
+
+```bash
+conclave -g gemini,openai,claude "What are the implications of quantum computing for cryptography?" --judge claude
 ```
 
 ## Providers
 
-| Provider | CLI | Default Model |
-|----------|-----|---------------|
-| gemini | `gemini` | gemini-2.5-pro |
-| openai | `codex` | gpt-5.2 |
-| claude | `claude` | sonnet |
-| perplexity | `perplexity` | sonar-pro |
-| grok | `grok` | grok-code-fast-1 |
-| glm | `opencode` | zai-coding-plan/glm-4.7 |
+| Provider | CLI Mode | API Mode (`-g`) | Env Variable |
+|----------|----------|-----------------|--------------|
+| gemini | `gemini` CLI | Gemini API | `GEMINI_API_KEY` |
+| openai | `codex` CLI | OpenAI API | `OPENAI_API_KEY` |
+| claude | `claude` CLI | Anthropic API | `ANTHROPIC_API_KEY` |
+| perplexity | `perplexity` CLI | Perplexity API | `PERPLEXITY_API_KEY` |
+| grok | `grok` CLI | xAI API | `XAI_API_KEY` |
+| glm | `opencode` CLI | Zhipu API | `ZHIPU_API_KEY` |
+
+### Default Models
+
+| Provider | CLI Mode | API Mode |
+|----------|----------|----------|
+| gemini | gemini-3-pro-preview | gemini-3-pro-preview |
+| openai | gpt-5.2 | gpt-5.2 |
+| claude | opus | claude-opus-4-5-20251101 |
+| perplexity | sonar-pro | sonar-pro |
+| grok | grok-code-fast-1 | grok-4-1-fast-reasoning |
+
+Override with `-m provider:model`:
+```bash
+conclave gemini,claude "Review this" -m gemini:gemini-2.5-flash -m claude:sonnet
+```
+
+## Setup
+
+### Interactive Setup
+
+```bash
+conclave init
+```
+
+Walks you through configuring API keys, validates each one, and saves to `~/.config/conclave/.env`. Keys load automatically on subsequent runs.
+
+### Manual Setup
+
+Set environment variables directly:
+```bash
+export GEMINI_API_KEY=your-key
+export OPENAI_API_KEY=your-key
+export ANTHROPIC_API_KEY=your-key
+```
+
+Or create `~/.config/conclave/.env`:
+```bash
+GEMINI_API_KEY=your-key
+OPENAI_API_KEY=your-key
+ANTHROPIC_API_KEY=your-key
+```
+
+### Check Available Providers
+
+```bash
+# CLI mode
+conclave --list-providers
+
+# API mode
+conclave --list-providers -g
+```
+
+## Usage Examples
+
+### Code Review
+
+```bash
+# Review a file
+conclave gemini,claude,openai "Review for bugs and security issues" -f api.go --judge claude
+
+# Compare implementations
+conclave gemini,claude "Which approach is better?" -f impl_a.go -f impl_b.go --judge claude
+
+# Pipe from stdin
+git diff HEAD~1 | conclave gemini,claude "Review these changes" --judge claude
+```
+
+### Research & Analysis
+
+```bash
+# General knowledge (API mode)
+conclave -g --all "Explain the trolley problem and its variations" --judge claude
+
+# Fact-checking
+conclave -g gemini,perplexity,claude "Is it true that..." --judge claude
+```
+
+### Architecture Decisions
+
+```bash
+conclave --all "Should we use microservices or monolith for this use case?" \
+  -f requirements.md --judge claude --verbose
+```
+
+## Output Formats
+
+### Human-Readable (Default)
+
+Shows verdict, confidence, reasoning, agreements, disagreements, and recommendations in a formatted display.
+
+### JSON (`--json`)
+
+```bash
+conclave gemini,claude "Analyze" --judge claude --json | jq '.verdict'
+```
+
+Structured output for scripting and CI/CD integration.
+
+### Brief (`--brief`)
+
+One-line summary: verdict, confidence, and key recommendation.
+
+### Quiet (`-q`)
+
+Verdict only - for scripts that just need the answer.
+
+## Flags Reference
+
+```
+Query Flags:
+  -f, --file <path>      Include file content (repeatable)
+  -j, --judge <provider> LLM that synthesizes verdict (default: claude)
+      --no-judge         Skip synthesis, return raw responses
+  -t, --timeout <secs>   Per-provider timeout (default: 60)
+  -m, --model <p:model>  Override model for provider
+
+Mode Flags:
+  -g, --general          Use API mode (no coding restrictions)
+  -a, --all              Query all available providers
+      --blind            Anonymize providers for unbiased judging
+
+Output Flags:
+      --json             Structured JSON output
+      --verbose          Include full provider responses
+      --brief            Short verdict only
+  -q, --quiet            Minimal output (verdict only)
+
+Other:
+      --list-providers   List available providers and exit
+      --version          Show version
+```
+
+## Features
+
+### Parallel Execution
+
+All providers are queried simultaneously. Total time ≈ slowest provider, not sum of all.
+
+### Automatic Retry
+
+Transient failures (429 rate limits, 5xx errors) automatically retry with exponential backoff:
+- Up to 3 retries
+- 1s → 2s → 4s delays with jitter
+- Respects `Retry-After` headers
+
+### Blind Mode
+
+Anonymize provider names so the judge evaluates responses without brand bias:
+
+```bash
+conclave --all "Which solution is best?" -f options.md --judge claude --blind
+```
+
+The judge sees "Provider A", "Provider B", etc. instead of "OpenAI", "Claude".
+
+### Context Handling
+
+- Automatic stdin detection for piped content
+- Multiple `-f` flags for comparing files
+- Configurable context size limits
 
 ## Configuration
 
-Create `~/.config/conclave/config.yaml`:
+### Config File
+
+`~/.config/conclave/config.yaml`:
 
 ```yaml
-default_providers:
-  - gemini
-  - openai
-  - claude
-
 default_judge: claude
 timeout_seconds: 60
 
 models:
-  gemini: gemini-2.5-pro
+  gemini: gemini-3-pro-preview
   openai: gpt-5.2
-  claude: sonnet
-  perplexity: sonar-pro
-  grok: grok-code-fast-1
-  glm: zai-coding-plan/glm-4.7
+  claude: opus
 ```
 
-Or use environment variables:
+### Environment Variables
 
 ```bash
-export CONCLAVE_GEMINI_MODEL=gemini-2.5-flash
-export CONCLAVE_TIMEOUT=30
-```
-
-## Flags
-
-```
--f, --file <path>      Include file content (repeatable)
--j, --judge <provider> LLM that synthesizes verdict (default: claude)
-    --no-judge         Return raw results, skip synthesis
--t, --timeout <secs>   Per-provider timeout (default: 60)
--m, --model <p:model>  Override model for provider
-    --json             Output structured JSON
-    --verbose          Include full provider responses
-    --brief            Short verdict only
--q, --quiet            Minimal output (verdict only)
-    --list-providers   List available providers and exit
-    --version          Show version
+CONCLAVE_TIMEOUT=30           # Override timeout
+CONCLAVE_GEMINI_MODEL=...     # Override default model
+CONCLAVE_EXCLUDE=glm,grok     # Exclude providers from --all
 ```
 
 ## How It Works
 
-1. **Query Phase**: Sends your prompt to all specified providers in parallel
-2. **Judge Phase**: A designated LLM (default: Claude) synthesizes the responses into a verdict
-3. **Output Phase**: Formats the result (JSON, human-readable, or brief)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         CONCLAVE                            │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
+│  │ Gemini  │  │ OpenAI  │  │ Claude  │  │  Grok   │  ...   │
+│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘        │
+│       │            │            │            │              │
+│       └────────────┴─────┬──────┴────────────┘              │
+│                          │                                  │
+│                          ▼                                  │
+│                    ┌───────────┐                            │
+│                    │   Judge   │                            │
+│                    │  (Claude) │                            │
+│                    └─────┬─────┘                            │
+│                          │                                  │
+│                          ▼                                  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ Verdict: SAFE (high confidence)                      │  │
+│  │ Agreements: [...]                                    │  │
+│  │ Disagreements: [...]                                 │  │
+│  │ Recommendations: [...]                               │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
 
-The judge identifies:
-- Points of agreement across models
-- Disagreements and which reasoning is stronger
-- Final verdict with confidence level
-- Actionable recommendations
+1. **Query Phase** - Prompt sent to all providers in parallel
+2. **Judge Phase** - Designated LLM synthesizes responses
+3. **Output Phase** - Formatted result with confidence and reasoning
+
+## Use Cases
+
+- **Code Review** - Multiple perspectives on security, quality, performance
+- **Fact-Checking** - Cross-reference claims across models
+- **Architecture Decisions** - Consensus on design trade-offs
+- **Research Synthesis** - Combine knowledge from multiple sources
+- **Risk Assessment** - Identify blind spots in analysis
 
 ## License
 
