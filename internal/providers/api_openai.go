@@ -9,6 +9,7 @@ import (
 // OpenAIAPIProvider implements the OpenAI API
 type OpenAIAPIProvider struct {
 	apiBaseProvider
+	keyRotator *KeyRotator
 }
 
 // NewOpenAIAPIProvider creates a new OpenAI API provider
@@ -20,7 +21,16 @@ func NewOpenAIAPIProvider() *OpenAIAPIProvider {
 			apiKeyEnv:    "OPENAI_API_KEY",
 			baseURL:      "https://api.openai.com",
 		},
+		keyRotator: NewKeyRotator("OPENAI_API_KEY"),
 	}
+}
+
+func (p *OpenAIAPIProvider) IsAvailable() bool {
+	return p.keyRotator.HasKeys()
+}
+
+func (p *OpenAIAPIProvider) getAPIKey() string {
+	return p.keyRotator.Next()
 }
 
 // Query executes a prompt using OpenAI API

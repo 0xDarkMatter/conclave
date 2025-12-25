@@ -36,7 +36,7 @@ func DefaultConfig() *Config {
 		CheapModels: map[string]string{
 			"gemini":     "gemini-3-flash-preview",
 			"openai":     "gpt-5-nano",
-			"claude":     "claude-haiku-4-5-20251015",
+			"claude":     "claude-haiku-4-5-20251001",
 			"perplexity": "sonar",
 			"grok":       "grok-4-1-fast-non-reasoning",
 			"glm":        "glm-4.6v-flashx",

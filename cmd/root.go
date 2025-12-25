@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xDarkMatter/conclave-cli/internal/batch"
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
 	"github.com/0xDarkMatter/conclave-cli/internal/context"
 	"github.com/0xDarkMatter/conclave-cli/internal/judge"
@@ -36,6 +37,14 @@ var (
 	flagBlind         bool
 	flagGeneral       bool
 	flagCheap         bool
+
+	// Batch mode flags
+	flagBatch       string
+	flagWorkers     int
+	flagOutput      string
+	flagResume      bool
+	flagNoRateLimit bool
+	flagRetries     int
 )
 
 func SetVersion(v string) {
@@ -76,14 +85,30 @@ Examples:
 		if listProviders {
 			return nil
 		}
-		// With --all, only need 1 arg (the prompt)
+
+		// With --batch and --all, prompt is optional (can be in JSONL)
+		batchFile, _ := cmd.Flags().GetString("batch")
 		all, _ := cmd.Flags().GetBool("all")
+		if batchFile != "" && all {
+			return nil // Prompt can be in JSONL or on command line
+		}
+
+		// With --all, only need 1 arg (the prompt)
 		if all {
 			if len(args) < 1 {
 				return fmt.Errorf("requires prompt argument when using --all")
 			}
 			return nil
 		}
+
+		// With --batch, need providers and optional prompt
+		if batchFile != "" {
+			if len(args) < 1 {
+				return fmt.Errorf("requires providers argument when using --batch (or use --all)")
+			}
+			return nil // Prompt optional with --batch
+		}
+
 		if len(args) < 2 {
 			return fmt.Errorf("requires at least 2 args: <providers> <prompt>")
 		}
@@ -110,6 +135,14 @@ func init() {
 	rootCmd.Flags().BoolVarP(&flagGeneral, "general", "g", false, "General mode: use API providers (no coding restrictions)")
 	rootCmd.Flags().BoolVarP(&flagCheap, "cheap", "c", false, "Cheap mode: use smaller/faster models, implies -g (API mode)")
 
+	// Batch mode flags
+	rootCmd.Flags().StringVar(&flagBatch, "batch", "", "JSONL input file for batch processing")
+	rootCmd.Flags().IntVar(&flagWorkers, "workers", 5, "Number of parallel workers for batch mode")
+	rootCmd.Flags().StringVarP(&flagOutput, "output", "o", "", "Output file for batch mode (default: stdout)")
+	rootCmd.Flags().BoolVar(&flagResume, "resume", false, "Resume batch processing from checkpoint")
+	rootCmd.Flags().BoolVar(&flagNoRateLimit, "no-rate-limit", false, "Disable rate limiting (for high-tier API accounts)")
+	rootCmd.Flags().IntVar(&flagRetries, "retries", 0, "Number of retries for failed items (with exponential backoff)")
+
 	rootCmd.Version = version
 }
 
@@ -131,6 +164,12 @@ func runConclave(cmd *cobra.Command, args []string) error {
 
 	// Cheap mode implies API mode (no CLI tools needed for pipelines)
 	if flagCheap {
+		flagGeneral = true
+	}
+
+	// Batch mode implies cheap mode (unless -m overrides)
+	if flagBatch != "" {
+		flagCheap = true
 		flagGeneral = true
 	}
 
@@ -182,14 +221,23 @@ func runConclave(cmd *cobra.Command, args []string) error {
 			}
 			return fmt.Errorf("no providers available (check CLI installations)")
 		}
-		prompt = args[0]
+		if len(args) > 0 {
+			prompt = args[0]
+		}
 	} else {
 		providerNames = strings.Split(args[0], ",")
-		prompt = args[1]
+		if len(args) > 1 {
+			prompt = args[1]
+		}
 	}
 
 	// Apply model overrides from flags
 	modelOverrides := parseModelOverrides(flagModel)
+
+	// Handle batch mode
+	if flagBatch != "" {
+		return runBatchMode(cmd, cfg, providerNames, prompt, modelOverrides)
+	}
 
 	// Build context from stdin and files
 	ctx, err := context.Build(context.Options{
@@ -320,4 +368,90 @@ func parseModelOverrides(overrides []string) map[string]string {
 		}
 	}
 	return result
+}
+
+func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string, defaultPrompt string, modelOverrides map[string]string) error {
+	// Open input file
+	var input *os.File
+	var err error
+	if flagBatch == "-" {
+		input = os.Stdin
+	} else {
+		input, err = os.Open(flagBatch)
+		if err != nil {
+			return fmt.Errorf("failed to open batch file: %w", err)
+		}
+		defer input.Close()
+	}
+
+	// Set up output
+	var output *os.File
+	if flagOutput == "" || flagOutput == "-" {
+		output = os.Stdout
+	} else {
+		// If resuming, open for append
+		if flagResume {
+			output, err = os.OpenFile(flagOutput, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		} else {
+			output, err = os.Create(flagOutput)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to open output file: %w", err)
+		}
+		defer output.Close()
+	}
+
+	// Create registry and processor
+	registry := providers.NewRegistry(cfg, flagGeneral, flagCheap)
+	processor, err := batch.NewProcessor(batch.Options{
+		Registry:       registry,
+		Config:         cfg,
+		ProviderNames:  providerNames,
+		ModelOverrides: modelOverrides,
+		JudgeName:      flagJudge,
+		Workers:        flagWorkers,
+		Timeout:        flagTimeout,
+		OutputPath:     flagOutput,
+		Resume:         flagResume,
+		Verbose:        flagVerbose,
+		Blind:          flagBlind,
+		NoRateLimit:    flagNoRateLimit,
+		Retries:        flagRetries,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create batch processor: %w", err)
+	}
+
+	// Run batch processing
+	stats, err := processor.Process(cmd.Context(), input, output, defaultPrompt)
+	if err != nil {
+		return fmt.Errorf("batch processing failed: %w", err)
+	}
+
+	// Print summary to stderr
+	duration := time.Since(stats.StartTime)
+	fmt.Fprintf(os.Stderr, "\nBatch complete: %d items processed (%s)\n", stats.Total, formatDuration(duration))
+	fmt.Fprintf(os.Stderr, "  Success: %d (%.1f%%) | Failed: %d (%.1f%%)\n",
+		stats.Succeeded, float64(stats.Succeeded)/float64(stats.Total)*100,
+		stats.Failed, float64(stats.Failed)/float64(stats.Total)*100)
+	fmt.Fprintf(os.Stderr, "  Estimated cost: $%.4f\n", stats.TotalCost)
+
+	return nil
+}
+
+func formatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		m := int(d.Minutes())
+		s := int(d.Seconds()) % 60
+		if s > 0 {
+			return fmt.Sprintf("%dm%ds", m, s)
+		}
+		return fmt.Sprintf("%dm", m)
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	return fmt.Sprintf("%dh%dm", h, m)
 }

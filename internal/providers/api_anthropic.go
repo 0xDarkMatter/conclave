@@ -10,6 +10,7 @@ import (
 // AnthropicAPIProvider implements the Anthropic API
 type AnthropicAPIProvider struct {
 	apiBaseProvider
+	keyRotator *KeyRotator
 }
 
 // NewAnthropicAPIProvider creates a new Anthropic API provider
@@ -21,7 +22,16 @@ func NewAnthropicAPIProvider() *AnthropicAPIProvider {
 			apiKeyEnv:    "ANTHROPIC_API_KEY",
 			baseURL:      "https://api.anthropic.com",
 		},
+		keyRotator: NewKeyRotator("ANTHROPIC_API_KEY"),
 	}
+}
+
+func (p *AnthropicAPIProvider) IsAvailable() bool {
+	return p.keyRotator.HasKeys()
+}
+
+func (p *AnthropicAPIProvider) getAPIKey() string {
+	return p.keyRotator.Next()
 }
 
 // Anthropic-specific request/response structures

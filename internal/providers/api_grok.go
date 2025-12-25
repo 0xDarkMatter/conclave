@@ -3,13 +3,13 @@ package providers
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 )
 
 // GrokAPIProvider implements the xAI Grok API
 type GrokAPIProvider struct {
 	apiBaseProvider
+	keyRotator *KeyRotator
 }
 
 // NewGrokAPIProvider creates a new Grok API provider
@@ -21,20 +21,16 @@ func NewGrokAPIProvider() *GrokAPIProvider {
 			apiKeyEnv:    "XAI_API_KEY",
 			baseURL:      "https://api.x.ai",
 		},
+		keyRotator: NewKeyRotator("XAI_API_KEY", "GROK_API_KEY"),
 	}
 }
 
-// IsAvailable checks for XAI_API_KEY or GROK_API_KEY
 func (p *GrokAPIProvider) IsAvailable() bool {
-	return os.Getenv("XAI_API_KEY") != "" || os.Getenv("GROK_API_KEY") != ""
+	return p.keyRotator.HasKeys()
 }
 
 func (p *GrokAPIProvider) getAPIKey() string {
-	key := os.Getenv("XAI_API_KEY")
-	if key == "" {
-		key = os.Getenv("GROK_API_KEY")
-	}
-	return key
+	return p.keyRotator.Next()
 }
 
 // Query executes a prompt using xAI Grok API (OpenAI-compatible)

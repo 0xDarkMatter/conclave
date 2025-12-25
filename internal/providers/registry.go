@@ -65,7 +65,7 @@ func AllAPIProviders() []Provider {
 		NewAnthropicAPIProvider(),
 		NewPerplexityAPIProvider(),
 		NewGrokAPIProvider(),
-		// NewGLMAPIProvider(), // Disabled: too slow (~20s response times)
+		// NewGLMAPIProvider(), // Disabled: account balance required
 	}
 }
 

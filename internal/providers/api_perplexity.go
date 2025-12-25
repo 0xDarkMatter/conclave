@@ -9,6 +9,7 @@ import (
 // PerplexityAPIProvider implements the Perplexity API
 type PerplexityAPIProvider struct {
 	apiBaseProvider
+	keyRotator *KeyRotator
 }
 
 // NewPerplexityAPIProvider creates a new Perplexity API provider
@@ -20,7 +21,16 @@ func NewPerplexityAPIProvider() *PerplexityAPIProvider {
 			apiKeyEnv:    "PERPLEXITY_API_KEY",
 			baseURL:      "https://api.perplexity.ai",
 		},
+		keyRotator: NewKeyRotator("PERPLEXITY_API_KEY"),
 	}
+}
+
+func (p *PerplexityAPIProvider) IsAvailable() bool {
+	return p.keyRotator.HasKeys()
+}
+
+func (p *PerplexityAPIProvider) getAPIKey() string {
+	return p.keyRotator.Next()
 }
 
 // Query executes a prompt using Perplexity API (OpenAI-compatible)

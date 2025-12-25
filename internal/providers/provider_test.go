@@ -194,3 +194,111 @@ func TestGLMProvider(t *testing.T) {
 		t.Errorf("expected model 'zai-coding-plan/glm-4.7', got %s", p.DefaultModel())
 	}
 }
+
+func TestKeyRotatorSingleKey(t *testing.T) {
+	// Set up test env var
+	t.Setenv("TEST_API_KEY", "key1")
+
+	rotator := NewKeyRotator("TEST_API_KEY")
+
+	if !rotator.HasKeys() {
+		t.Error("expected HasKeys to be true")
+	}
+
+	if rotator.Count() != 1 {
+		t.Errorf("expected 1 key, got %d", rotator.Count())
+	}
+
+	// Single key should always return the same key
+	for i := 0; i < 5; i++ {
+		if key := rotator.Next(); key != "key1" {
+			t.Errorf("expected 'key1', got %s", key)
+		}
+	}
+}
+
+func TestKeyRotatorMultipleKeys(t *testing.T) {
+	// Set up test env var with comma-separated keys
+	t.Setenv("TEST_API_KEY", "key1,key2,key3")
+
+	rotator := NewKeyRotator("TEST_API_KEY")
+
+	if !rotator.HasKeys() {
+		t.Error("expected HasKeys to be true")
+	}
+
+	if rotator.Count() != 3 {
+		t.Errorf("expected 3 keys, got %d", rotator.Count())
+	}
+
+	// Should rotate through keys
+	seen := make(map[string]int)
+	for i := 0; i < 9; i++ {
+		key := rotator.Next()
+		seen[key]++
+	}
+
+	// Each key should be seen 3 times
+	for _, key := range []string{"key1", "key2", "key3"} {
+		if seen[key] != 3 {
+			t.Errorf("expected key %s to be seen 3 times, got %d", key, seen[key])
+		}
+	}
+}
+
+func TestKeyRotatorWithSpaces(t *testing.T) {
+	// Keys with whitespace should be trimmed
+	t.Setenv("TEST_API_KEY", " key1 , key2 , key3 ")
+
+	rotator := NewKeyRotator("TEST_API_KEY")
+
+	if rotator.Count() != 3 {
+		t.Errorf("expected 3 keys, got %d", rotator.Count())
+	}
+
+	// Verify keys are trimmed
+	keys := make(map[string]bool)
+	for i := 0; i < 3; i++ {
+		keys[rotator.Next()] = true
+	}
+
+	for _, expected := range []string{"key1", "key2", "key3"} {
+		if !keys[expected] {
+			t.Errorf("expected key %s (trimmed), but not found", expected)
+		}
+	}
+}
+
+func TestKeyRotatorFallback(t *testing.T) {
+	// Primary not set, fallback is set
+	t.Setenv("TEST_API_KEY", "")
+	t.Setenv("TEST_FALLBACK_KEY", "fallback_key")
+
+	rotator := NewKeyRotator("TEST_API_KEY", "TEST_FALLBACK_KEY")
+
+	if !rotator.HasKeys() {
+		t.Error("expected HasKeys to be true with fallback")
+	}
+
+	if key := rotator.Next(); key != "fallback_key" {
+		t.Errorf("expected 'fallback_key', got %s", key)
+	}
+}
+
+func TestKeyRotatorEmpty(t *testing.T) {
+	t.Setenv("TEST_API_KEY", "")
+
+	rotator := NewKeyRotator("TEST_API_KEY")
+
+	if rotator.HasKeys() {
+		t.Error("expected HasKeys to be false")
+	}
+
+	if rotator.Count() != 0 {
+		t.Errorf("expected 0 keys, got %d", rotator.Count())
+	}
+
+	if key := rotator.Next(); key != "" {
+		t.Errorf("expected empty string, got %s", key)
+	}
+}

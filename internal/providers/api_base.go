@@ -10,8 +10,69 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 )
+
+// KeyRotator provides round-robin selection of API keys
+type KeyRotator struct {
+	keys    []string
+	counter atomic.Uint64
+}
+
+// NewKeyRotator creates a rotator from a comma-separated env var
+func NewKeyRotator(envVar string, fallbackEnvVars ...string) *KeyRotator {
+	// Try primary env var first
+	keyStr := os.Getenv(envVar)
+
+	// Try fallbacks if primary is empty
+	if keyStr == "" {
+		for _, fallback := range fallbackEnvVars {
+			if keyStr = os.Getenv(fallback); keyStr != "" {
+				break
+			}
+		}
+	}
+
+	if keyStr == "" {
+		return &KeyRotator{keys: nil}
+	}
+
+	// Split by comma, trim whitespace
+	parts := strings.Split(keyStr, ",")
+	var keys []string
+	for _, k := range parts {
+		k = strings.TrimSpace(k)
+		if k != "" {
+			keys = append(keys, k)
+		}
+	}
+
+	return &KeyRotator{keys: keys}
+}
+
+// Next returns the next API key in round-robin order
+func (r *KeyRotator) Next() string {
+	if len(r.keys) == 0 {
+		return ""
+	}
+	if len(r.keys) == 1 {
+		return r.keys[0]
+	}
+	idx := r.counter.Add(1) % uint64(len(r.keys))
+	return r.keys[idx]
+}
+
+// HasKeys returns true if at least one key is available
+func (r *KeyRotator) HasKeys() bool {
+	return len(r.keys) > 0
+}
+
+// Count returns the number of available keys
+func (r *KeyRotator) Count() int {
+	return len(r.keys)
+}
 
 // Retry configuration
 const (

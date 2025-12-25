@@ -144,6 +144,40 @@ conclave -c --all "Summarize" -f doc.md --brief
 | grok | grok-4-1-fast | grok-4-1-fast-non-reasoning |
 | glm | glm-4.7 | glm-4.6v-flashx |
 
+### Batch Mode (`--batch`)
+
+Process thousands of items with parallel workers, rate limiting, and resume capability. Built in Go for performant concurrent execution - scales to 200 parallel workers with minimal overhead. Uses cheap mode by default.
+
+```bash
+# Process a JSONL file with a single provider
+conclave -c grok "Classify this account" --batch items.jsonl -o results.jsonl
+
+# Parallel workers for faster throughput
+conclave -c gemini "Analyze" --batch items.jsonl --workers 50 -o results.jsonl
+
+# Resume an interrupted job
+conclave -c claude "Analyze" --batch items.jsonl -o results.jsonl --resume
+```
+
+**Input format (JSONL):**
+```jsonl
+{"id": "1", "context": "Username: @acme_corp\nBio: Enterprise solutions...\nFollowers: 50K\n\nRecent posts:\n..."}
+{"id": "2", "context": "Username: @jane_dev\nBio: Software engineer, coffee lover\nFollowers: 2K\n\nRecent posts:\n..."}
+```
+
+**Performance (99 items, 50 workers):**
+
+| Provider | Time | Cost | Best For |
+|----------|------|------|----------|
+| **Grok** | 23s | $0.05 | Speed & cost efficiency |
+| Gemini | 33s | $0.28 | Budget with decent quality |
+| Claude | 39s | $0.65 | Accuracy, depth, nuanced analysis |
+| OpenAI | 88s | $0.18 | Reliable fallback |
+
+**Note:** Complex prompts slow throughput by 1.4-2.3x. Claude produces the most comprehensive analysis but at higher cost.
+
+See [docs/BATCH_MODE.md](docs/BATCH_MODE.md) for full documentation and [docs/BATCH_BENCHMARKS.md](docs/BATCH_BENCHMARKS.md) for detailed performance benchmarks.
+
 ## Providers
 
 | Provider | CLI Mode | API Mode (`-g`) | Env Variable |
@@ -275,6 +309,12 @@ Mode Flags:
   -c, --cheap            Cheap mode: smaller/faster models, implies -g
   -a, --all              Query all available providers
       --blind            Anonymize providers for unbiased judging
+
+Batch Mode:
+      --batch <file>     JSONL input file for batch processing
+      --workers <n>      Number of parallel workers (default: 5)
+  -o, --output <file>    Output file (default: stdout)
+      --resume           Resume from checkpoint, skip processed items
 
 Output Flags:
       --json             Structured JSON output

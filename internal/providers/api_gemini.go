@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 )
 
 // GeminiAPIProvider implements the Google Gemini API
 type GeminiAPIProvider struct {
 	apiBaseProvider
+	keyRotator *KeyRotator
 }
 
 // NewGeminiAPIProvider creates a new Gemini API provider
@@ -22,20 +22,17 @@ func NewGeminiAPIProvider() *GeminiAPIProvider {
 			apiKeyEnv:    "GEMINI_API_KEY",
 			baseURL:      "https://generativelanguage.googleapis.com",
 		},
+		keyRotator: NewKeyRotator("GEMINI_API_KEY", "GOOGLE_API_KEY"),
 	}
 }
 
 // IsAvailable checks for GEMINI_API_KEY or GOOGLE_API_KEY
 func (p *GeminiAPIProvider) IsAvailable() bool {
-	return os.Getenv("GEMINI_API_KEY") != "" || os.Getenv("GOOGLE_API_KEY") != ""
+	return p.keyRotator.HasKeys()
 }
 
 func (p *GeminiAPIProvider) getAPIKey() string {
-	key := os.Getenv("GEMINI_API_KEY")
-	if key == "" {
-		key = os.Getenv("GOOGLE_API_KEY")
-	}
-	return key
+	return p.keyRotator.Next()
 }
 
 // Gemini-specific request/response structures
