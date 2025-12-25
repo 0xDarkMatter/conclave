@@ -55,6 +55,41 @@ cd conclave
 make install  # installs to ~/.local/bin
 ```
 
+## Requirements
+
+Conclave operates in two modes with different requirements:
+
+### API Mode (`-g`) - Recommended for Most Users
+
+**Only requires API keys** - no additional CLI tools needed.
+
+```bash
+conclave init                    # Set up API keys
+conclave -g gemini,claude "..."  # Works immediately
+```
+
+### CLI Mode (Default)
+
+Uses provider-specific CLI tools optimized for coding tasks. Each provider requires its CLI installed:
+
+| Provider | CLI Tool | Installation |
+|----------|----------|--------------|
+| **gemini** | `gemini` | `npm install -g @anthropic-ai/gemini-cli` |
+| **claude** | `claude` | `npm install -g @anthropic-ai/claude-code` |
+| **openai** | `codex` | `npm install -g @openai/codex` |
+| **grok** | `grok` | See [xAI Grok CLI](https://github.com/xai-org/grok-cli) |
+| **perplexity** | `perplexity` | See [Perplexity CLI](https://github.com/perplexity-ai/perplexity-cli) |
+| **glm** | `opencode` | See [OpenCode CLI](https://github.com/opencode-ai/opencode) |
+
+**Check what's available:**
+
+```bash
+conclave --list-providers      # CLI mode - shows installed CLIs
+conclave --list-providers -g   # API mode - shows configured API keys
+```
+
+**Tip:** Start with API mode (`-g`) to get running quickly. Add CLI tools later if you want their coding-specific optimizations.
+
 ## Quick Start
 
 ```bash
