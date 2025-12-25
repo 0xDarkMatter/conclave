@@ -112,6 +112,9 @@ func init() {
 }
 
 func Execute() {
+	// Load API keys from ~/.config/conclave/.env before anything else
+	_ = config.LoadEnvFile()
+
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -122,6 +125,16 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	if flagListProviders {
 		listProviders()
 		return nil
+	}
+
+	// Auto-trigger init if no providers configured
+	if !providers.AnyAvailable(flagGeneral) {
+		if RunInitIfNeeded(flagGeneral) {
+			// Re-check after init
+			if !providers.AnyAvailable(flagGeneral) {
+				return fmt.Errorf("no providers configured - run 'conclave init' to set up API keys")
+			}
+		}
 	}
 
 	// Load config

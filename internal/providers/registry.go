@@ -66,6 +66,23 @@ func AllAPIProviders() []Provider {
 	}
 }
 
+// AnyAvailable returns true if at least one provider is available
+func AnyAvailable(general bool) bool {
+	var providerList []Provider
+	if general {
+		providerList = AllAPIProviders()
+	} else {
+		providerList = AllCLIProviders()
+	}
+
+	for _, p := range providerList {
+		if p.IsAvailable() {
+			return true
+		}
+	}
+	return false
+}
+
 // GetProvider returns a single provider by name
 func (r *Registry) GetProvider(name string, modelOverrides map[string]string) (Provider, error) {
 	p, ok := r.providers[name]
