@@ -1,15 +1,51 @@
 # Conclave
 
-> Multi-LLM consensus engine. Query multiple AI models in parallel, synthesize verdicts.
+> One CLI for every LLM. Query any model, or all of them at once.
 
-Conclave sends your prompt to multiple LLMs simultaneously, then uses a judge model to synthesize their responses into a single verdict with confidence levels, points of agreement, and actionable recommendations.
+Conclave is a unified interface for major LLM providers. Use it as a single-command gateway to Gemini, Claude, GPT, Grok, Perplexity, and GLM - or query them all in parallel and synthesize their responses into a verdict with confidence levels and actionable recommendations.
 
 ## Why Conclave?
 
+- **One interface** - Same syntax for Gemini, Claude, GPT, Grok, Perplexity, GLM
 - **Reduce bias** - No single model's quirks dominate the response
 - **Increase confidence** - Agreement across models = higher signal
 - **Catch blind spots** - Different models notice different issues
 - **Faster iteration** - Parallel queries, one synthesized answer
+
+## One CLI, Every LLM
+
+Beyond consensus, Conclave serves as a **unified interface for any LLM**. Instead of learning six different CLI tools with different syntaxes, flags, and quirks - use one:
+
+```bash
+# Same syntax, any provider
+conclave gemini "Explain this error" -f error.log
+conclave claude "Review this PR" -f diff.txt
+conclave openai "Generate test cases" -f api.go
+conclave grok "What does this regex do?" -f patterns.txt
+```
+
+**Why use Conclave for single-provider queries?**
+
+| Benefit | Without Conclave | With Conclave |
+|---------|-----------------|---------------|
+| Syntax | Learn each CLI's flags | One consistent syntax |
+| Files | Different `-f`/`--file`/stdin handling | Always `-f` |
+| Setup | Configure each tool separately | `conclave init` once |
+| Switching | Remember which tool for which task | Just change the provider name |
+| Models | Different `--model` formats | Always `-m provider:model` |
+
+```bash
+# Quick single-provider queries (no judge needed)
+conclave gemini "What's the time complexity of this?" -f algo.py
+conclave perplexity "Latest news on Rust 2.0"
+conclave -g claude "Summarize this paper" -f paper.pdf
+
+# Switch models on the fly
+conclave gemini "Explain" -m gemini:gemini-2.5-flash  # Fast
+conclave gemini "Explain" -m gemini:gemini-3-pro-preview  # Thorough
+```
+
+When you query a single provider, Conclave skips the judge phase and returns the response directly - it's just a cleaner interface to the underlying LLM.
 
 ## Installation
 
@@ -279,6 +315,14 @@ CONCLAVE_EXCLUDE=glm,grok     # Exclude providers from --all
 3. **Output Phase** - Formatted result with confidence and reasoning
 
 ## Use Cases
+
+### Single Provider (Unified Interface)
+
+- **Quick queries** - Ask any LLM with consistent syntax
+- **Model comparison** - Same prompt, different providers, see which you prefer
+- **Specialized tasks** - Perplexity for search, Claude for code, Grok for X context
+
+### Multi-Provider (Consensus)
 
 - **Code Review** - Multiple perspectives on security, quality, performance
 - **Fact-Checking** - Cross-reference claims across models
