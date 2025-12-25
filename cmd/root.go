@@ -421,6 +421,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 	if err != nil {
 		return fmt.Errorf("failed to create batch processor: %w", err)
 	}
+	defer processor.Close() // Clean up checkpoint file handle
 
 	// Run batch processing
 	stats, err := processor.Process(cmd.Context(), input, output, defaultPrompt)

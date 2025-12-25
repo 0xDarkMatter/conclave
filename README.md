@@ -315,6 +315,7 @@ Batch Mode:
       --workers <n>      Number of parallel workers (default: 5)
   -o, --output <file>    Output file (default: stdout)
       --resume           Resume from checkpoint, skip processed items
+      --retries <n>      Retry failed items with exponential backoff (default: 0)
 
 Output Flags:
       --json             Structured JSON output

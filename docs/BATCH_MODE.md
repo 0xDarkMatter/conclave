@@ -35,6 +35,7 @@ cat results.jsonl
 | `--workers N` | 5 | Number of parallel workers |
 | `--output FILE` | stdout | Output file path |
 | `--resume` | false | Skip already-processed items |
+| `--retries N` | 0 | Retry failed items N times with exponential backoff |
 | `--no-rate-limit` | false | Disable rate limiting (for high-tier accounts) |
 
 Batch mode automatically implies:
@@ -142,7 +143,8 @@ Batch mode includes automatic rate limiting to avoid 429 errors:
 
 | Provider Count | Interval | Effective RPM |
 |----------------|----------|---------------|
-| 1-2 providers | 3s | ~20 |
+| 1 provider | 1s | ~60 |
+| 2 providers | 3s | ~20 |
 | 3-4 providers | 4s | ~15 |
 | 5+ providers | 6s | ~10 |
 

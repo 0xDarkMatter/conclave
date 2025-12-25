@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -189,16 +190,24 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 		return &Stats{}, nil
 	}
 
-	// Filter already processed items if resuming
-	if p.checkpoint != nil {
-		var filtered []Item
-		for _, item := range items {
-			if !p.checkpoint.IsProcessed(item.ID) {
-				filtered = append(filtered, item)
-			}
+	// Filter duplicates and already-processed items
+	seen := make(map[string]bool)
+	var filtered []Item
+	for _, item := range items {
+		// Warn about duplicate IDs in input
+		if seen[item.ID] {
+			fmt.Fprintf(os.Stderr, "Warning: duplicate ID '%s' in input, skipping\n", item.ID)
+			continue
 		}
-		items = filtered
+		seen[item.ID] = true
+
+		// Skip already-processed items if resuming
+		if p.checkpoint != nil && p.checkpoint.IsProcessed(item.ID) {
+			continue
+		}
+		filtered = append(filtered, item)
 	}
+	items = filtered
 
 	// Initialize progress
 	p.progress = NewProgress(len(items), os.Stderr)
@@ -328,6 +337,11 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 
 		lastErr = err
 
+		// Adaptive rate limiting: slow down on rate limit errors
+		if isRateLimitError(err) {
+			p.rateLimiter.RecordRateLimit()
+		}
+
 		// Don't retry on context cancellation
 		if ctx.Err() != nil {
 			break
@@ -431,11 +445,18 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 		for k, v := range item.raw {
 			if k != "id" && k != "prompt" && k != "context" {
 				var val interface{}
-				json.Unmarshal(v, &val)
-				result.ExtraFields[k] = val
+				if err := json.Unmarshal(v, &val); err != nil {
+					// Store raw string if unmarshal fails
+					result.ExtraFields[k] = string(v)
+				} else {
+					result.ExtraFields[k] = val
+				}
 			}
 		}
 	}
+
+	// Adaptive rate limiting: record success for potential speedup
+	p.rateLimiter.RecordSuccess()
 
 	return result
 }
@@ -512,6 +533,25 @@ func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.
 	}
 
 	return totalCost
+}
+
+// Close cleans up processor resources (checkpoint file handle)
+func (p *Processor) Close() error {
+	if p.checkpoint != nil {
+		return p.checkpoint.Close()
+	}
+	return nil
+}
+
+// isRateLimitError checks if an error is a rate limit (429) error
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "429") ||
+		strings.Contains(strings.ToLower(s), "rate limit") ||
+		strings.Contains(strings.ToLower(s), "too many requests")
 }
 
 // Summary prints a summary of the batch processing

@@ -8,9 +8,11 @@ import (
 
 // RateLimiter provides token bucket rate limiting for batch processing
 type RateLimiter struct {
-	interval time.Duration
-	mu       sync.Mutex
-	lastTime time.Time
+	interval      time.Duration
+	baseInterval  time.Duration // Original interval for reference
+	mu            sync.Mutex
+	lastTime      time.Time
+	consecutiveOK int // Track success streak for adaptive speedup
 }
 
 // NewRateLimiter creates a rate limiter based on provider count
@@ -33,8 +35,9 @@ func NewRateLimiter(providerCount int) *RateLimiter {
 	}
 
 	return &RateLimiter{
-		interval: interval,
-		lastTime: time.Time{},
+		interval:     interval,
+		baseInterval: interval,
+		lastTime:     time.Time{},
 	}
 }
 
@@ -75,10 +78,28 @@ func (r *RateLimiter) SetInterval(d time.Duration) {
 	r.interval = d
 }
 
-// SlowDown increases the interval by 50% (for adaptive backoff)
-func (r *RateLimiter) SlowDown() {
+// RecordSuccess tracks successful requests for adaptive speedup
+// After 10 consecutive successes, speeds up the rate limiter
+func (r *RateLimiter) RecordSuccess() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.consecutiveOK++
+	if r.consecutiveOK >= 10 {
+		r.consecutiveOK = 0
+		r.speedUpLocked()
+	}
+}
+
+// RecordRateLimit slows down on 429 errors
+func (r *RateLimiter) RecordRateLimit() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.consecutiveOK = 0
+	r.slowDownLocked()
+}
+
+// slowDownLocked increases the interval by 50% (must hold lock)
+func (r *RateLimiter) slowDownLocked() {
 	r.interval = r.interval * 3 / 2
 	// Cap at 30 seconds
 	if r.interval > 30*time.Second {
@@ -86,14 +107,12 @@ func (r *RateLimiter) SlowDown() {
 	}
 }
 
-// SpeedUp decreases the interval by 25% (for adaptive recovery)
-func (r *RateLimiter) SpeedUp() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+// speedUpLocked decreases the interval by 25% (must hold lock)
+func (r *RateLimiter) speedUpLocked() {
 	r.interval = r.interval * 3 / 4
-	// Floor at 1 second
-	if r.interval < time.Second {
-		r.interval = time.Second
+	// Floor at base interval (don't go faster than original)
+	if r.interval < r.baseInterval {
+		r.interval = r.baseInterval
 	}
 }
 

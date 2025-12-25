@@ -8,6 +8,8 @@ Performance testing of batch mode with various worker counts and providers.
 - Dual API keys for Gemini (round-robin rotation)
 - Single API key for other providers
 
+**Note:** Cost figures in this document are precise estimates. README uses rounded values for readability.
+
 ---
 
 ## Gemini (gemini-2.0-flash)
