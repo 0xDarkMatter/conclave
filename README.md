@@ -135,13 +135,14 @@ conclave -c --all "Summarize" -f doc.md --brief
 
 **Cheap mode models:**
 
-| Provider | Default Model | Cheap Model | Savings |
-|----------|---------------|-------------|---------|
-| gemini | gemini-3-pro-preview | gemini-2.5-flash-lite | ~20x |
-| openai | gpt-5.2 | gpt-4o-mini | ~15x |
-| claude | claude-opus-4-5 | claude-haiku-4-5 | ~5x |
-| perplexity | sonar-pro | sonar | ~8x |
-| grok | grok-4-1-fast | grok-4-1-fast | - |
+| Provider | Default Model | Cheap Model |
+|----------|---------------|-------------|
+| gemini | gemini-3-pro-preview | gemini-3-flash-preview |
+| openai | gpt-5.2 | gpt-5-nano |
+| claude | claude-opus-4-5 | claude-haiku-4-5 |
+| perplexity | sonar-pro | sonar |
+| grok | grok-4-1-fast | grok-4-1-fast-non-reasoning |
+| glm | glm-4.7 | glm-4.6v-flashx |
 
 ## Providers
 

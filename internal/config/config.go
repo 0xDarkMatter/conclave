@@ -34,11 +34,12 @@ func DefaultConfig() *Config {
 			"glm":        "zai-coding-plan/glm-4.7",
 		},
 		CheapModels: map[string]string{
-			"gemini":     "gemini-2.5-flash-lite",
-			"openai":     "gpt-4o-mini",
+			"gemini":     "gemini-3-flash-preview",
+			"openai":     "gpt-5-nano",
 			"claude":     "claude-haiku-4-5-20251015",
 			"perplexity": "sonar",
-			"grok":       "grok-4-1-fast-reasoning",
+			"grok":       "grok-4-1-fast-non-reasoning",
+			"glm":        "glm-4.6v-flashx",
 		},
 		MaxFileSize:    102400,  // 100KB
 		MaxContextSize: 512000,  // 500KB

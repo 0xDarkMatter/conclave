@@ -164,12 +164,13 @@ var modelDisplayNames = map[string]string{
 	"gemini-3-flash-preview": "Gemini 3 Flash",
 	"gemini-3-pro-preview":   "Gemini 3 Pro",
 	// OpenAI
-	"gpt-5.2":    "GPT-5.2",
-	"gpt-4o":     "GPT-4o",
+	"gpt-5.2":     "GPT-5.2",
+	"gpt-5-nano":  "GPT-5 Nano",
+	"gpt-4o":      "GPT-4o",
 	"gpt-4o-mini": "GPT-4o Mini",
-	"o1":         "o1",
-	"o1-mini":    "o1-mini",
-	"o3":         "o3",
+	"o1":          "o1",
+	"o1-mini":     "o1-mini",
+	"o3":          "o3",
 	// Claude (CLI)
 	"sonnet": "Claude Sonnet",
 	"opus":   "Claude Opus",
@@ -188,13 +189,14 @@ var modelDisplayNames = map[string]string{
 	"grok-code-fast-1": "Grok Code Fast",
 	"grok-4-latest":    "Grok 4",
 	// Grok (API)
-	"grok-4-1-fast-reasoning": "Grok 4.1 Fast",
-	"grok-4-1-fast-non-reasoning": "Grok 4.1 Fast (No Reasoning)",
+	"grok-4-1-fast-reasoning":     "Grok 4.1 Fast",
+	"grok-4-1-fast-non-reasoning": "Grok 4.1 Fast NR",
 	// GLM (CLI)
 	"zai-coding-plan/glm-4.7": "GLM-4.7",
 	"glm-4":                   "GLM-4",
 	// GLM (API)
-	"glm-4.7": "GLM-4.7",
+	"glm-4.7":        "GLM-4.7",
+	"glm-4.6v-flashx": "GLM-4.6V FlashX",
 }
 
 // DisplayName returns a formatted name: {Company} {Model}
