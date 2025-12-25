@@ -35,6 +35,7 @@ var (
 	flagAll           bool
 	flagBlind         bool
 	flagGeneral       bool
+	flagCheap         bool
 )
 
 func SetVersion(v string) {
@@ -107,6 +108,7 @@ func init() {
 	rootCmd.Flags().BoolVarP(&flagAll, "all", "a", false, "Use all available providers")
 	rootCmd.Flags().BoolVar(&flagBlind, "blind", false, "Anonymize provider names for unbiased judging")
 	rootCmd.Flags().BoolVarP(&flagGeneral, "general", "g", false, "General mode: use API providers (no coding restrictions)")
+	rootCmd.Flags().BoolVarP(&flagCheap, "cheap", "c", false, "Cheap mode: use smaller/faster models, implies -g (API mode)")
 
 	rootCmd.Version = version
 }
@@ -125,6 +127,11 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	if flagListProviders {
 		listProviders()
 		return nil
+	}
+
+	// Cheap mode implies API mode (no CLI tools needed for pipelines)
+	if flagCheap {
+		flagGeneral = true
 	}
 
 	// Auto-trigger init if no providers configured
@@ -201,7 +208,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get provider instances
-	registry := providers.NewRegistry(cfg, flagGeneral)
+	registry := providers.NewRegistry(cfg, flagGeneral, flagCheap)
 	providerList, err := registry.GetProviders(providerNames, modelOverrides)
 	if err != nil {
 		return err

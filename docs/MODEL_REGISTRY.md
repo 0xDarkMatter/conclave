@@ -159,6 +159,29 @@ These are the models used when no `-m` override is specified:
 
 ---
 
+## Cheap Mode (`-c`)
+
+Models used when `--cheap` / `-c` flag is set (for pipelines and batch processing):
+
+| Provider | Default Model | Cheap Model | Input $/M | Output $/M |
+|----------|---------------|-------------|-----------|------------|
+| gemini | gemini-3-pro-preview | `gemini-2.5-flash-lite` | $0.10 | $0.40 |
+| openai | gpt-5.2 | `gpt-4o-mini` | $0.15 | $0.60 |
+| claude | claude-opus-4-5 | `claude-haiku-4-5-20251015` | $1.00 | $5.00 |
+| perplexity | sonar-pro | `sonar` | $1.00 | $1.00 |
+| grok | grok-4-1-fast | `grok-4-1-fast-reasoning` | $0.20 | $0.50 |
+
+**Cost comparison per 1K-token query:**
+
+| Mode | Est. Cost (5 providers + judge) |
+|------|--------------------------------|
+| Default | ~$0.03-0.05 |
+| Cheap (`-c`) | ~$0.002-0.005 |
+
+Cheap mode is ~10x more cost-effective for batch/pipeline workloads.
+
+---
+
 ## Cost Estimation
 
 Rough cost per 1K-token query (typical: 500 in, 500 out):

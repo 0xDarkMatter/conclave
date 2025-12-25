@@ -121,6 +121,28 @@ Uses raw APIs without coding restrictions. Best for general-purpose queries, res
 conclave -g gemini,openai,claude "What are the implications of quantum computing for cryptography?" --judge claude
 ```
 
+### Cheap Mode (`-c`)
+
+Uses smaller, faster models for cost-effective batch processing and pipelines. Implies `-g` (API mode).
+
+```bash
+# ~10x cheaper per query
+conclave -c gemini,claude "Classify as spam/ham" -f message.txt --json
+
+# Batch processing with all providers
+conclave -c --all "Summarize" -f doc.md --brief
+```
+
+**Cheap mode models:**
+
+| Provider | Default Model | Cheap Model | Savings |
+|----------|---------------|-------------|---------|
+| gemini | gemini-3-pro-preview | gemini-2.5-flash-lite | ~20x |
+| openai | gpt-5.2 | gpt-4o-mini | ~15x |
+| claude | claude-opus-4-5 | claude-haiku-4-5 | ~5x |
+| perplexity | sonar-pro | sonar | ~8x |
+| grok | grok-4-1-fast | grok-4-1-fast | - |
+
 ## Providers
 
 | Provider | CLI Mode | API Mode (`-g`) | Env Variable |
@@ -249,6 +271,7 @@ Query Flags:
 
 Mode Flags:
   -g, --general          Use API mode (no coding restrictions)
+  -c, --cheap            Cheap mode: smaller/faster models, implies -g
   -a, --all              Query all available providers
       --blind            Anonymize providers for unbiased judging
 
@@ -306,14 +329,20 @@ models:
   gemini: gemini-3-pro-preview
   openai: gpt-5.2
   claude: claude-opus-4-5-20251101
+
+# Override cheap mode models (optional)
+cheap_models:
+  gemini: gemini-2.5-flash      # Upgrade from flash-lite
+  claude: claude-sonnet-4-5     # Balance speed/quality
 ```
 
 ### Environment Variables
 
 ```bash
-CONCLAVE_TIMEOUT=30           # Override timeout
-CONCLAVE_GEMINI_MODEL=...     # Override default model
-CONCLAVE_EXCLUDE=glm,grok     # Exclude providers from --all
+CONCLAVE_TIMEOUT=30               # Override timeout
+CONCLAVE_GEMINI_MODEL=...         # Override default model
+CONCLAVE_CHEAP_CLAUDE_MODEL=...   # Override cheap mode model
+CONCLAVE_EXCLUDE=glm,grok         # Exclude providers from --all
 ```
 
 ## How It Works

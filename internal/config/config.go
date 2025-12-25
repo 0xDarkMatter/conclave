@@ -13,6 +13,7 @@ type Config struct {
 	DefaultJudge     string            `mapstructure:"default_judge"`
 	TimeoutSeconds   int               `mapstructure:"timeout_seconds"`
 	Models           map[string]string `mapstructure:"models"`
+	CheapModels      map[string]string `mapstructure:"cheap_models"`
 	MaxFileSize      int64             `mapstructure:"max_file_size"`
 	MaxContextSize   int64             `mapstructure:"max_context_size"`
 	WarnFileSize     int64             `mapstructure:"warn_file_size"`
@@ -31,6 +32,13 @@ func DefaultConfig() *Config {
 			"perplexity": "sonar-pro",
 			"grok":       "grok-code-fast-1",
 			"glm":        "zai-coding-plan/glm-4.7",
+		},
+		CheapModels: map[string]string{
+			"gemini":     "gemini-2.5-flash-lite",
+			"openai":     "gpt-4o-mini",
+			"claude":     "claude-haiku-4-5-20251015",
+			"perplexity": "sonar",
+			"grok":       "grok-4-1-fast-reasoning",
 		},
 		MaxFileSize:    102400,  // 100KB
 		MaxContextSize: 512000,  // 500KB
@@ -89,6 +97,20 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Override cheap models from environment
+	envCheapModels := map[string]string{
+		"CONCLAVE_CHEAP_GEMINI_MODEL":     "gemini",
+		"CONCLAVE_CHEAP_OPENAI_MODEL":     "openai",
+		"CONCLAVE_CHEAP_CLAUDE_MODEL":     "claude",
+		"CONCLAVE_CHEAP_PERPLEXITY_MODEL": "perplexity",
+		"CONCLAVE_CHEAP_GROK_MODEL":       "grok",
+	}
+	for env, provider := range envCheapModels {
+		if val := os.Getenv(env); val != "" {
+			cfg.CheapModels[provider] = val
+		}
+	}
+
 	return cfg, nil
 }
 
@@ -98,6 +120,14 @@ func (c *Config) GetModel(provider string, override string) string {
 		return override
 	}
 	if model, ok := c.Models[provider]; ok {
+		return model
+	}
+	return ""
+}
+
+// GetCheapModel returns the cheap model for a provider
+func (c *Config) GetCheapModel(provider string) string {
+	if model, ok := c.CheapModels[provider]; ok {
 		return model
 	}
 	return ""

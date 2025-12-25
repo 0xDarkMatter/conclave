@@ -11,15 +11,18 @@ type Registry struct {
 	config    *config.Config
 	providers map[string]Provider
 	general   bool // true = API mode, false = CLI mode
+	cheap     bool // true = use cheaper/faster models
 }
 
 // NewRegistry creates a new provider registry
 // If general is true, uses API-based providers for general-purpose queries
-func NewRegistry(cfg *config.Config, general bool) *Registry {
+// If cheap is true, uses cheaper/faster models for all providers
+func NewRegistry(cfg *config.Config, general bool, cheap bool) *Registry {
 	r := &Registry{
 		config:    cfg,
 		providers: make(map[string]Provider),
 		general:   general,
+		cheap:     cheap,
 	}
 
 	// Register providers based on mode
@@ -97,15 +100,16 @@ func (r *Registry) GetProvider(name string, modelOverrides map[string]string) (P
 		return nil, fmt.Errorf("provider %s not available (CLI not installed)", name)
 	}
 
-	// Get model override - only use config defaults for CLI mode
-	// For API mode, use the provider's built-in defaults unless explicitly overridden
+	// Get model - priority: explicit -m flag > cheap mode > config defaults > provider default
 	var model string
 	if override, ok := modelOverrides[name]; ok && override != "" {
-		model = override // Explicit override from -m flag
+		model = override // Explicit override from -m flag (highest priority)
+	} else if r.cheap {
+		model = r.config.GetCheapModel(name) // Cheap mode: use cheap models
 	} else if !r.general {
 		model = r.config.GetModel(name, "") // CLI mode: use config defaults
 	}
-	// For API mode without explicit override: model stays empty, provider uses its default
+	// For API mode without explicit override or cheap mode: model stays empty, provider uses its default
 
 	return &modelOverrideProvider{Provider: p, model: model}, nil
 }
@@ -156,14 +160,16 @@ var modelDisplayNames = map[string]string{
 	"gemini-2.0-pro":   "Gemini 2.0 Pro",
 	// Gemini (API)
 	"gemini-2.0-flash":       "Gemini 2.0 Flash",
+	"gemini-2.5-flash-lite":  "Gemini 2.5 Flash Lite",
 	"gemini-3-flash-preview": "Gemini 3 Flash",
 	"gemini-3-pro-preview":   "Gemini 3 Pro",
 	// OpenAI
-	"gpt-5.2": "GPT-5.2",
-	"gpt-4o":  "GPT-4o",
-	"o1":      "o1",
-	"o1-mini": "o1-mini",
-	"o3":      "o3",
+	"gpt-5.2":    "GPT-5.2",
+	"gpt-4o":     "GPT-4o",
+	"gpt-4o-mini": "GPT-4o Mini",
+	"o1":         "o1",
+	"o1-mini":    "o1-mini",
+	"o3":         "o3",
 	// Claude (CLI)
 	"sonnet": "Claude Sonnet",
 	"opus":   "Claude Opus",
@@ -171,9 +177,10 @@ var modelDisplayNames = map[string]string{
 	// Claude (API)
 	"claude-opus-4-5-20251101":   "Claude Opus 4.5",
 	"claude-sonnet-4-5-20250929": "Claude Sonnet 4.5",
+	"claude-haiku-4-5-20251015":  "Claude Haiku 4.5",
 	// Perplexity
-	"sonar-pro":          "Sonar Pro",
-	"sonar":              "Sonar",
+	"sonar-pro":           "Sonar Pro",
+	"sonar":               "Sonar",
 	"sonar-reasoning":    "Sonar Reasoning",
 	"sonar-reasoning-pro": "Sonar Reasoning Pro",
 	// Grok (CLI)
