@@ -25,9 +25,9 @@ func TestDefaultConfig(t *testing.T) {
 
 	// Check all models are set
 	expectedModels := map[string]string{
-		"gemini":     "gemini-2.5-pro",
+		"gemini":     "gemini-3-pro-preview",
 		"openai":     "gpt-5.2",
-		"claude":     "sonnet",
+		"claude":     "claude-opus-4-5-20251101",
 		"perplexity": "sonar-pro",
 		"grok":       "grok-code-fast-1",
 		"glm":        "zai-coding-plan/glm-4.7",
@@ -61,7 +61,7 @@ func TestGetModel(t *testing.T) {
 			name:     "default model",
 			provider: "gemini",
 			override: "",
-			expected: "gemini-2.5-pro",
+			expected: "gemini-3-pro-preview",
 		},
 		{
 			name:     "with override",
