@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -11,7 +12,9 @@ import (
 func (f *Formatter) renderStyledOutput(r Result) error {
 	var sections []string
 
-	// Skip title - progress display already showed CONCLAVE branding
+	// Header panel with metadata
+	headerPanel := renderHeaderPanel(r)
+	sections = append(sections, headerPanel)
 
 	// Verdict box (if we have one)
 	if r.Verdict != nil {
@@ -134,6 +137,43 @@ func renderProviderResponse(provider, model, status, response, errMsg string) st
 
 	boxContent := header + "\n\n" + content
 	return providerBoxStyle.Width(72).Render(boxContent)
+}
+
+// renderHeaderPanel creates the metadata header
+func renderHeaderPanel(r Result) string {
+	width := 68 // inner width
+
+	// Title row with timestamp right-aligned
+	title := "CONCLAVE"
+	ts := time.Now().Format("02 Jan 2006 15:04")
+	padding := width - len(title) - len(ts)
+	if padding < 1 {
+		padding = 1
+	}
+	titleRow := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(title) +
+		strings.Repeat(" ", padding) +
+		lipgloss.NewStyle().Foreground(colorMuted).Render(ts)
+
+	// Providers
+	var providerNames []string
+	for _, resp := range r.Responses {
+		providerNames = append(providerNames, resp.Provider)
+	}
+	providersRow := infoLabelStyle.Render("Providers:") + " " + infoValueStyle.Render(strings.Join(providerNames, ", "))
+
+	// Judge
+	judgeRow := infoLabelStyle.Render("Judge:") + " " + infoValueStyle.Render(r.JudgeName)
+
+	// Query (truncated if needed)
+	query := r.Query
+	if len(query) > 55 {
+		query = query[:52] + "..."
+	}
+	queryRow := infoLabelStyle.Render("Query:") + " " + lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("250")).Render(query)
+
+	content := strings.Join([]string{titleRow, "", providersRow, judgeRow, queryRow}, "\n")
+
+	return infoPanelStyle.Width(72).Render(content)
 }
 
 // renderFooter creates the timing footer
