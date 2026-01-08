@@ -4,15 +4,15 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Adaptive colors that work on both light and dark terminals
+// Adaptive colors - cool tones (blues, cyans, teals)
 var (
-	colorPrimary   = lipgloss.AdaptiveColor{Light: "21", Dark: "212"}  // Blue
-	colorSecondary = lipgloss.AdaptiveColor{Light: "127", Dark: "213"} // Magenta
-	colorSuccess   = lipgloss.AdaptiveColor{Light: "22", Dark: "78"}   // Green
-	colorWarning   = lipgloss.AdaptiveColor{Light: "208", Dark: "214"} // Orange
-	colorError     = lipgloss.AdaptiveColor{Light: "160", Dark: "196"} // Red
-	colorMuted     = lipgloss.AdaptiveColor{Light: "240", Dark: "245"} // Gray
-	colorHighlight = lipgloss.AdaptiveColor{Light: "136", Dark: "229"} // Yellow
+	colorPrimary   = lipgloss.AdaptiveColor{Light: "27", Dark: "75"}   // Blue
+	colorSecondary = lipgloss.AdaptiveColor{Light: "30", Dark: "80"}   // Cyan
+	colorSuccess   = lipgloss.AdaptiveColor{Light: "29", Dark: "48"}   // Teal green
+	colorWarning   = lipgloss.AdaptiveColor{Light: "136", Dark: "222"} // Muted gold
+	colorError     = lipgloss.AdaptiveColor{Light: "124", Dark: "167"} // Muted rose
+	colorMuted     = lipgloss.AdaptiveColor{Light: "244", Dark: "246"} // Cool gray
+	colorHighlight = lipgloss.AdaptiveColor{Light: "33", Dark: "117"}  // Sky blue
 	colorText      = lipgloss.AdaptiveColor{Light: "235", Dark: "252"} // Main text
 	colorSubtle    = lipgloss.AdaptiveColor{Light: "241", Dark: "250"} // Subtle text
 )
