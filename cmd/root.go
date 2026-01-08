@@ -12,8 +12,8 @@ import (
 	"github.com/0xDarkMatter/conclave-cli/internal/judge"
 	"github.com/0xDarkMatter/conclave-cli/internal/orchestrator"
 	"github.com/0xDarkMatter/conclave-cli/internal/output"
-	"github.com/0xDarkMatter/conclave-cli/internal/progress"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
+	"github.com/0xDarkMatter/conclave-cli/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -263,12 +263,12 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize progress display (quiet if JSON output)
-	prog := progress.New(flagJSON || flagQuiet)
+	prog := tui.New(flagJSON || flagQuiet)
 
 	// Build provider info for progress display
-	var providerInfos []progress.ProviderInfo
+	var providerInfos []tui.ProviderInfo
 	for _, p := range providerList {
-		providerInfos = append(providerInfos, progress.ProviderInfo{
+		providerInfos = append(providerInfos, tui.ProviderInfo{
 			Name:        p.Name(),
 			DisplayName: providers.DisplayName(p.Name(), p.DefaultModel()),
 		})
