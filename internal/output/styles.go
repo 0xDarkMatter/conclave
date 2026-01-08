@@ -4,15 +4,17 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Colors
+// Adaptive colors that work on both light and dark terminals
 var (
-	colorPrimary   = lipgloss.Color("212") // Bright blue
-	colorSecondary = lipgloss.Color("213") // Pink/magenta
-	colorSuccess   = lipgloss.Color("78")  // Green
-	colorWarning   = lipgloss.Color("214") // Orange
-	colorError     = lipgloss.Color("196") // Red
-	colorMuted     = lipgloss.Color("242") // Gray
-	colorHighlight = lipgloss.Color("229") // Yellow
+	colorPrimary   = lipgloss.AdaptiveColor{Light: "21", Dark: "212"}  // Blue
+	colorSecondary = lipgloss.AdaptiveColor{Light: "127", Dark: "213"} // Magenta
+	colorSuccess   = lipgloss.AdaptiveColor{Light: "22", Dark: "78"}   // Green
+	colorWarning   = lipgloss.AdaptiveColor{Light: "208", Dark: "214"} // Orange
+	colorError     = lipgloss.AdaptiveColor{Light: "160", Dark: "196"} // Red
+	colorMuted     = lipgloss.AdaptiveColor{Light: "240", Dark: "245"} // Gray
+	colorHighlight = lipgloss.AdaptiveColor{Light: "136", Dark: "229"} // Yellow
+	colorText      = lipgloss.AdaptiveColor{Light: "235", Dark: "252"} // Main text
+	colorSubtle    = lipgloss.AdaptiveColor{Light: "241", Dark: "250"} // Subtle text
 )
 
 // Box styles
@@ -111,7 +113,7 @@ var (
 			Foreground(colorMuted)
 
 	infoValueStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("255"))
+			Foreground(colorText)
 
 	// Title
 	titleStyle = lipgloss.NewStyle().

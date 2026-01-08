@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"/c/Program Files/Go/bin/go.exe\" version)",
+      "Bash(\"/c/Program Files/Go/bin/go.exe\" build -ldflags \"-X main.version=1.0.0\" -o bin/conclave.exe .)",
+      "Bash(\"$HOME/.local/bin/conclave.exe\" --list-providers -g)",
+      "Bash(\"$HOME/.local/bin/conclave.exe\" -g gemini,grok,claude \"What is 2+2? Answer in one word.\" --judge claude)",
+      "Bash(\"$HOME/.local/bin/conclave.exe\" -g gemini,grok,openai \"What is 2+2? Answer in one word.\" --judge gemini)",
+      "Bash(xargs rg:*)",
+      "Bash(./bin/conclave.exe:*)",
+      "Bash(go build:*)"
+    ]
+  }
+}

@@ -62,7 +62,7 @@ func renderVerdict(result, confidence, reasoning string) string {
 	// Result line - bold and prominent
 	resultLine := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("255")).
+		Foreground(colorText).
 		Render(result)
 
 	header := fmt.Sprintf("%s %s", resultLine, confBadge)
@@ -70,7 +70,7 @@ func renderVerdict(result, confidence, reasoning string) string {
 	// Reasoning text (wrapped nicely)
 	reasoningWrapped := lipgloss.NewStyle().
 		Width(68).
-		Foreground(lipgloss.Color("250")).
+		Foreground(colorSubtle).
 		MarginTop(1).
 		Render(reasoning)
 
@@ -129,7 +129,7 @@ func renderProviderResponse(provider, model, status, response, errMsg string) st
 		// Wrap long responses
 		content = lipgloss.NewStyle().
 			Width(68).
-			Foreground(lipgloss.Color("250")).
+			Foreground(colorSubtle).
 			Render(response)
 	} else {
 		content = statusErrorStyle.Render("Error: " + errMsg)
@@ -169,7 +169,7 @@ func renderHeaderPanel(r Result) string {
 	if len(query) > 55 {
 		query = query[:52] + "..."
 	}
-	queryRow := infoLabelStyle.Render("Query:") + " " + lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("250")).Render(query)
+	queryRow := infoLabelStyle.Render("Query:") + " " + lipgloss.NewStyle().Italic(true).Foreground(colorSubtle).Render(query)
 
 	content := strings.Join([]string{titleRow, "", providersRow, judgeRow, queryRow}, "\n")
 
