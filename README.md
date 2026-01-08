@@ -1,5 +1,9 @@
 # Conclave
 
+[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Built with Charm](https://img.shields.io/badge/Built%20with-Charm-ff69b4?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0wIDE4Yy00LjQxIDAtOC0zLjU5LTgtOHMzLjU5LTggOC04IDggMy41OSA4IDgtMy41OSA4LTggOHoiLz48L3N2Zz4=)](https://charm.sh)
+
 > One CLI for every LLM. Query any model, or all of them at once.
 
 Conclave is a unified interface for major LLM providers. Use it as a single-command gateway to Gemini, Claude, GPT, Grok, Perplexity, and GLM - or query them all in parallel and synthesize their responses into a verdict with confidence levels and actionable recommendations.
@@ -11,6 +15,25 @@ Conclave is a unified interface for major LLM providers. Use it as a single-comm
 - **Increase confidence** - Agreement across models = higher signal
 - **Catch blind spots** - Different models notice different issues
 - **Faster iteration** - Parallel queries, one synthesized answer
+- **Beautiful TUI** - Animated progress with [Charm](https://charm.sh) (Bubble Tea)
+
+## Terminal UI
+
+Conclave features a rich terminal interface powered by [Bubble Tea](https://github.com/charmbracelet/bubbletea):
+
+```
+▸ Querying 3 providers...
+  ├── ⠹ Google Gemini 3 Pro [02.34s]
+  ├── ✓ xAI Grok 4.1 Fast [01.21s / 000168 tokens]
+  └── ⠼ Anthropic Claude Opus 4.5 [03.12s]
+
+▸ Crystallizing... ⠋ [02.45s]
+```
+
+- **Animated spinners** - Braille animation for active providers
+- **Real-time progress** - Token counts and timing as providers complete
+- **Synthesis verbs** - 25 rotating verbs during verdict synthesis
+- **Non-TTY fallback** - Clean output for CI/CD and piped commands
 
 ## One CLI, Every LLM
 
