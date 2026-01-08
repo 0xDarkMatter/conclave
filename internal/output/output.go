@@ -54,19 +54,12 @@ func (f *Formatter) Render(r Result) error {
 	if f.opts.Quiet {
 		return f.renderQuiet(r)
 	}
-
-	// Use templates for human-readable output
-	templateName := "human.md"
 	if f.opts.Brief {
-		templateName = "brief.md"
-	} else if f.opts.Verbose {
-		templateName = "verbose.md"
-	}
-	if f.opts.Template != "" {
-		templateName = f.opts.Template
+		return f.renderBrief(r)
 	}
 
-	return f.renderTemplate(r, templateName)
+	// Use Lipgloss-styled output
+	return f.renderStyledOutput(r)
 }
 
 // buildTemplateData converts Result to TemplateData
