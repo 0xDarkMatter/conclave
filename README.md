@@ -4,9 +4,13 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Built with Charm](https://img.shields.io/badge/Built%20with-Charm-ff69b4?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0wIDE4Yy00LjQxIDAtOC0zLjU5LTgtOHMzLjU5LTggOC04IDggMy41OSA4IDgtMy41OSA4LTggOHoiLz48L3N2Zz4=)](https://charm.sh)
 
-> One CLI for every LLM. Query any model, or all of them at once.
+> Stop juggling six AI CLIs. Query any model with one syntax, or unleash them all and let a judge synthesize the chaos.
 
-Conclave is a unified interface for major LLM providers. Use it as a single-command gateway to Gemini, Claude, GPT, Grok, Perplexity, and GLM - or query them all in parallel and synthesize their responses into a verdict with confidence levels and actionable recommendations.
+Tired of memorizing whether it's `--file` or `-f` or piping to stdin? Sick of context-switching between `gemini`, `claude`, `codex`, and whatever CLI Grok ships this week? **Conclave is your universal remote for LLMs** - one command, one syntax, any provider. Learn it once, query everything.
+
+But here's where it gets interesting: why trust a single AI's opinion when you can convene an entire council? Conclave queries multiple models in parallel, then hands their responses to a judge who synthesizes a verdict with confidence levels, agreements, disagreements, and actionable recommendations. It's like having a room full of very expensive consultants who actually have to reach consensus before billing you.
+
+Built with [Charm](https://charm.sh)'s Bubble Tea for a terminal UI that doesn't look like it crawled out of 1985. Animated spinners, real-time progress, token counts - because if you're going to burn API credits, you should at least enjoy watching the meter spin.
 
 ## Why Conclave?
 
