@@ -18,6 +18,20 @@ type Provider interface {
 	IsAvailable() bool
 }
 
+// Preflighter is an optional interface for pre-query auth validation.
+// Checks must be fast and must not consume API tokens.
+type Preflighter interface {
+	Preflight(ctx context.Context) error
+}
+
+// PreflightResult holds the result of a provider's preflight check.
+type PreflightResult struct {
+	Provider    string
+	OK          bool
+	Error       error
+	Remediation string
+}
+
 // Metrics holds optional usage metrics from providers
 type Metrics struct {
 	InputTokens  int     `json:"input_tokens,omitempty"`

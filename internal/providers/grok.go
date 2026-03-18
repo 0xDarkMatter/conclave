@@ -3,6 +3,8 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -27,6 +29,14 @@ func NewGrokProvider() *GrokProvider {
 type grokMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
+}
+
+// Preflight checks that a Grok/xAI API key is available.
+func (p *GrokProvider) Preflight(ctx context.Context) error {
+	if os.Getenv("XAI_API_KEY") == "" {
+		return fmt.Errorf("XAI_API_KEY is not set")
+	}
+	return nil
 }
 
 // Query executes a prompt using Grok CLI

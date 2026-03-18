@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -30,6 +31,25 @@ type claudeJSONOutput struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
+}
+
+// Preflight checks Claude CLI auth status without consuming tokens.
+func (p *ClaudeProvider) Preflight(ctx context.Context) error {
+	output, err := runCommand(ctx, "claude", []string{"auth", "status"}, nil)
+	if err != nil {
+		return fmt.Errorf("claude auth check failed: %w", err)
+	}
+
+	var status struct {
+		LoggedIn bool `json:"loggedIn"`
+	}
+	if err := json.Unmarshal([]byte(output), &status); err != nil {
+		return fmt.Errorf("could not parse claude auth status: %w", err)
+	}
+	if !status.LoggedIn {
+		return fmt.Errorf("claude is not logged in")
+	}
+	return nil
 }
 
 // Query executes a prompt using Claude CLI with JSON output for metrics

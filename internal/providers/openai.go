@@ -2,6 +2,8 @@ package providers
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"time"
 )
 
@@ -19,6 +21,14 @@ func NewOpenAIProvider() *OpenAIProvider {
 			command:      "codex",
 		},
 	}
+}
+
+// Preflight checks that an OpenAI API key is available.
+func (p *OpenAIProvider) Preflight(ctx context.Context) error {
+	if os.Getenv("OPENAI_API_KEY") == "" {
+		return fmt.Errorf("OPENAI_API_KEY is not set")
+	}
+	return nil
 }
 
 // Query executes a prompt using Codex CLI

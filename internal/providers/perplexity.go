@@ -2,6 +2,8 @@ package providers
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -26,6 +28,14 @@ func NewPerplexityProvider() *PerplexityProvider {
 
 // ansiRegex matches ANSI escape sequences
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// Preflight checks that a Perplexity API key is available.
+func (p *PerplexityProvider) Preflight(ctx context.Context) error {
+	if os.Getenv("PERPLEXITY_API_KEY") == "" {
+		return fmt.Errorf("PERPLEXITY_API_KEY is not set")
+	}
+	return nil
+}
 
 // Query executes a prompt using Perplexity CLI with usage stats
 // Command: perplexity --usage -m {model} "{query}"

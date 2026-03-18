@@ -43,8 +43,9 @@ var (
 	flagWorkers     int
 	flagOutput      string
 	flagResume      bool
-	flagNoRateLimit bool
-	flagRetries     int
+	flagNoRateLimit   bool
+	flagRetries       int
+	flagSkipPreflight bool
 )
 
 func SetVersion(v string) {
@@ -142,6 +143,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&flagResume, "resume", false, "Resume batch processing from checkpoint")
 	rootCmd.Flags().BoolVar(&flagNoRateLimit, "no-rate-limit", false, "Disable rate limiting (for high-tier API accounts)")
 	rootCmd.Flags().IntVar(&flagRetries, "retries", 0, "Number of retries for failed items (with exponential backoff)")
+	rootCmd.Flags().BoolVar(&flagSkipPreflight, "skip-preflight", false, "Skip auth preflight checks")
 
 	rootCmd.Version = version
 }
@@ -262,6 +264,14 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Preflight auth checks
+	if !flagSkipPreflight {
+		if failures := providers.RunPreflight(cmd.Context(), providerList); len(failures) > 0 {
+			printPreflightFailures(failures)
+			return fmt.Errorf("preflight auth check failed for %d provider(s)", len(failures))
+		}
+	}
+
 	// Initialize progress display (quiet if JSON output)
 	prog := tui.New(flagJSON || flagQuiet)
 
@@ -370,6 +380,15 @@ func parseModelOverrides(overrides []string) map[string]string {
 	return result
 }
 
+func printPreflightFailures(failures []providers.PreflightResult) {
+	fmt.Fprintf(os.Stderr, "\n  Preflight auth check failed:\n\n")
+	for _, f := range failures {
+		fmt.Fprintf(os.Stderr, "    ✗  %-12s  %s\n", f.Provider, f.Error)
+		fmt.Fprintf(os.Stderr, "       %-12s  → %s\n", "", f.Remediation)
+	}
+	fmt.Fprintf(os.Stderr, "\n  Use --skip-preflight to bypass.\n\n")
+}
+
 func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string, defaultPrompt string, modelOverrides map[string]string) error {
 	// Open input file
 	var input *os.File
@@ -401,8 +420,19 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		defer output.Close()
 	}
 
-	// Create registry and processor
+	// Create registry and preflight auth checks
 	registry := providers.NewRegistry(cfg, flagGeneral, flagCheap)
+	if !flagSkipPreflight {
+		tempProviders, err := registry.GetProviders(providerNames, modelOverrides)
+		if err != nil {
+			return err
+		}
+		if failures := providers.RunPreflight(cmd.Context(), tempProviders); len(failures) > 0 {
+			printPreflightFailures(failures)
+			return fmt.Errorf("preflight auth check failed for %d provider(s)", len(failures))
+		}
+	}
+
 	processor, err := batch.NewProcessor(batch.Options{
 		Registry:       registry,
 		Config:         cfg,

@@ -3,6 +3,8 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"time"
 )
 
@@ -41,6 +43,14 @@ type geminiJSONOutput struct {
 	Stats    struct {
 		Models map[string]geminiModelStats `json:"models"`
 	} `json:"stats"`
+}
+
+// Preflight checks that a Gemini API key is available.
+func (p *GeminiProvider) Preflight(ctx context.Context) error {
+	if os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("GOOGLE_API_KEY") == "" {
+		return fmt.Errorf("neither GEMINI_API_KEY nor GOOGLE_API_KEY is set")
+	}
+	return nil
 }
 
 // Query executes a prompt using Gemini CLI with JSON output for metrics
