@@ -35,7 +35,7 @@ cat results.jsonl
 | `--workers N` | 5 | Number of parallel workers |
 | `--output FILE` | stdout | Output file path |
 | `--resume` | false | Skip already-processed items |
-| `--retries N` | 0 | Retry failed items N times with exponential backoff |
+| `--retries N` | 0 | Retry failed items N times with exponential backoff (batch only — single-call queries auto-retry 429/5xx internally) |
 | `--no-rate-limit` | false | Disable rate limiting (for high-tier accounts) |
 
 Batch mode automatically implies:

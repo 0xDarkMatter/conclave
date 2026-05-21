@@ -19,6 +19,7 @@ type Options struct {
 	Verbose  bool
 	Brief    bool
 	Quiet    bool
+	Raw      bool   // sentinel-separated provider blocks only, for piping
 	Template string // Custom template name
 	Blind    bool
 	Timeout  int
@@ -48,6 +49,9 @@ func New(opts Options) *Formatter {
 
 // Render outputs the result
 func (f *Formatter) Render(r Result) error {
+	if f.opts.Raw {
+		return f.renderRaw(r)
+	}
 	if f.opts.JSON {
 		return f.renderJSON(r)
 	}
@@ -60,6 +64,30 @@ func (f *Formatter) Render(r Result) error {
 
 	// Use Lipgloss-styled output
 	return f.renderStyledOutput(r)
+}
+
+// renderRaw emits sentinel-separated provider blocks suitable for downstream
+// parsing. No header art, no judge, no styling. Errors are emitted as blocks
+// with status=error so the consumer can detect them.
+//
+// Format:
+//
+//	===PROVIDER:openai MODEL:gpt-5.5 STATUS:success===
+//	<response body>
+//	===PROVIDER:claude MODEL:claude-opus-4-5 STATUS:error===
+//	<error message>
+//	===END===
+func (f *Formatter) renderRaw(r Result) error {
+	for _, resp := range r.Responses {
+		fmt.Printf("===PROVIDER:%s MODEL:%s STATUS:%s===\n", resp.Provider, resp.Model, resp.Status)
+		if resp.Status == "success" {
+			fmt.Println(resp.Response)
+		} else {
+			fmt.Println(resp.Error)
+		}
+	}
+	fmt.Println("===END===")
+	return nil
 }
 
 // buildTemplateData converts Result to TemplateData
@@ -468,8 +496,8 @@ func (f *Formatter) renderHuman(r Result) error {
 		}
 	}
 
-	// Show individual responses if verbose or no verdict
-	if f.opts.Verbose || r.Verdict == nil {
+	// Show individual responses if verbose, no verdict, or judge parse failure
+	if f.opts.Verbose || r.Verdict == nil || r.Verdict.Result == "PARSE_ERROR" {
 		for _, resp := range r.Responses {
 			fmt.Println(strings.Repeat("-", 65))
 			fmt.Printf("%s (%s) - %s\n", resp.Provider, resp.Model, resp.Status)

@@ -31,6 +31,7 @@ var (
 	flagBrief         bool
 	flagQuiet         bool
 	flagListProviders bool
+	flagRaw           bool
 	flagMaxContext    int64
 	flagNoStdin       bool
 	flagAll           bool
@@ -129,6 +130,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&flagBrief, "brief", false, "Short verdict only")
 	rootCmd.Flags().BoolVarP(&flagQuiet, "quiet", "q", false, "Minimal output (verdict only)")
 	rootCmd.Flags().BoolVar(&flagListProviders, "list-providers", false, "List available providers and exit")
+	rootCmd.Flags().BoolVar(&flagRaw, "raw", false, "Raw output: only sentinel-separated provider blocks (for piping). Implies --no-judge.")
 	rootCmd.Flags().Int64Var(&flagMaxContext, "max-context", 500000, "Max total context size in bytes")
 	rootCmd.Flags().BoolVar(&flagNoStdin, "no-stdin", false, "Ignore stdin even if piped")
 	rootCmd.Flags().BoolVarP(&flagAll, "all", "a", false, "Use all available providers")
@@ -142,7 +144,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&flagOutput, "output", "o", "", "Output file for batch mode (default: stdout)")
 	rootCmd.Flags().BoolVar(&flagResume, "resume", false, "Resume batch processing from checkpoint")
 	rootCmd.Flags().BoolVar(&flagNoRateLimit, "no-rate-limit", false, "Disable rate limiting (for high-tier API accounts)")
-	rootCmd.Flags().IntVar(&flagRetries, "retries", 0, "Number of retries for failed items (with exponential backoff)")
+	rootCmd.Flags().IntVar(&flagRetries, "retries", 0, "Retry failed batch items N times with exponential backoff (batch mode only; single-call automatically retries 429/5xx)")
 	rootCmd.Flags().BoolVar(&flagSkipPreflight, "skip-preflight", false, "Skip auth preflight checks")
 
 	rootCmd.Version = version
@@ -167,6 +169,15 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// Cheap mode implies API mode (no CLI tools needed for pipelines)
 	if flagCheap {
 		flagGeneral = true
+	}
+
+	// --raw implies --no-judge: synthesis adds nothing to the pipeline output.
+	if flagRaw {
+		flagNoJudge = true
+	}
+	// --raw and --json are both machine formats; choosing both is a user error.
+	if flagRaw && flagJSON {
+		return fmt.Errorf("--raw and --json are mutually exclusive (both produce machine-readable output; pick one)")
 	}
 
 	// Batch mode implies cheap mode (unless -m overrides)
@@ -297,10 +308,33 @@ func runConclave(cmd *cobra.Command, args []string) error {
 
 	// Run orchestration with progress
 	orch := orchestrator.New(providerList, flagTimeout).WithProgress(progressCallback)
-	results, err := orch.Run(cmd.Context(), fullPrompt)
+	results, orchErr := orch.Run(cmd.Context(), fullPrompt)
 	prog.Stop() // Stop spinner before moving on
-	if err != nil {
-		return err
+
+	// Even when all providers fail, we still have a results slice with each
+	// provider's individual error. Render it so the user sees the full,
+	// untruncated diagnostic (HTTP code, OpenAI error param/code, etc.)
+	// instead of only the spinner's truncated single-line preview.
+	if orchErr != nil {
+		out := output.New(output.Options{
+			JSON:    flagJSON,
+			Verbose: flagVerbose,
+			Brief:   flagBrief,
+			Quiet:   flagQuiet,
+			Raw:     flagRaw,
+			Blind:   flagBlind,
+			Timeout: flagTimeout,
+		})
+		_ = out.Render(output.Result{
+			Query:     prompt,
+			Context:   ctx,
+			Providers: providerNames,
+			JudgeName: flagJudge,
+			Responses: results,
+			Blind:     flagBlind,
+			Timeout:   flagTimeout,
+		})
+		return orchErr
 	}
 
 	// Phase 2: Judge synthesis (unless --no-judge or single provider)
@@ -329,6 +363,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		Verbose: flagVerbose,
 		Brief:   flagBrief,
 		Quiet:   flagQuiet,
+		Raw:     flagRaw,
 		Blind:   flagBlind,
 		Timeout: flagTimeout,
 	})
@@ -346,26 +381,35 @@ func runConclave(cmd *cobra.Command, args []string) error {
 }
 
 func listProviders() {
-	var providerList []providers.Provider
-	var modeLabel, notAvailableMsg string
-
+	// When -g is explicitly set, show only that mode (preserves scriptable
+	// behavior for callers parsing this output).
 	if flagGeneral {
-		providerList = providers.AllAPIProviders()
-		modeLabel = "API (general mode)"
-		notAvailableMsg = "no API key"
-	} else {
-		providerList = providers.AllCLIProviders()
-		modeLabel = "CLI (coding mode)"
-		notAvailableMsg = "not installed"
+		printProviderList("API (general mode)", providers.AllAPIProviders(), "no API key")
+		return
 	}
 
-	fmt.Printf("Available providers (%s):\n\n", modeLabel)
+	// Otherwise show both modes side-by-side so users can see which providers
+	// are available in each path and what their default models are. The two
+	// modes differ in surprising ways (glm CLI-only, grok uses different
+	// defaults), so showing both is the helpful default.
+	fmt.Println("Available providers:")
+	fmt.Println()
+	printProviderList("CLI mode (coding-focused)", providers.AllCLIProviders(), "not installed")
+	fmt.Println()
+	printProviderList("API mode (--general / -g)", providers.AllAPIProviders(), "no API key")
+	fmt.Println()
+	fmt.Println("Use -g to query in API mode; default is CLI mode.")
+}
+
+func printProviderList(heading string, providerList []providers.Provider, notAvailableMsg string) {
+	fmt.Printf("  %s\n", heading)
+	fmt.Printf("  %s\n", strings.Repeat("─", len(heading)))
 	for _, p := range providerList {
 		status := notAvailableMsg
 		if p.IsAvailable() {
 			status = "ready"
 		}
-		fmt.Printf("  %-12s  %-30s  [%s]\n", p.Name(), p.DefaultModel(), status)
+		fmt.Printf("    %-12s  %-30s  [%s]\n", p.Name(), p.DefaultModel(), status)
 	}
 }
 

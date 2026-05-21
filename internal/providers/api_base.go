@@ -106,11 +106,14 @@ func (p *apiBaseProvider) getAPIKey() string {
 	return os.Getenv(p.apiKeyEnv)
 }
 
-// httpClient returns a shared HTTP client with reasonable defaults
+// httpClient returns a shared HTTP client with reasonable defaults.
+// The 300s ceiling accommodates reasoning models (gpt-5.x, o1, claude opus
+// with thinking) that can legitimately take 2-4 minutes. The orchestrator's
+// per-request context still caps individual queries to --timeout (default 60s).
 func (p *apiBaseProvider) httpClient() *http.Client {
 	if p.client == nil {
 		p.client = &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: 300 * time.Second,
 		}
 	}
 	return p.client
@@ -213,7 +216,9 @@ func (p *apiBaseProvider) doRequest(ctx context.Context, method, url string, hea
 
 		resp, err := p.httpClient().Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("execute request: %w", err)
+			// Transport-level error (DNS, TLS, connection refused, client timeout).
+			// Tag it distinctly so the user can tell it apart from API-level errors.
+			lastErr = fmt.Errorf("transport error (no response from server): %w", err)
 			continue // Network error, retry
 		}
 
@@ -253,13 +258,18 @@ func (p *apiBaseProvider) doRequest(ctx context.Context, method, url string, hea
 	return nil, fmt.Errorf("request failed after %d retries", maxRetries)
 }
 
-// parseAPIError creates a descriptive error from API response
+// parseAPIError creates a descriptive error from API response. It surfaces
+// the HTTP status code prominently and extracts the provider's error code,
+// param, and message when available — these are the fields that make 400s
+// debuggable (OpenAI returns "code: unsupported_parameter, param: max_tokens"
+// which is far more actionable than a generic "request failed").
 func parseAPIError(statusCode int, body []byte) error {
-	// Try to extract error message from common API error formats
 	var errResp struct {
 		Error struct {
 			Message string `json:"message"`
 			Type    string `json:"type"`
+			Code    string `json:"code"`
+			Param   string `json:"param"`
 		} `json:"error"`
 		Message string `json:"message"` // Some APIs use this directly
 	}
@@ -270,22 +280,44 @@ func parseAPIError(statusCode int, body []byte) error {
 			msg = errResp.Message
 		}
 		if msg != "" {
-			return fmt.Errorf("API error (%d): %s", statusCode, msg)
+			// Build a detailed error with code/param when present.
+			details := msg
+			if errResp.Error.Code != "" {
+				details += fmt.Sprintf(" [code: %s]", errResp.Error.Code)
+			}
+			if errResp.Error.Param != "" {
+				details += fmt.Sprintf(" [param: %s]", errResp.Error.Param)
+			}
+			return fmt.Errorf("HTTP %d: %s", statusCode, details)
 		}
 	}
 
-	// Provide helpful messages for common status codes
+	// No parseable JSON — surface the raw body so the user can see what came back.
+	rawBody := strings.TrimSpace(string(body))
+	if len(rawBody) > 500 {
+		rawBody = rawBody[:500] + "...(truncated)"
+	}
+
 	switch statusCode {
 	case 401:
-		return fmt.Errorf("authentication failed (401): invalid API key")
+		if rawBody != "" {
+			return fmt.Errorf("HTTP 401 authentication failed: %s", rawBody)
+		}
+		return fmt.Errorf("HTTP 401 authentication failed: invalid API key")
 	case 403:
-		return fmt.Errorf("forbidden (403): API key lacks permissions")
+		if rawBody != "" {
+			return fmt.Errorf("HTTP 403 forbidden: %s", rawBody)
+		}
+		return fmt.Errorf("HTTP 403 forbidden: API key lacks permissions")
 	case 429:
-		return fmt.Errorf("rate limited (429): too many requests")
-	case 500, 502, 503:
-		return fmt.Errorf("server error (%d): try again later", statusCode)
+		if rawBody != "" {
+			return fmt.Errorf("HTTP 429 rate limited: %s", rawBody)
+		}
+		return fmt.Errorf("HTTP 429 rate limited: too many requests")
+	case 500, 502, 503, 504:
+		return fmt.Errorf("HTTP %d server error: %s", statusCode, rawBody)
 	default:
-		return fmt.Errorf("request failed (%d): %s", statusCode, string(body))
+		return fmt.Errorf("HTTP %d: %s", statusCode, rawBody)
 	}
 }
 
@@ -293,8 +325,10 @@ func parseAPIError(statusCode int, body []byte) error {
 // Used by OpenAI, Perplexity, Grok, and GLM (they all use this format)
 
 type chatCompletionRequest struct {
-	Model    string        `json:"model"`
-	Messages []chatMessage `json:"messages"`
+	Model               string        `json:"model"`
+	Messages            []chatMessage `json:"messages"`
+	MaxTokens           *int          `json:"max_tokens,omitempty"`
+	MaxCompletionTokens *int          `json:"max_completion_tokens,omitempty"`
 }
 
 type chatMessage struct {

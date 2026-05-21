@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -128,8 +129,12 @@ func TestSaveEnvFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat env file: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0600 {
-		t.Errorf("file permissions = %o, want 0600", perm)
+	// POSIX permissions don't map onto Windows ACLs; the Go stdlib reports
+	// 0666 there regardless of the mode passed to OpenFile. Skip the check.
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Errorf("file permissions = %o, want 0600", perm)
+		}
 	}
 
 	// Read back and verify

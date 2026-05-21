@@ -37,8 +37,11 @@ func (f *Formatter) renderStyledOutput(r Result) error {
 		}
 	}
 
-	// Provider responses (verbose mode or no verdict)
-	if f.opts.Verbose || r.Verdict == nil {
+	// Provider responses: shown in verbose mode, when no verdict exists, or
+	// when the judge failed to parse — so the user can still see what the
+	// providers actually returned instead of losing their work to a
+	// synthesis failure.
+	if f.opts.Verbose || r.Verdict == nil || r.Verdict.Result == "PARSE_ERROR" {
 		for _, resp := range r.Responses {
 			sections = append(sections, renderProviderResponse(resp.Provider, resp.Model, resp.Status, resp.Response, resp.Error))
 		}
@@ -132,7 +135,9 @@ func renderProviderResponse(provider, model, status, response, errMsg string) st
 			Foreground(colorSubtle).
 			Render(response)
 	} else {
-		content = statusErrorStyle.Render("Error: " + errMsg)
+		// Wrap long error messages but never truncate them — auth/HTTP/transport
+		// errors are diagnostic and the actionable detail is often near the end.
+		content = statusErrorStyle.Copy().Width(68).Render("Error: " + errMsg)
 	}
 
 	boxContent := header + "\n\n" + content

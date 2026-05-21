@@ -321,6 +321,25 @@ One-line summary: verdict, confidence, and key recommendation.
 
 Verdict only - for scripts that just need the answer.
 
+### Raw (`--raw`)
+
+Sentinel-separated provider blocks only - no header art, no judge, no styling. For piping into downstream parsers.
+
+```bash
+conclave -g gemini,openai "Classify" --raw -f items.txt | my-extractor
+```
+
+Format:
+```
+===PROVIDER:openai MODEL:gpt-5.2 STATUS:success===
+<response body>
+===PROVIDER:claude MODEL:claude-opus-4-5 STATUS:error===
+<error message>
+===END===
+```
+
+Implies `--no-judge`.
+
 ## Flags Reference
 
 ```
@@ -342,13 +361,14 @@ Batch Mode:
       --workers <n>      Number of parallel workers (default: 5)
   -o, --output <file>    Output file (default: stdout)
       --resume           Resume from checkpoint, skip processed items
-      --retries <n>      Retry failed items with exponential backoff (default: 0)
+      --retries <n>      Retry failed batch items N times with exponential backoff (batch mode only)
 
 Output Flags:
       --json             Structured JSON output
       --verbose          Include full provider responses
       --brief            Short verdict only
   -q, --quiet            Minimal output (verdict only)
+      --raw              Sentinel-separated provider blocks only (implies --no-judge)
 
 Other:
       --list-providers   List available providers and exit
@@ -367,6 +387,8 @@ Transient failures (429 rate limits, 5xx errors) automatically retry with expone
 - Up to 3 retries
 - 1s → 2s → 4s delays with jitter
 - Respects `Retry-After` headers
+
+This is built-in for **all** single-call queries via API mode. The `--retries` flag is separate and applies only to **batch mode** (`--batch`) — it retries failed items in the JSONL pipeline. 400-class errors (auth, bad params) never retry in either path since they won't fix themselves.
 
 ### Blind Mode
 
@@ -462,6 +484,14 @@ CONCLAVE_EXCLUDE=glm,grok         # Exclude providers from --all
 - **Architecture Decisions** - Consensus on design trade-offs
 - **Research Synthesis** - Combine knowledge from multiple sources
 - **Risk Assessment** - Identify blind spots in analysis
+
+## Claude Code Integration
+
+A skill is available for Claude Code users at `~/.claude/skills/conclave/SKILL.md` with:
+- Usage patterns and examples
+- Integration guidance for spawning LLMs from Claude Code sessions
+- Batch processing workflows
+- Prompt + context passing patterns
 
 ## License
 
