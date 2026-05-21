@@ -130,6 +130,36 @@ conclave gemini,openai,claude "Is this code secure?" -f auth.go --judge claude
 conclave --all "Review this architecture" -f design.md --judge claude
 ```
 
+## Recent Updates
+
+### v1.1.0 — 2026-05-22
+
+**🐛 Production bug fixes**
+
+Six fixes for pain points hit running Conclave heavily against gpt-5.x reasoning models. Most importantly: `conclave -g openai -m openai:gpt-5.5` now works — previously the call would silently fail or return empty responses because OpenAI rejects `max_tokens` for the reasoning model family and needs `max_completion_tokens` instead. Error visibility is dramatically improved across the board: HTTP status codes, provider error codes and params, and full diagnostic bodies are surfaced instead of truncated. When all providers fail, you now see each provider's full error in the styled output instead of just a clipped spinner line.
+
+**✨ `--raw` output mode**
+
+New flag emits sentinel-separated provider blocks for clean piping into downstream parsers. Implies `--no-judge`, mutually exclusive with `--json`.
+
+```bash
+conclave -g gemini,claude "classify" --raw -f items.txt | my-extractor
+```
+
+**🎨 Styled output with Lipgloss**
+
+New header panel with metadata, adaptive colors for light/dark terminals, and a refreshed cool-tones palette. The output now actually looks like the tagline promises.
+
+**🛡 Preflight auth checks**
+
+Catches missing or invalid credentials before burning the parallel-query timeout. Bypass with `--skip-preflight`.
+
+**👀 `--list-providers` shows both modes**
+
+The CLI and API columns now print side-by-side by default. The surprising divergences (glm is CLI-only, grok uses different defaults per mode) are visible at a glance. Use `-g` to get the single-column format for scripts that parse this output.
+
+---
+
 ## Modes
 
 ### CLI Mode (Default)
