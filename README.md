@@ -134,6 +134,10 @@ conclave --all "Review this architecture" -f design.md --judge claude
 
 ### v1.2.0 — 2026-06-18
 
+**🚀 GPT-5.5 and GLM-5.2 support**
+
+Conclave now defaults to the latest flagship models out of the box — OpenAI **GPT-5.5** and Z.ai **GLM-5.2**. Other defaults were refreshed too: gemini `gemini-3-pro-preview` (shut down) → `gemini-3.1-pro-preview`, claude → `claude-opus-4-8`, and grok's CLI default `grok-code-fast-1` (retiring 2026-08-15) → `grok-4-1-fast-reasoning`. Override any of them with `-m provider:model`.
+
 **🔑 OS keyring for API keys**
 
 Keys can now live in the OS keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) instead of a plaintext env var or `.env`. When a provider's `*_API_KEY` is unset, Conclave reads it from the keyring automatically — resolution order is env → `~/.config/conclave/.env` → `./.env` → keyring. Manage entries with the new `conclave keyring set|list|rm <ENV_VAR>` command.
@@ -145,10 +149,6 @@ conclave keyring set GLM_API_KEY      # hidden prompt; loads automatically there
 **🔌 GLM drops the `opencode` dependency**
 
 CLI-mode `glm` no longer shells out to the `opencode` binary — it calls the Z.ai GLM Coding Plan directly over OpenAI-compatible HTTP (`api.z.ai/api/coding/paas/v4`), using your flat Coding Plan subscription. GLM now needs only an API key, like every other provider.
-
-**🔄 Refreshed provider defaults**
-
-Brought stale default models up to current ids: openai `gpt-5.2` → `gpt-5.5`, gemini `gemini-3-pro-preview` (shut down) → `gemini-3.1-pro-preview`, claude `claude-opus-4-5` → `claude-opus-4-8`, glm `glm-4.7` → `glm-5.2`, and grok's CLI default `grok-code-fast-1` (retiring 2026-08-15) → `grok-4-1-fast-reasoning`.
 
 **📐 Architecture Decision Records**
 
@@ -181,6 +181,14 @@ Catches missing or invalid credentials before burning the parallel-query timeout
 **👀 `--list-providers` shows both modes**
 
 The CLI and API columns now print side-by-side by default. The surprising divergences (glm is CLI-only, grok uses different defaults per mode) are visible at a glance. Use `-g` to get the single-column format for scripts that parse this output.
+
+---
+
+### v1.0.0 — 2026-01-08
+
+**🎉 Initial release**
+
+Multi-provider parallel querying across Gemini, OpenAI, Claude, Grok, Perplexity, and GLM — in CLI mode (wrapping each provider's CLI) or API mode (`-g`). A judge model synthesizes the responses into a single verdict, with `--blind` for unbiased judging. Plus cheap mode (`-c`), batch mode (`--batch`) with parallel workers and resume, and a Charm Bubble Tea TUI with live progress.
 
 ---
 
