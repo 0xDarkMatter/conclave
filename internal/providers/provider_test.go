@@ -38,9 +38,9 @@ func TestAllProvidersRegistered(t *testing.T) {
 
 func TestProviderDefaultModels(t *testing.T) {
 	expectedModels := map[string]string{
-		"gemini":     "gemini-3-pro-preview",
-		"openai":     "gpt-5.2",
-		"claude":     "claude-opus-4-5-20251101",
+		"gemini":     "gemini-3.1-pro-preview",
+		"openai":     "gpt-5.5",
+		"claude":     "claude-opus-4-8",
 		"perplexity": "sonar-pro",
 		"grok":       "grok-code-fast-1",
 		"glm":        "zai-coding-plan/glm-4.7",
@@ -130,8 +130,8 @@ func TestGeminiProvider(t *testing.T) {
 		t.Errorf("expected name 'gemini', got %s", p.Name())
 	}
 
-	if p.DefaultModel() != "gemini-3-pro-preview" {
-		t.Errorf("expected model 'gemini-3-pro-preview', got %s", p.DefaultModel())
+	if p.DefaultModel() != "gemini-3.1-pro-preview" {
+		t.Errorf("expected model 'gemini-3.1-pro-preview', got %s", p.DefaultModel())
 	}
 }
 
@@ -142,8 +142,8 @@ func TestOpenAIProvider(t *testing.T) {
 		t.Errorf("expected name 'openai', got %s", p.Name())
 	}
 
-	if p.DefaultModel() != "gpt-5.2" {
-		t.Errorf("expected model 'gpt-5.2', got %s", p.DefaultModel())
+	if p.DefaultModel() != "gpt-5.5" {
+		t.Errorf("expected model 'gpt-5.5', got %s", p.DefaultModel())
 	}
 }
 
@@ -154,8 +154,8 @@ func TestClaudeProvider(t *testing.T) {
 		t.Errorf("expected name 'claude', got %s", p.Name())
 	}
 
-	if p.DefaultModel() != "claude-opus-4-5-20251101" {
-		t.Errorf("expected model 'claude-opus-4-5-20251101', got %s", p.DefaultModel())
+	if p.DefaultModel() != "claude-opus-4-8" {
+		t.Errorf("expected model 'claude-opus-4-8', got %s", p.DefaultModel())
 	}
 }
 

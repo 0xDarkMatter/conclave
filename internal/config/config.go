@@ -26,9 +26,9 @@ func DefaultConfig() *Config {
 		DefaultJudge:     "claude",
 		TimeoutSeconds:   60,
 		Models: map[string]string{
-			"gemini":     "gemini-3-pro-preview",
-			"openai":     "gpt-5.2",
-			"claude":     "claude-opus-4-5-20251101",
+			"gemini":     "gemini-3.1-pro-preview",
+			"openai":     "gpt-5.5",
+			"claude":     "claude-opus-4-8",
 			"perplexity": "sonar-pro",
 			"grok":       "grok-code-fast-1",
 			"glm":        "zai-coding-plan/glm-4.7",

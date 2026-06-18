@@ -44,7 +44,7 @@ func NewOpenAIAPIProvider() *OpenAIAPIProvider {
 	return &OpenAIAPIProvider{
 		apiBaseProvider: apiBaseProvider{
 			name:         "openai",
-			defaultModel: "gpt-5.2",
+			defaultModel: "gpt-5.5",
 			apiKeyEnv:    "OPENAI_API_KEY",
 			baseURL:      "https://api.openai.com",
 		},

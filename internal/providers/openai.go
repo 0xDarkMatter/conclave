@@ -17,7 +17,7 @@ func NewOpenAIProvider() *OpenAIProvider {
 	return &OpenAIProvider{
 		baseProvider: baseProvider{
 			name:         "openai",
-			defaultModel: "gpt-5.2",
+			defaultModel: "gpt-5.5",
 			command:      "codex",
 		},
 	}

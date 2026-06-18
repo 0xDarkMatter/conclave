@@ -18,7 +18,7 @@ func NewGeminiAPIProvider() *GeminiAPIProvider {
 	return &GeminiAPIProvider{
 		apiBaseProvider: apiBaseProvider{
 			name:         "gemini",
-			defaultModel: "gemini-3-pro-preview", // Gemini 3 Pro (preview)
+			defaultModel: "gemini-3.1-pro-preview", // Gemini 3.1 Pro (preview)
 			apiKeyEnv:    "GEMINI_API_KEY",
 			baseURL:      "https://generativelanguage.googleapis.com",
 		},

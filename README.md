@@ -194,9 +194,9 @@ conclave -c --all "Summarize" -f doc.md --brief
 
 | Provider | Default Model | Cheap Model |
 |----------|---------------|-------------|
-| gemini | gemini-3-pro-preview | gemini-3-flash-preview |
-| openai | gpt-5.2 | gpt-5-nano |
-| claude | claude-opus-4-5 | claude-haiku-4-5 |
+| gemini | gemini-3.1-pro-preview | gemini-3-flash-preview |
+| openai | gpt-5.5 | gpt-5-nano |
+| claude | claude-opus-4-8 | claude-haiku-4-5 |
 | perplexity | sonar-pro | sonar |
 | grok | grok-4-1-fast | grok-4-1-fast-non-reasoning |
 | glm | glm-4.7 | glm-4.6v-flashx |
@@ -250,9 +250,9 @@ See [docs/BATCH_MODE.md](docs/BATCH_MODE.md) for full documentation and [docs/BA
 
 | Provider | CLI Mode | API Mode |
 |----------|----------|----------|
-| gemini | gemini-3-pro-preview | gemini-3-pro-preview |
-| openai | gpt-5.2 | gpt-5.2 |
-| claude | claude-opus-4-5-20251101 | claude-opus-4-5-20251101 |
+| gemini | gemini-3.1-pro-preview | gemini-3.1-pro-preview |
+| openai | gpt-5.5 | gpt-5.5 |
+| claude | claude-opus-4-8 | claude-opus-4-8 |
 | perplexity | sonar-pro | sonar-pro |
 | grok | grok-code-fast-1 | grok-4-1-fast-reasoning |
 
@@ -447,9 +447,9 @@ default_judge: claude
 timeout_seconds: 60
 
 models:
-  gemini: gemini-3-pro-preview
-  openai: gpt-5.2
-  claude: claude-opus-4-5-20251101
+  gemini: gemini-3.1-pro-preview
+  openai: gpt-5.5
+  claude: claude-opus-4-8
 
 # Override cheap mode models (optional)
 cheap_models:

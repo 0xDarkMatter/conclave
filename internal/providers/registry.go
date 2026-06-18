@@ -163,7 +163,9 @@ var modelDisplayNames = map[string]string{
 	"gemini-2.5-flash-lite":  "Gemini 2.5 Flash Lite",
 	"gemini-3-flash-preview": "Gemini 3 Flash",
 	"gemini-3-pro-preview":   "Gemini 3 Pro",
+	"gemini-3.1-pro-preview": "Gemini 3.1 Pro",
 	// OpenAI
+	"gpt-5.5":     "GPT-5.5",
 	"gpt-5.2":     "GPT-5.2",
 	"gpt-5-nano":  "GPT-5 Nano",
 	"gpt-4o":      "GPT-4o",
@@ -176,6 +178,7 @@ var modelDisplayNames = map[string]string{
 	"opus":   "Claude Opus",
 	"haiku":  "Claude Haiku",
 	// Claude (API)
+	"claude-opus-4-8":            "Claude Opus 4.8",
 	"claude-opus-4-5-20251101":   "Claude Opus 4.5",
 	"claude-sonnet-4-5-20250929": "Claude Sonnet 4.5",
 	"claude-haiku-4-5-20251015":  "Claude Haiku 4.5",

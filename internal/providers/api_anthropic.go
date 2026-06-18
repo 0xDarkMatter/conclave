@@ -18,7 +18,7 @@ func NewAnthropicAPIProvider() *AnthropicAPIProvider {
 	return &AnthropicAPIProvider{
 		apiBaseProvider: apiBaseProvider{
 			name:         "claude",
-			defaultModel: "claude-opus-4-5-20251101",
+			defaultModel: "claude-opus-4-8",
 			apiKeyEnv:    "ANTHROPIC_API_KEY",
 			baseURL:      "https://api.anthropic.com",
 		},

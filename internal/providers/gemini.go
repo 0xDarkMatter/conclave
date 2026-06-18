@@ -18,7 +18,7 @@ func NewGeminiProvider() *GeminiProvider {
 	return &GeminiProvider{
 		baseProvider: baseProvider{
 			name:         "gemini",
-			defaultModel: "gemini-3-pro-preview",
+			defaultModel: "gemini-3.1-pro-preview",
 			command:      "gemini",
 		},
 	}

@@ -47,7 +47,8 @@
 
 | Model ID | Description | Context | Input $/M | Output $/M |
 |----------|-------------|---------|-----------|------------|
-| `gpt-5.2` | **Default** - Best for coding/agents | 400K | $1.75 | $14.00 |
+| `gpt-5.5` | **Default** - Best for coding/agents | 1M | $5.00 | $30.00 |
+| `gpt-5.2` | Previous frontier model | 400K | $1.75 | $14.00 |
 | `gpt-4.1` | General purpose, 1M context | 1M | ~$2.00 | ~$8.00 |
 | `gpt-4o` | Multimodal, balanced | 128K | $2.50 | $10.00 |
 | `o4-mini` | Compact reasoning model | 200K | $1.10 | $4.40 |
@@ -150,9 +151,9 @@ These are the models used when no `-m` override is specified:
 
 | Provider | CLI Mode | API Mode (`-g`) |
 |----------|----------|-----------------|
-| gemini | `gemini-3-pro-preview` | `gemini-3-pro-preview` |
-| openai | `gpt-5.2` | `gpt-5.2` |
-| claude | `claude-opus-4-5-20251101` | `claude-opus-4-5-20251101` |
+| gemini | `gemini-3.1-pro-preview` | `gemini-3.1-pro-preview` |
+| openai | `gpt-5.5` | `gpt-5.5` |
+| claude | `claude-opus-4-8` | `claude-opus-4-8` |
 | perplexity | `sonar-pro` | `sonar-pro` |
 | grok | `grok-code-fast-1` | `grok-4-1-fast-reasoning` |
 | glm | `zai-coding-plan/glm-4.7` | `glm-4.7` (disabled) |
@@ -165,9 +166,9 @@ Models used when `--cheap` / `-c` flag is set (for pipelines and batch processin
 
 | Provider | Default Model | Cheap Model | Input $/M | Output $/M |
 |----------|---------------|-------------|-----------|------------|
-| gemini | gemini-3-pro-preview | `gemini-3-flash-preview` | $0.50 | $3.00 |
-| openai | gpt-5.2 | `gpt-5-nano` | $0.10 | $0.40 |
-| claude | claude-opus-4-5 | `claude-haiku-4-5-20251015` | $1.00 | $5.00 |
+| gemini | gemini-3.1-pro-preview | `gemini-3-flash-preview` | $0.50 | $3.00 |
+| openai | gpt-5.5 | `gpt-5-nano` | $0.10 | $0.40 |
+| claude | claude-opus-4-8 | `claude-haiku-4-5-20251001` | $1.00 | $5.00 |
 | perplexity | sonar-pro | `sonar` | $1.00 | $1.00 |
 | grok | grok-4-1-fast | `grok-4-1-fast-non-reasoning` | $0.20 | $0.50 |
 | glm | glm-4.7 | `glm-4.6v-flashx` | Free | Free |
@@ -193,9 +194,9 @@ Rough cost per 1K-token query (typical: 500 in, 500 out):
 | GLM | glm-4.7 | $0.0014 |
 | Gemini | gemini-3-flash | $0.00175 |
 | Perplexity | sonar | $0.001 + request fee |
-| Gemini | gemini-3-pro | $0.007 |
-| OpenAI | gpt-5.2 | $0.008 |
-| Claude | opus-4.5 | $0.015 |
+| Gemini | gemini-3.1-pro | $0.007 |
+| OpenAI | gpt-5.5 | $0.0175 |
+| Claude | opus-4.8 | $0.015 |
 
 **Full Conclave query (5 providers + judge):**
 ~$0.03-0.05 per query with default models
