@@ -29,7 +29,7 @@ func TestDefaultConfig(t *testing.T) {
 		"openai":     "gpt-5.5",
 		"claude":     "claude-opus-4-8",
 		"perplexity": "sonar-pro",
-		"grok":       "grok-code-fast-1",
+		"grok":       "grok-4-1-fast-reasoning",
 		"glm":        "zai-coding-plan/glm-5.2",
 	}
 

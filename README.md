@@ -254,7 +254,7 @@ See [docs/BATCH_MODE.md](docs/BATCH_MODE.md) for full documentation and [docs/BA
 | openai | gpt-5.5 | gpt-5.5 |
 | claude | claude-opus-4-8 | claude-opus-4-8 |
 | perplexity | sonar-pro | sonar-pro |
-| grok | grok-code-fast-1 | grok-4-1-fast-reasoning |
+| grok | grok-4-1-fast-reasoning | grok-4-1-fast-reasoning |
 
 Override with `-m provider:model`:
 ```bash

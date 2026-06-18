@@ -114,7 +114,7 @@
 | `grok-4` | Flagship reasoning model | 256K | $3.00 | $15.00 |
 | `grok-4-fast-reasoning` | Previous fast model | 256K | $0.20 | $0.50 |
 | `grok-3` | Previous generation | 128K | $3.00 | $15.00 |
-| `grok-code-fast-1` | Optimized for code | 128K | $0.20 | $0.50 |
+| `grok-code-fast-1` | Optimized for code (deprecated, retires 2026-08-15) | 128K | $0.20 | $0.50 |
 
 **Notes:**
 - Large context (>256K): 2x pricing
@@ -156,7 +156,7 @@ These are the models used when no `-m` override is specified:
 | openai | `gpt-5.5` | `gpt-5.5` |
 | claude | `claude-opus-4-8` | `claude-opus-4-8` |
 | perplexity | `sonar-pro` | `sonar-pro` |
-| grok | `grok-code-fast-1` | `grok-4-1-fast-reasoning` |
+| grok | `grok-4-1-fast-reasoning` | `grok-4-1-fast-reasoning` |
 | glm | `zai-coding-plan/glm-5.2` | `glm-5.2` (disabled) |
 
 ---
