@@ -21,6 +21,68 @@ Built with [Charm](https://charm.sh)'s Bubble Tea for a terminal UI that doesn't
 - **Faster iteration** - Parallel queries, one synthesized answer
 - **Beautiful TUI** - Animated progress with [Charm](https://charm.sh) (Bubble Tea)
 
+## Recent Updates
+
+### v1.2.0 — 2026-06-18
+
+**🚀 GPT-5.5 and GLM-5.2 support**
+
+Conclave now defaults to the latest flagship models out of the box — OpenAI **GPT-5.5** and Z.ai **GLM-5.2**. Other defaults were refreshed too: gemini `gemini-3-pro-preview` (shut down) → `gemini-3.1-pro-preview`, claude → `claude-opus-4-8`, and grok's CLI default `grok-code-fast-1` (retiring 2026-08-15) → `grok-4-1-fast-reasoning`. Override any of them with `-m provider:model`.
+
+**🔑 OS keyring for API keys**
+
+Keys can now live in the OS keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) instead of a plaintext env var or `.env`. When a provider's `*_API_KEY` is unset, Conclave reads it from the keyring automatically — resolution order is env → `~/.config/conclave/.env` → `./.env` → keyring. Manage entries with the new `conclave keyring set|list|rm <ENV_VAR>` command.
+
+```bash
+conclave keyring set GLM_API_KEY      # hidden prompt; loads automatically thereafter
+```
+
+**🔌 GLM drops the `opencode` dependency**
+
+CLI-mode `glm` no longer shells out to the `opencode` binary — it calls the Z.ai GLM Coding Plan directly over OpenAI-compatible HTTP (`api.z.ai/api/coding/paas/v4`), using your flat Coding Plan subscription. GLM now needs only an API key, like every other provider.
+
+**📐 Architecture Decision Records**
+
+Added [`docs/adr/`](docs/adr/) — eight ADRs capturing the foundational design (dual provider modes, LLM-as-judge, parallel/per-provider timeouts, the shared HTTP client, credential precedence) plus this release's decisions.
+
+---
+
+### v1.1.0 — 2026-05-22
+
+**🐛 Production bug fixes**
+
+Six fixes for pain points hit running Conclave heavily against gpt-5.x reasoning models. Most importantly: `conclave -g openai -m openai:gpt-5.5` now works — previously the call would silently fail or return empty responses because OpenAI rejects `max_tokens` for the reasoning model family and needs `max_completion_tokens` instead. Error visibility is dramatically improved across the board: HTTP status codes, provider error codes and params, and full diagnostic bodies are surfaced instead of truncated. When all providers fail, you now see each provider's full error in the styled output instead of just a clipped spinner line.
+
+**✨ `--raw` output mode**
+
+New flag emits sentinel-separated provider blocks for clean piping into downstream parsers. Implies `--no-judge`, mutually exclusive with `--json`.
+
+```bash
+conclave -g gemini,claude "classify" --raw -f items.txt | my-extractor
+```
+
+**🎨 Styled output with Lipgloss**
+
+New header panel with metadata, adaptive colors for light/dark terminals, and a refreshed cool-tones palette. The output now actually looks like the tagline promises.
+
+**🛡 Preflight auth checks**
+
+Catches missing or invalid credentials before burning the parallel-query timeout. Bypass with `--skip-preflight`.
+
+**👀 `--list-providers` shows both modes**
+
+The CLI and API columns now print side-by-side by default. The surprising divergences (glm is CLI-only, grok uses different defaults per mode) are visible at a glance. Use `-g` to get the single-column format for scripts that parse this output.
+
+---
+
+### v1.0.0 — 2026-01-08
+
+**🎉 Initial release**
+
+Multi-provider parallel querying across Gemini, OpenAI, Claude, Grok, Perplexity, and GLM — in CLI mode (wrapping each provider's CLI) or API mode (`-g`). A judge model synthesizes the responses into a single verdict, with `--blind` for unbiased judging. Plus cheap mode (`-c`), batch mode (`--batch`) with parallel workers and resume, and a Charm Bubble Tea TUI with live progress.
+
+---
+
 ## Terminal UI
 
 Conclave features a rich terminal interface powered by [Bubble Tea](https://github.com/charmbracelet/bubbletea):
@@ -129,68 +191,6 @@ conclave gemini,openai,claude "Is this code secure?" -f auth.go --judge claude
 # Use all available providers
 conclave --all "Review this architecture" -f design.md --judge claude
 ```
-
-## Recent Updates
-
-### v1.2.0 — 2026-06-18
-
-**🚀 GPT-5.5 and GLM-5.2 support**
-
-Conclave now defaults to the latest flagship models out of the box — OpenAI **GPT-5.5** and Z.ai **GLM-5.2**. Other defaults were refreshed too: gemini `gemini-3-pro-preview` (shut down) → `gemini-3.1-pro-preview`, claude → `claude-opus-4-8`, and grok's CLI default `grok-code-fast-1` (retiring 2026-08-15) → `grok-4-1-fast-reasoning`. Override any of them with `-m provider:model`.
-
-**🔑 OS keyring for API keys**
-
-Keys can now live in the OS keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) instead of a plaintext env var or `.env`. When a provider's `*_API_KEY` is unset, Conclave reads it from the keyring automatically — resolution order is env → `~/.config/conclave/.env` → `./.env` → keyring. Manage entries with the new `conclave keyring set|list|rm <ENV_VAR>` command.
-
-```bash
-conclave keyring set GLM_API_KEY      # hidden prompt; loads automatically thereafter
-```
-
-**🔌 GLM drops the `opencode` dependency**
-
-CLI-mode `glm` no longer shells out to the `opencode` binary — it calls the Z.ai GLM Coding Plan directly over OpenAI-compatible HTTP (`api.z.ai/api/coding/paas/v4`), using your flat Coding Plan subscription. GLM now needs only an API key, like every other provider.
-
-**📐 Architecture Decision Records**
-
-Added [`docs/adr/`](docs/adr/) — eight ADRs capturing the foundational design (dual provider modes, LLM-as-judge, parallel/per-provider timeouts, the shared HTTP client, credential precedence) plus this release's decisions.
-
----
-
-### v1.1.0 — 2026-05-22
-
-**🐛 Production bug fixes**
-
-Six fixes for pain points hit running Conclave heavily against gpt-5.x reasoning models. Most importantly: `conclave -g openai -m openai:gpt-5.5` now works — previously the call would silently fail or return empty responses because OpenAI rejects `max_tokens` for the reasoning model family and needs `max_completion_tokens` instead. Error visibility is dramatically improved across the board: HTTP status codes, provider error codes and params, and full diagnostic bodies are surfaced instead of truncated. When all providers fail, you now see each provider's full error in the styled output instead of just a clipped spinner line.
-
-**✨ `--raw` output mode**
-
-New flag emits sentinel-separated provider blocks for clean piping into downstream parsers. Implies `--no-judge`, mutually exclusive with `--json`.
-
-```bash
-conclave -g gemini,claude "classify" --raw -f items.txt | my-extractor
-```
-
-**🎨 Styled output with Lipgloss**
-
-New header panel with metadata, adaptive colors for light/dark terminals, and a refreshed cool-tones palette. The output now actually looks like the tagline promises.
-
-**🛡 Preflight auth checks**
-
-Catches missing or invalid credentials before burning the parallel-query timeout. Bypass with `--skip-preflight`.
-
-**👀 `--list-providers` shows both modes**
-
-The CLI and API columns now print side-by-side by default. The surprising divergences (glm is CLI-only, grok uses different defaults per mode) are visible at a glance. Use `-g` to get the single-column format for scripts that parse this output.
-
----
-
-### v1.0.0 — 2026-01-08
-
-**🎉 Initial release**
-
-Multi-provider parallel querying across Gemini, OpenAI, Claude, Grok, Perplexity, and GLM — in CLI mode (wrapping each provider's CLI) or API mode (`-g`). A judge model synthesizes the responses into a single verdict, with `--blind` for unbiased judging. Plus cheap mode (`-c`), batch mode (`--batch`) with parallel workers and resume, and a Charm Bubble Tea TUI with live progress.
-
----
 
 ## Modes
 
