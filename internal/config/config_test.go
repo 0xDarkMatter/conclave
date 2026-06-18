@@ -30,7 +30,7 @@ func TestDefaultConfig(t *testing.T) {
 		"claude":     "claude-opus-4-8",
 		"perplexity": "sonar-pro",
 		"grok":       "grok-4-1-fast-reasoning",
-		"glm":        "zai-coding-plan/glm-5.2",
+		"glm":        "glm-5.2",
 	}
 
 	for provider, expectedModel := range expectedModels {

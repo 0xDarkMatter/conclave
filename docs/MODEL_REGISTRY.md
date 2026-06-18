@@ -125,8 +125,9 @@
 
 ## Zhipu (GLM)
 
-**API Base:** `https://open.bigmodel.cn` (CN) / `https://api.z.ai` (Intl)
-**Auth:** `ZHIPU_API_KEY`
+**Coding Plan endpoint (CLI mode):** `https://api.z.ai/api/coding/paas/v4` — OpenAI-compatible, flat-rate GLM Coding Plan subscription (no pay-as-you-go balance). Used directly over HTTP; **no `opencode` CLI needed**. Override with `GLM_BASE_URL`.
+**Pay-as-you-go endpoint (API mode):** `https://open.bigmodel.cn` (CN) / `https://api.z.ai/api/paas/v4` (Intl) — requires account balance.
+**Auth:** `GLM_API_KEY` / `ZAI_API_KEY` / `ZHIPU_API_KEY` (Bearer token)
 
 | Model ID | Description | Context | Input $/M | Output $/M |
 |----------|-------------|---------|-----------|------------|
@@ -157,7 +158,7 @@ These are the models used when no `-m` override is specified:
 | claude | `claude-opus-4-8` | `claude-opus-4-8` |
 | perplexity | `sonar-pro` | `sonar-pro` |
 | grok | `grok-4-1-fast-reasoning` | `grok-4-1-fast-reasoning` |
-| glm | `zai-coding-plan/glm-5.2` | `glm-5.2` (disabled) |
+| glm | `glm-5.2` (Coding Plan API, no opencode) | `glm-5.2` (disabled) |
 
 ---
 

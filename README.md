@@ -106,7 +106,7 @@ Uses provider-specific CLI tools optimized for coding tasks. Each provider requi
 | **openai** | `codex` | `npm install -g @openai/codex` |
 | **grok** | `grok` | See [xAI Grok CLI](https://github.com/xai-org/grok-cli) |
 | **perplexity** | `perplexity` | See [Perplexity CLI](https://github.com/perplexity-ai/perplexity-cli) |
-| **glm** | `opencode` | See [OpenCode CLI](https://github.com/opencode-ai/opencode) |
+| **glm** | _(none — direct API)_ | Set `GLM_API_KEY` (GLM Coding Plan key from [z.ai](https://z.ai/manage-apikey/apikey-list)) |
 
 **Check what's available:**
 
@@ -244,7 +244,7 @@ See [docs/BATCH_MODE.md](docs/BATCH_MODE.md) for full documentation and [docs/BA
 | claude | `claude` CLI | Anthropic API | `ANTHROPIC_API_KEY` |
 | perplexity | `perplexity` CLI | Perplexity API | `PERPLEXITY_API_KEY` |
 | grok | `grok` CLI | xAI API | `XAI_API_KEY` |
-| glm | `opencode` CLI | Zhipu API | `ZHIPU_API_KEY` |
+| glm | Coding Plan API (direct HTTP) | Zhipu API | `GLM_API_KEY` / `ZAI_API_KEY` |
 
 ### Default Models
 
