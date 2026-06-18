@@ -287,6 +287,21 @@ OPENAI_API_KEY=your-key
 ANTHROPIC_API_KEY=your-key
 ```
 
+### OS Keyring (no plaintext)
+
+Store keys in the OS keyring (Windows Credential Manager / macOS Keychain / Linux
+Secret Service) instead of a file. When the matching env var is unset, conclave
+reads the key from the keyring automatically:
+
+```bash
+conclave keyring set GLM_API_KEY      # hidden prompt, or: echo "$KEY" | conclave keyring set GLM_API_KEY
+conclave keyring list                 # show which provider keys are stored
+conclave keyring rm  GLM_API_KEY
+```
+
+Resolution order is environment variable → `~/.config/conclave/.env` → `./.env` →
+OS keyring. See [ADR-008](docs/adr/ADR-008-api-keys-resolve-from-environment-then-os-keyring.md).
+
 ### Check Available Providers
 
 ```bash
@@ -522,6 +537,12 @@ A skill is available for Claude Code users at `~/.claude/skills/conclave/SKILL.m
 - Integration guidance for spawning LLMs from Claude Code sessions
 - Batch processing workflows
 - Prompt + context passing patterns
+
+## Architecture Decisions
+
+Key design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/) — dual provider
+modes, the LLM-as-judge synthesis, parallel/per-provider timeouts, the shared HTTP
+client, credential precedence + OS-keyring fallback, and the GLM Coding Plan transport.
 
 ## License
 

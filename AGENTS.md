@@ -6,8 +6,10 @@
 
 Conclave is a Go CLI that queries multiple LLM providers in parallel and synthesizes their responses. It operates in two modes:
 
-- **CLI Mode** (default): Wraps provider CLIs (`gemini`, `claude`, `codex`, etc.)
+- **CLI Mode** (default): Wraps provider CLIs (`gemini`, `claude`, `codex`, etc.). Exception: `glm` calls the Z.ai Coding Plan over HTTP directly (no CLI binary) — see ADR-007.
 - **API Mode** (`-g`): Direct API calls to providers
+
+> Architectural decisions are recorded in `docs/adr/` (the directory is the index). Run `python ~/.claude/skills/adr-ops/scripts/adr-touching.py <path>` to find which ADR governs a file before changing it.
 
 ## Architecture
 
@@ -46,9 +48,9 @@ type Provider interface {
 }
 ```
 
-- CLI providers wrap external commands (`gemini.go`, `claude.go`)
-- API providers make HTTP calls (`api_gemini.go`, `api_anthropic.go`)
-- Both share `baseProvider` for common fields
+- CLI providers wrap external commands (`gemini.go`, `claude.go`) and embed `baseProvider`
+- API providers make HTTP calls (`api_gemini.go`, `api_anthropic.go`) and embed `apiBaseProvider`
+- Exception: `glm.go` is a CLI-mode provider that embeds `apiBaseProvider` (HTTP to the Coding Plan endpoint, no binary) — ADR-007
 
 ### Adding a New Provider
 
@@ -73,10 +75,11 @@ Priority (highest to lowest):
 3. Config file (`~/.config/conclave/config.yaml`)
 4. Provider defaults
 
-API keys loaded from:
+API keys loaded from (highest to lowest):
 1. Environment variables (`GEMINI_API_KEY`, etc.)
 2. `~/.config/conclave/.env`
 3. `./.env` (project overrides)
+4. OS keyring fallback (service `conclave`, account = env-var name) when the var is unset — `conclave keyring set <ENV_VAR>`; see ADR-005/ADR-008
 
 ## Common Tasks
 
@@ -113,9 +116,11 @@ make install  # Builds and installs to ~/.local/bin
 |------|---------|
 | `cmd/root.go` | CLI entry point, flag definitions |
 | `internal/providers/registry.go` | Provider lookup, `AnyAvailable()` |
-| `internal/providers/api_base.go` | Shared API logic, retry handling |
+| `internal/providers/api_base.go` | Shared API logic, retry handling, `KeyRotator` + OS-keyring fallback |
 | `internal/judge/judge.go` | Verdict synthesis prompt and parsing |
 | `internal/config/env.go` | .env file loading/saving |
+| `cmd/keyring.go` | `conclave keyring set/list/rm` — manage keys in the OS keyring |
+| `docs/adr/` | Architecture Decision Records (the directory is the index) |
 
 ## Code Style
 
@@ -135,5 +140,5 @@ make install  # Builds and installs to ~/.local/bin
 
 1. **Model names**: CLI and API modes may use different model identifiers
 2. **Timeouts**: Per-provider timeout, not total - parallel execution
-3. **GLM disabled**: Currently excluded due to slow response times
+3. **GLM API mode disabled**: `-g glm` is excluded (pay-as-you-go endpoint latency/balance — ADR-006). CLI-mode `glm` works via the Coding Plan HTTP endpoint (ADR-007).
 4. **Blind mode**: Anonymizes provider names for unbiased judging

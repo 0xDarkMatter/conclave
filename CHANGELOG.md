@@ -5,6 +5,31 @@ All notable changes to Conclave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- OS keyring fallback for API keys: when a provider's `*_API_KEY` env var is
+  unset, conclave reads it from the OS keyring (Windows Credential Manager /
+  macOS Keychain / Linux Secret Service) via `zalando/go-keyring`. Resolution
+  order: env → `~/.config/conclave/.env` → `./.env` → keyring.
+- `conclave keyring set|list|rm <ENV_VAR>` to manage keys in the OS keyring.
+- `docs/adr/` — Architecture Decision Records (ADR-001…008) capturing the
+  foundational design and this release's changes.
+
+### Changed
+
+- GLM no longer requires the `opencode` CLI: CLI-mode `glm` now calls the Z.ai
+  GLM Coding Plan over direct HTTP (`api.z.ai/api/coding/paas/v4`,
+  OpenAI-compatible), keyed on `GLM_API_KEY`/`ZAI_API_KEY`, model id `glm-5.2`.
+- Refreshed stale provider default models to current ids:
+  - openai `gpt-5.2` → `gpt-5.5`
+  - gemini `gemini-3-pro-preview` (shut down) → `gemini-3.1-pro-preview`
+  - claude `claude-opus-4-5-20251101` → `claude-opus-4-8`
+  - glm `glm-4.7` → `glm-5.2`
+  - grok CLI default `grok-code-fast-1` (retires 2026-08-15) →
+    `grok-4-1-fast-reasoning`
+
 ## [1.1.0] - 2026-05-22
 
 Production hardening release. Six bug fixes for issues hit running Conclave
