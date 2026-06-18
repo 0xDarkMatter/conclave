@@ -132,6 +132,30 @@ conclave --all "Review this architecture" -f design.md --judge claude
 
 ## Recent Updates
 
+### v1.2.0 — 2026-06-18
+
+**🔑 OS keyring for API keys**
+
+Keys can now live in the OS keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) instead of a plaintext env var or `.env`. When a provider's `*_API_KEY` is unset, Conclave reads it from the keyring automatically — resolution order is env → `~/.config/conclave/.env` → `./.env` → keyring. Manage entries with the new `conclave keyring set|list|rm <ENV_VAR>` command.
+
+```bash
+conclave keyring set GLM_API_KEY      # hidden prompt; loads automatically thereafter
+```
+
+**🔌 GLM drops the `opencode` dependency**
+
+CLI-mode `glm` no longer shells out to the `opencode` binary — it calls the Z.ai GLM Coding Plan directly over OpenAI-compatible HTTP (`api.z.ai/api/coding/paas/v4`), using your flat Coding Plan subscription. GLM now needs only an API key, like every other provider.
+
+**🔄 Refreshed provider defaults**
+
+Brought stale default models up to current ids: openai `gpt-5.2` → `gpt-5.5`, gemini `gemini-3-pro-preview` (shut down) → `gemini-3.1-pro-preview`, claude `claude-opus-4-5` → `claude-opus-4-8`, glm `glm-4.7` → `glm-5.2`, and grok's CLI default `grok-code-fast-1` (retiring 2026-08-15) → `grok-4-1-fast-reasoning`.
+
+**📐 Architecture Decision Records**
+
+Added [`docs/adr/`](docs/adr/) — eight ADRs capturing the foundational design (dual provider modes, LLM-as-judge, parallel/per-provider timeouts, the shared HTTP client, credential precedence) plus this release's decisions.
+
+---
+
 ### v1.1.0 — 2026-05-22
 
 **🐛 Production bug fixes**
