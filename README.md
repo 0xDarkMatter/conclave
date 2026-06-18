@@ -199,7 +199,7 @@ conclave -c --all "Summarize" -f doc.md --brief
 | claude | claude-opus-4-8 | claude-haiku-4-5 |
 | perplexity | sonar-pro | sonar |
 | grok | grok-4-1-fast | grok-4-1-fast-non-reasoning |
-| glm | glm-4.7 | glm-4.6v-flashx |
+| glm | glm-5.2 | glm-4.6v-flashx |
 
 ### Batch Mode (`--batch`)
 

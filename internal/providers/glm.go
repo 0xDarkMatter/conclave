@@ -15,7 +15,7 @@ func NewGLMProvider() *GLMProvider {
 	return &GLMProvider{
 		baseProvider: baseProvider{
 			name:         "glm",
-			defaultModel: "zai-coding-plan/glm-4.7",
+			defaultModel: "zai-coding-plan/glm-5.2",
 			command:      "opencode",
 		},
 	}

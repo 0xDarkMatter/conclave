@@ -195,10 +195,12 @@ var modelDisplayNames = map[string]string{
 	"grok-4-1-fast-reasoning":     "Grok 4.1 Fast",
 	"grok-4-1-fast-non-reasoning": "Grok 4.1 Fast NR",
 	// GLM (CLI)
+	"zai-coding-plan/glm-5.2": "GLM-5.2",
 	"zai-coding-plan/glm-4.7": "GLM-4.7",
 	"glm-4":                   "GLM-4",
 	// GLM (API)
-	"glm-4.7":        "GLM-4.7",
+	"glm-5.2":         "GLM-5.2",
+	"glm-4.7":         "GLM-4.7",
 	"glm-4.6v-flashx": "GLM-4.6V FlashX",
 }
 

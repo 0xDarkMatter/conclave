@@ -130,8 +130,9 @@
 
 | Model ID | Description | Context | Input $/M | Output $/M |
 |----------|-------------|---------|-----------|------------|
-| `glm-4.7` | **Default** - Latest, best performance | 200K | $0.60 | $2.20 |
-| `glm-4.6` | Previous flagship | 128K | $0.60 | $2.20 |
+| `glm-5.2` | **Default** - Latest, 1M context, coding-first | 1M | $0.60 | $2.20 |
+| `glm-4.7` | Previous flagship | 200K | $0.60 | $2.20 |
+| `glm-4.6` | Older flagship | 128K | $0.60 | $2.20 |
 | `glm-4.5` | Stable release | 128K | $0.60 | $2.20 |
 | `glm-4.5-air` | Lightweight, fast | 128K | $0.20 | $1.10 |
 | `glm-4.5-flash` | Free tier | 128K | Free | Free |
@@ -156,7 +157,7 @@ These are the models used when no `-m` override is specified:
 | claude | `claude-opus-4-8` | `claude-opus-4-8` |
 | perplexity | `sonar-pro` | `sonar-pro` |
 | grok | `grok-code-fast-1` | `grok-4-1-fast-reasoning` |
-| glm | `zai-coding-plan/glm-4.7` | `glm-4.7` (disabled) |
+| glm | `zai-coding-plan/glm-5.2` | `glm-5.2` (disabled) |
 
 ---
 
@@ -171,7 +172,7 @@ Models used when `--cheap` / `-c` flag is set (for pipelines and batch processin
 | claude | claude-opus-4-8 | `claude-haiku-4-5-20251001` | $1.00 | $5.00 |
 | perplexity | sonar-pro | `sonar` | $1.00 | $1.00 |
 | grok | grok-4-1-fast | `grok-4-1-fast-non-reasoning` | $0.20 | $0.50 |
-| glm | glm-4.7 | `glm-4.6v-flashx` | Free | Free |
+| glm | glm-5.2 | `glm-4.6v-flashx` | Free | Free |
 
 **Cost comparison per 1K-token query:**
 
@@ -191,7 +192,7 @@ Rough cost per 1K-token query (typical: 500 in, 500 out):
 | Provider | Model | Est. Cost |
 |----------|-------|-----------|
 | Grok | grok-4-1-fast | $0.00035 |
-| GLM | glm-4.7 | $0.0014 |
+| GLM | glm-5.2 | $0.0014 |
 | Gemini | gemini-3-flash | $0.00175 |
 | Perplexity | sonar | $0.001 + request fee |
 | Gemini | gemini-3.1-pro | $0.007 |

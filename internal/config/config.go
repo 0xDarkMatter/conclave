@@ -31,7 +31,7 @@ func DefaultConfig() *Config {
 			"claude":     "claude-opus-4-8",
 			"perplexity": "sonar-pro",
 			"grok":       "grok-code-fast-1",
-			"glm":        "zai-coding-plan/glm-4.7",
+			"glm":        "zai-coding-plan/glm-5.2",
 		},
 		CheapModels: map[string]string{
 			"gemini":     "gemini-3-flash-preview",

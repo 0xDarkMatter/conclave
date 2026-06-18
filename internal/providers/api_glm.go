@@ -17,7 +17,7 @@ func NewGLMAPIProvider() *GLMAPIProvider {
 	return &GLMAPIProvider{
 		apiBaseProvider: apiBaseProvider{
 			name:         "glm",
-			defaultModel: "glm-4.7",
+			defaultModel: "glm-5.2",
 			apiKeyEnv:    "ZHIPU_API_KEY",
 			baseURL:      "https://open.bigmodel.cn",
 		},
