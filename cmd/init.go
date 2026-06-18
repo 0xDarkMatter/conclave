@@ -27,7 +27,7 @@ var providerSetups = []providerSetup{
 	{"claude", "ANTHROPIC_API_KEY", "https://console.anthropic.com/settings/keys", ""},
 	{"perplexity", "PERPLEXITY_API_KEY", "https://www.perplexity.ai/settings/api", ""},
 	{"grok", "XAI_API_KEY", "https://console.x.ai", ""},
-	{"glm", "ZHIPU_API_KEY", "https://open.bigmodel.cn/usercenter/apikeys", ""},
+	{"glm", "GLM_API_KEY", "https://z.ai/manage-apikey/apikey-list", "ZAI_API_KEY"},
 }
 
 var initCmd = &cobra.Command{
@@ -153,7 +153,9 @@ func validateAPIKey(provider, envVar, key string) error {
 	case "grok":
 		p = providers.NewGrokAPIProvider()
 	case "glm":
-		p = providers.NewGLMAPIProvider()
+		// CLI provider hits the Coding Plan endpoint (subscription, no
+		// pay-as-you-go balance) — the right validation target for a GLM key.
+		p = providers.NewGLMProvider()
 	default:
 		return fmt.Errorf("unknown provider: %s", provider)
 	}

@@ -13,7 +13,16 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/zalando/go-keyring"
 )
+
+// KeyringService is the OS-keyring service name conclave stores secrets under.
+// Secrets are keyed by account = the env-var name (e.g. "GLM_API_KEY"), so a
+// key can be saved once via the OS keyring instead of exported every shell:
+//
+//	conclave keyring set GLM_API_KEY        # or any provider's *_API_KEY
+const KeyringService = "conclave"
 
 // KeyRotator provides round-robin selection of API keys
 type KeyRotator struct {
@@ -30,6 +39,18 @@ func NewKeyRotator(envVar string, fallbackEnvVars ...string) *KeyRotator {
 	if keyStr == "" {
 		for _, fallback := range fallbackEnvVars {
 			if keyStr = os.Getenv(fallback); keyStr != "" {
+				break
+			}
+		}
+	}
+
+	// Fall back to the OS keyring (Windows Credential Manager / macOS Keychain /
+	// Secret Service) so a key stored once need not be exported every shell.
+	// Each env-var name doubles as the keyring account under service "conclave".
+	if keyStr == "" {
+		for _, name := range append([]string{envVar}, fallbackEnvVars...) {
+			if v, err := keyring.Get(KeyringService, name); err == nil && strings.TrimSpace(v) != "" {
+				keyStr = v
 				break
 			}
 		}
