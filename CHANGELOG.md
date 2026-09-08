@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `conclave models [provider] [--check|--refresh|--json|--all]` to inspect
   current ids, context sizes and API prices, and to gate releases
   (`--check` exits 1 when a compiled default is missing).
+- OpenRouter as an API-mode backend: in `-g` mode any provider token written
+  as an OpenRouter slug (`deepseek/deepseek-v4-pro`, `anthropic/claude-opus-5`)
+  routes through `openrouter.ai/api/v1/chat/completions`, with the slug as
+  both provider name and model id. Works in the provider list and `--judge`;
+  `--all` never auto-includes OpenRouter models. Key `OPENROUTER_API_KEY`
+  (env, `.env`, or OS keyring); `conclave init` and `keyring list` know it.
+  Preflight checks `/auth/key` and reports an exhausted spend limit as "no
+  credit". Drift warnings, display names and batch cost estimates resolve
+  the slug directly in the pricing catalog. CLI mode rejects slash tokens
+  (API-only, pay-as-you-go). ADR-010.
 
 ### Fixed
 

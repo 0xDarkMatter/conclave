@@ -42,6 +42,24 @@ carry (Perplexity request fees, Gemini long-context multipliers, GLM Coding Plan
 
 ---
 
+## OpenRouter (any model)
+
+**API Base:** `https://openrouter.ai/api/v1`
+**Auth:** `OPENROUTER_API_KEY`
+**CLI mode:** none. Slash tokens are API-only (`-g`); OpenRouter has no subscription path.
+
+Any model in the OpenRouter catalog is reachable in API mode by using its slug as the provider
+token: `conclave -g deepseek/deepseek-v4-pro,anthropic/claude-opus-5 "..." --judge openai/gpt-5.6-sol`.
+The slug is both the provider name and the model id, so it needs no entry in this file and no
+default in `config.go`. Prices are OpenRouter's pass-through vendor price plus a platform fee of
+about 5%; direct providers stay cheaper and richer for gemini, openai and claude. See ADR-010.
+
+There is deliberately no table here: the catalog is hundreds of slugs and changes weekly. For the
+live list with context sizes and prices run `conclave models` (all six direct vendors) or
+`conclave models <vendor>/<anything>` to list one OpenRouter vendor, e.g. `conclave models deepseek/x`.
+
+---
+
 ## Google Gemini
 
 **API Base:** `https://generativelanguage.googleapis.com`

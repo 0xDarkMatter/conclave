@@ -113,9 +113,13 @@ func renderNumberedList(title string, items []string) string {
 
 // renderProviderResponse creates a provider response box
 func renderProviderResponse(provider, model, status, response, errMsg string) string {
-	// Header line
+	// Header line. A slash-routed OpenRouter token is its own model id
+	// (ADR-010), so printing both would repeat the slug; show it once.
 	provName := providerHeaderStyle.Render(provider)
-	modelName := providerModelStyle.Render(model)
+	modelName := ""
+	if model != provider {
+		modelName = " " + providerModelStyle.Render(model)
+	}
 
 	var statusBadge string
 	if status == "success" {
@@ -124,7 +128,7 @@ func renderProviderResponse(provider, model, status, response, errMsg string) st
 		statusBadge = statusErrorStyle.Render("✗")
 	}
 
-	header := fmt.Sprintf("%s %s %s", statusBadge, provName, modelName)
+	header := fmt.Sprintf("%s %s%s", statusBadge, provName, modelName)
 
 	// Content
 	var content string

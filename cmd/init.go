@@ -16,10 +16,10 @@ import (
 
 // Provider setup info
 type providerSetup struct {
-	name    string
-	envVar  string
-	url     string
-	altEnv  string // Alternative env var (e.g., GOOGLE_API_KEY for gemini)
+	name   string
+	envVar string
+	url    string
+	altEnv string // Alternative env var (e.g., GOOGLE_API_KEY for gemini)
 }
 
 var providerSetups = []providerSetup{
@@ -29,6 +29,9 @@ var providerSetups = []providerSetup{
 	{"perplexity", "PERPLEXITY_API_KEY", "https://www.perplexity.ai/settings/api", ""},
 	{"grok", "XAI_API_KEY", "https://console.x.ai", ""},
 	{"glm", "GLM_API_KEY", "https://z.ai/manage-apikey/apikey-list", "ZAI_API_KEY"},
+	// Not a provider name: unlocks vendor/model tokens in -g mode (ADR-010).
+	// Listed here so `init` and `keyring list` know the env var.
+	{"openrouter", providers.OpenRouterKeyEnv, "https://openrouter.ai/settings/keys", ""},
 }
 
 var initCmd = &cobra.Command{
@@ -157,6 +160,18 @@ func validateAPIKey(provider, envVar, key string) error {
 		// CLI provider hits the Coding Plan endpoint (subscription, no
 		// pay-as-you-go balance) — the right validation target for a GLM key.
 		p = providers.NewGLMProvider()
+	case "openrouter":
+		// No default model to query, and /auth/key validates the key without
+		// spending tokens, so preflight is the whole check.
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := providers.NewOpenRouterAPIProvider("").Preflight(ctx); err != nil {
+			if strings.Contains(err.Error(), "401") {
+				return fmt.Errorf("invalid API key")
+			}
+			return err
+		}
+		return nil
 	default:
 		return fmt.Errorf("unknown provider: %s", provider)
 	}

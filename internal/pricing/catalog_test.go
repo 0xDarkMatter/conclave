@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -58,6 +59,9 @@ func TestCandidateSlugs(t *testing.T) {
 		}
 	}
 }
+
+// approx compares USD/M prices that were scaled from per-token strings.
+func approx(a, b float64) bool { return a-b < 1e-9 && b-a < 1e-9 }
 
 func filepathBase(s string) string {
 	for i := len(s) - 1; i >= 0; i-- {
@@ -205,5 +209,76 @@ func TestDisabledEnv(t *testing.T) {
 	c, err := Load(context.Background(), Options{URL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
 	if c != nil || err != nil {
 		t.Errorf("disabled: want nil,nil got %v,%v", c, err)
+	}
+}
+
+// === Slash-routed OpenRouter tokens (ADR-010) ===
+
+// TestLookup_SlashTokenIsExactID pins the special case: when the provider name
+// is itself an OpenRouter slug, Lookup matches it verbatim, never rewrites it,
+// and VendorPrefix/ByVendor derive the vendor from the token.
+func TestLookup_SlashTokenIsExactID(t *testing.T) {
+	var hits int32
+	srv := newServer(t, &hits)
+	defer srv.Close()
+	c, err := Load(context.Background(), Options{URL: srv.URL, CacheDir: t.TempDir(), TTL: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		provider, model string
+		wantID          string
+		wantOK          bool
+	}{
+		{"anthropic/claude-fable-5.1", "anthropic/claude-fable-5.1", "anthropic/claude-fable-5.1", true},
+		{"x-ai/grok-4.1-fast", "x-ai/grok-4.1-fast", "x-ai/grok-4.1-fast", true},
+		// -m override that differs from the token still resolves via the model.
+		{"anthropic/claude-opus-4.8", "anthropic/claude-haiku-4.5", "anthropic/claude-opus-4.8", true},
+		{"anthropic/nope", "anthropic/claude-haiku-4.5:batch", "anthropic/claude-haiku-4.5:batch", true},
+		// No rewriting for slugs: a vendor-style id in a slash token is a miss.
+		{"anthropic/claude-opus-4-8", "anthropic/claude-opus-4-8", "", false},
+		{"deepseek/deepseek-v4", "deepseek/deepseek-v4", "", false},
+	}
+	for _, tt := range tests {
+		m, ok := c.Lookup(tt.provider, tt.model)
+		if ok != tt.wantOK || m.ID != tt.wantID {
+			t.Errorf("Lookup(%q, %q) = (%q, %v), want (%q, %v)", tt.provider, tt.model, m.ID, ok, tt.wantID, tt.wantOK)
+		}
+	}
+
+	if in, out, ok := c.Price("openai/gpt-5-nano", "openai/gpt-5-nano"); !ok || !approx(in, 0.05) || !approx(out, 0.4) {
+		t.Errorf("Price via slash token = (%v, %v, %v), want (0.05, 0.4, true)", in, out, ok)
+	}
+
+	if v, ok := VendorPrefix("deepseek/deepseek-v4"); !ok || v != "deepseek" {
+		t.Errorf("VendorPrefix(slash) = (%q, %v), want (deepseek, true)", v, ok)
+	}
+	if v, ok := VendorPrefix("claude"); !ok || v != "anthropic" {
+		t.Errorf("VendorPrefix(claude) = (%q, %v), want (anthropic, true)", v, ok)
+	}
+	if _, ok := VendorPrefix("/leading-slash"); ok {
+		t.Error("a leading slash is not a vendor/model token")
+	}
+
+	alts := c.ByVendor("anthropic/whatever")
+	if len(alts) == 0 || alts[0].Vendor() != "anthropic" {
+		t.Errorf("ByVendor(slash token) should list the token's vendor; got %v", alts)
+	}
+	for _, m := range alts {
+		if strings.Contains(m.Slug(), ":") {
+			t.Errorf("ByVendor must still drop :variants; got %s", m.ID)
+		}
+	}
+
+	if name, ok := c.NameOf("anthropic/claude-fable-5.1"); !ok || name != "Anthropic: Claude Fable 5.1" {
+		t.Errorf("NameOf = (%q, %v)", name, ok)
+	}
+	if _, ok := c.NameOf("nobody/nothing"); ok {
+		t.Error("NameOf miss should report !ok")
+	}
+	var nilCat *Catalog
+	if _, ok := nilCat.NameOf("anthropic/claude-fable-5.1"); ok {
+		t.Error("NameOf on a nil catalog must be safe and report !ok")
 	}
 }

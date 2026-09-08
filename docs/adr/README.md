@@ -13,3 +13,4 @@
 | ADR-007 | accepted | 2026-06-18 | GLM uses the Coding Plan HTTP endpoint, not the opencode CLI |
 | ADR-008 | accepted | 2026-06-18 | API keys resolve from environment then OS keyring |
 | ADR-009 | accepted | 2026-09-08 | Runtime pricing catalog from OpenRouter, cached daily |
+| ADR-010 | accepted | 2026-09-08 | OpenRouter as a slash-routed API backend |

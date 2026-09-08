@@ -110,7 +110,23 @@ var vendorPrefix = map[string]string{
 }
 
 // VendorPrefix exposes the provider → OpenRouter vendor mapping (read-only use).
+// A slash-routed OpenRouter token ("deepseek/deepseek-v4", ADR-010) is its own
+// vendor prefix ("deepseek"), so drift warnings and "newest listed" hints work
+// for any vendor in the feed without a map entry.
 func VendorPrefix(provider string) (string, bool) {
+	return vendorFor(provider)
+}
+
+// isSlashToken mirrors providers.IsOpenRouterModel without importing it: the
+// pricing package must stay free of a providers dependency.
+func isSlashToken(provider string) bool {
+	return strings.IndexByte(provider, '/') > 0
+}
+
+func vendorFor(provider string) (string, bool) {
+	if isSlashToken(provider) {
+		return provider[:strings.IndexByte(provider, '/')], true
+	}
 	v, ok := vendorPrefix[provider]
 	return v, ok
 }
@@ -233,8 +249,20 @@ func CachePath() string {
 //	grok-4-1-fast-reasoning      -> x-ai/grok-4.1-fast           (variant suffix dropped)
 //
 // Exact slug matches always win; the rewrites are only tried on a miss.
+//
+// For a slash-routed OpenRouter token the provider name IS the catalog id, so
+// it is looked up verbatim (then the model, in case a -m override differs).
+// No rewriting: the user typed an OpenRouter slug, not a vendor id.
 func (c *Catalog) Lookup(provider, model string) (Model, bool) {
 	if c == nil {
+		return Model{}, false
+	}
+	if isSlashToken(provider) {
+		for _, id := range []string{provider, model} {
+			if m, ok := c.byID[id]; ok {
+				return m, true
+			}
+		}
 		return Model{}, false
 	}
 	vendor, ok := vendorPrefix[provider]
@@ -247,6 +275,19 @@ func (c *Catalog) Lookup(provider, model string) (Model, bool) {
 		}
 	}
 	return Model{}, false
+}
+
+// NameOf returns OpenRouter's human label for an exact slug ("DeepSeek: DeepSeek
+// V4"). Nil-safe; used as the providers.DisplayName hook for slash tokens.
+func (c *Catalog) NameOf(id string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	m, ok := c.byID[id]
+	if !ok || m.Name == "" {
+		return "", false
+	}
+	return m.Name, true
 }
 
 // Has is Lookup without the payload.
@@ -270,7 +311,7 @@ func (c *Catalog) ByVendor(provider string) []Model {
 	if c == nil {
 		return nil
 	}
-	vendor, ok := vendorPrefix[provider]
+	vendor, ok := vendorFor(provider)
 	if !ok {
 		return nil
 	}

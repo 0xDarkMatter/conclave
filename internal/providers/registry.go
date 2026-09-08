@@ -6,6 +6,12 @@ import (
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
 )
 
+// Slash routing (ADR-010): in API mode a provider token containing "/" is an
+// OpenRouter model id and is constructed on demand by GetProvider rather than
+// registered up front. AllAPIProviders deliberately does NOT include OpenRouter
+// so --all never fans out to the whole catalog; OpenRouterListing exists only
+// so --list-providers and AnyAvailable can show the row.
+
 // Registry manages provider instances
 type Registry struct {
 	config    *config.Config
@@ -69,11 +75,18 @@ func AllAPIProviders() []Provider {
 	}
 }
 
-// AnyAvailable returns true if at least one provider is available
+// OpenRouterListing returns the non-routable "openrouter" placeholder row for
+// --list-providers (API column only). Ready iff OPENROUTER_API_KEY resolves.
+func OpenRouterListing() Provider {
+	return NewOpenRouterAPIProvider("")
+}
+
+// AnyAvailable returns true if at least one provider is available. In API
+// mode an OpenRouter key alone counts: every vendor/model token is usable.
 func AnyAvailable(general bool) bool {
 	var providerList []Provider
 	if general {
-		providerList = AllAPIProviders()
+		providerList = append(AllAPIProviders(), OpenRouterListing())
 	} else {
 		providerList = AllCLIProviders()
 	}
@@ -86,9 +99,24 @@ func AnyAvailable(general bool) bool {
 	return false
 }
 
-// GetProvider returns a single provider by name
+// GetProvider returns a single provider by name. A name containing "/" is an
+// OpenRouter model (API mode only) and is built on first use; see the slash
+// routing note at the top of this file.
 func (r *Registry) GetProvider(name string, modelOverrides map[string]string) (Provider, error) {
 	p, ok := r.providers[name]
+	if !ok && IsOpenRouterModel(name) {
+		if !r.general {
+			return nil, fmt.Errorf("provider %q is an OpenRouter model (vendor/model) and OpenRouter is API-only: add -g", name)
+		}
+		op := NewOpenRouterAPIProvider(name)
+		if !op.IsAvailable() {
+			return nil, fmt.Errorf("provider %s not available (%s not set)", name, OpenRouterKeyEnv)
+		}
+		// Cache so a token used as both panel member and judge shares one
+		// instance (and one keyring lookup).
+		r.providers[name] = op
+		p, ok = op, true
+	}
 	if !ok {
 		return nil, fmt.Errorf("unknown provider: %s", name)
 	}
@@ -170,12 +198,12 @@ var modelDisplayNames = map[string]string{
 	"gpt-5.6-luna":  "GPT-5.6 Luna",
 	"gpt-5.5":       "GPT-5.5",
 	"gpt-5.2":       "GPT-5.2",
-	"gpt-5-nano":  "GPT-5 Nano",
-	"gpt-4o":      "GPT-4o",
-	"gpt-4o-mini": "GPT-4o Mini",
-	"o1":          "o1",
-	"o1-mini":     "o1-mini",
-	"o3":          "o3",
+	"gpt-5-nano":    "GPT-5 Nano",
+	"gpt-4o":        "GPT-4o",
+	"gpt-4o-mini":   "GPT-4o Mini",
+	"o1":            "o1",
+	"o1-mini":       "o1-mini",
+	"o3":            "o3",
 	// Claude (CLI)
 	"sonnet": "Claude Sonnet",
 	"opus":   "Claude Opus",
@@ -191,7 +219,7 @@ var modelDisplayNames = map[string]string{
 	// Perplexity
 	"sonar-pro":           "Sonar Pro",
 	"sonar":               "Sonar",
-	"sonar-reasoning":    "Sonar Reasoning",
+	"sonar-reasoning":     "Sonar Reasoning",
 	"sonar-reasoning-pro": "Sonar Reasoning Pro",
 	// Grok (CLI)
 	"grok-3":           "Grok 3",
@@ -215,8 +243,31 @@ var modelDisplayNames = map[string]string{
 	"glm-4.6v-flashx": "GLM-4.6V FlashX",
 }
 
-// DisplayName returns a formatted name: {Company} {Model}
+// openRouterNamer resolves an OpenRouter slug to its catalog label (e.g.
+// "deepseek/deepseek-v4" -> "DeepSeek: DeepSeek V4"). Set by cmd once the
+// pricing catalog is loaded; nil (or a miss) falls back to the raw slug. A
+// hook rather than an import keeps providers independent of pricing.
+var openRouterNamer func(id string) (string, bool)
+
+// SetOpenRouterNamer installs the slug -> display-name resolver used by
+// DisplayName for slash-routed tokens. Safe to call with nil.
+func SetOpenRouterNamer(fn func(id string) (string, bool)) {
+	openRouterNamer = fn
+}
+
+// DisplayName returns a formatted name: {Company} {Model}. For an OpenRouter
+// slash token the provider IS the model, so the catalog label (or the raw
+// slug) is returned and the model argument is ignored.
 func DisplayName(provider, model string) string {
+	if IsOpenRouterModel(provider) {
+		if openRouterNamer != nil {
+			if name, ok := openRouterNamer(provider); ok && name != "" {
+				return name
+			}
+		}
+		return provider
+	}
+
 	company := providerCompanies[provider]
 	if company == "" {
 		company = provider

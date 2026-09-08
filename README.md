@@ -277,6 +277,7 @@ See [docs/BATCH_MODE.md](docs/BATCH_MODE.md) for full documentation and [docs/BA
 | perplexity | `perplexity` CLI | Perplexity API | `PERPLEXITY_API_KEY` |
 | grok | `grok` CLI | xAI API | `XAI_API_KEY` |
 | glm | Coding Plan API (direct HTTP) | Zhipu API | `GLM_API_KEY` / `ZAI_API_KEY` |
+| `vendor/model` | — | OpenRouter (any model) | `OPENROUTER_API_KEY` |
 
 ### Default Models
 
@@ -292,6 +293,28 @@ Override with `-m provider:model`:
 ```bash
 conclave gemini,claude "Review this" -m gemini:gemini-2.5-flash -m claude:sonnet
 ```
+
+### OpenRouter (any model)
+
+In API mode, any provider token written as an OpenRouter slug (`vendor/model`) is sent
+through [OpenRouter](https://openrouter.ai/models). The slug is both the provider name and
+the model id, so several OpenRouter models can sit on one panel or act as judge:
+
+```bash
+conclave -g deepseek/deepseek-v4-pro,anthropic/claude-opus-5 "Compare these" --judge openai/gpt-5.6-sol
+conclave -g google/gemini-3.8-flash,claude "Summarise" --judge claude   # mix with direct providers
+```
+
+Set `OPENROUTER_API_KEY` (env, `.env`, or `conclave keyring set OPENROUTER_API_KEY`).
+`conclave models` prints current slugs and prices; `--list-providers -g` shows whether the key
+is configured. `--all` never auto-includes OpenRouter models.
+
+- **API mode only, pay-as-you-go.** OpenRouter cannot use subscriptions (Claude Max, Codex,
+  GLM Coding Plan), and it adds a platform fee of about 5% over the vendor's list price. In CLI
+  mode a slash token is rejected with a hint to add `-g`.
+- **Direct providers remain better for gemini, openai and claude**: no fee, provider-specific
+  request fields, and subscription billing in CLI mode. Use OpenRouter for models conclave has
+  no direct provider for. See [ADR-010](docs/adr/ADR-010-openrouter-as-a-slash-routed-api-backend.md).
 
 ## Setup
 

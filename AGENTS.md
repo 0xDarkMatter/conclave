@@ -31,6 +31,7 @@ internal/
     registry.go    # Provider registration and lookup
     gemini.go      # CLI provider
     api_gemini.go  # API provider
+    api_openrouter.go  # Slash-routed OpenRouter backend: any vendor/model token in -g mode (ADR-010)
     ...
 ```
 
@@ -52,6 +53,10 @@ type Provider interface {
 - CLI providers wrap external commands (`gemini.go`, `claude.go`) and embed `baseProvider`
 - API providers make HTTP calls (`api_gemini.go`, `api_anthropic.go`) and embed `apiBaseProvider`
 - Exception: `glm.go` is a CLI-mode provider that embeds `apiBaseProvider` (HTTP to the Coding Plan endpoint, no binary) — ADR-007
+
+### Slash Routing (OpenRouter)
+
+In API mode (`-g`) any provider token containing `/` (`deepseek/deepseek-v4-pro`, `anthropic/claude-opus-5`) is an OpenRouter model: `registry.GetProvider` builds an `OpenRouterAPIProvider` on the fly with name = model = the token. The token is the provider name everywhere (progress, judge label, `--json`) and the exact id the pricing catalog indexes (`pricing.Lookup` matches it verbatim). There is no plain `openrouter` provider, `AllAPIProviders` does not include it (so `--all` never does), and CLI mode rejects slash tokens. Key: `OPENROUTER_API_KEY` via `NewKeyRotator`. ADR-010.
 
 ### Adding a New Provider
 
@@ -127,6 +132,7 @@ make install  # Builds and installs to ~/.local/bin
 | `internal/config/env.go` | .env file loading/saving |
 | `cmd/keyring.go` | `conclave keyring set/list/rm` — manage keys in the OS keyring |
 | `cmd/models.go` | `conclave models [provider] [--check\|--refresh\|--json]` — inspect the pricing catalog, gate drift |
+| `internal/providers/api_openrouter.go` | OpenRouter transport + `/auth/key` preflight; `IsOpenRouterModel` is the routing rule |
 | `internal/pricing/catalog.go` | OpenRouter catalog cache, TTL, vendor-id → slug rewriter; advisory, nil-safe |
 | `docs/adr/` | Architecture Decision Records (the directory is the index) |
 
@@ -154,3 +160,4 @@ make install  # Builds and installs to ~/.local/bin
 6. **Batch cost fallback table**: `fallbackCosts` in `internal/batch/processor.go` is only used when the catalog is unavailable. Do not extend it; fix the catalog lookup instead.
 7. **gemini CLI needs a key even in CLI mode**: Google retired gemini-cli's free OAuth tier (2026-09). `gemini.go` passes `-p` and `--skip-trust` (removing either reintroduces an interactive hang or exit 55), and when gemini-cli still fails on auth it falls back to the direct Gemini API with the same key and model (`isGeminiCLIAuthError`). gemini-cli ignores an exported key while `~/.gemini/settings.json` says `"selectedType": "oauth-personal"`; switching that to `"gemini-api-key"` makes the CLI route work again and skips the ~13s failed attempt. codex and claude CLIs, by contrast, run on subscriptions and must NOT be gated on API keys.
 8. **Never prompt without a TTY**: `RunInitIfNeeded` bails when stdin is not a terminal. Subprocess callers (praxis grade) cannot answer a prompt; a prompt there is a hang.
+9. **Slash tokens are API-only**: `vendor/model` provider tokens route through OpenRouter and exist only under `-g` (pay-as-you-go, no subscriptions, ~5% platform fee). CLI mode errors with "add -g". The catalog never rewrites slash tokens, so a slug OpenRouter does not list warns and is still sent through. Do not add a plain `openrouter` provider or put OpenRouter in `AllAPIProviders` — ADR-010 rejected both.

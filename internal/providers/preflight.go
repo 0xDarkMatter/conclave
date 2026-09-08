@@ -73,6 +73,9 @@ func getRemediation(name string) string {
 	case "perplexity":
 		return "Set PERPLEXITY_API_KEY env var"
 	default:
+		if IsOpenRouterModel(name) {
+			return "Set OPENROUTER_API_KEY (or: conclave keyring set OPENROUTER_API_KEY) and check credit at https://openrouter.ai/credits"
+		}
 		return "Check provider documentation"
 	}
 }

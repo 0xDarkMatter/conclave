@@ -41,10 +41,10 @@ var (
 	flagCheap         bool
 
 	// Batch mode flags
-	flagBatch       string
-	flagWorkers     int
-	flagOutput      string
-	flagResume      bool
+	flagBatch         string
+	flagWorkers       int
+	flagOutput        string
+	flagResume        bool
 	flagNoRateLimit   bool
 	flagRetries       int
 	flagSkipPreflight bool
@@ -81,7 +81,10 @@ Examples:
 
   # General mode (API-based, no coding restrictions)
   conclave -g gemini,openai,claude "Is democracy under threat?" --judge claude
-  conclave --all --general "Explain the trolley problem" --judge claude`,
+  conclave --all --general "Explain the trolley problem" --judge claude
+
+  # Any OpenRouter model: a vendor/model token routes through OpenRouter (API mode only)
+  conclave -g deepseek/deepseek-v4-pro,anthropic/claude-opus-5 "Compare these" --judge openai/gpt-5.6-sol`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		// Allow no args if --list-providers is set
 		listProviders, _ := cmd.Flags().GetBool("list-providers")
@@ -253,6 +256,10 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// background refresh gets a short grace period to finish writing the cache.
 	catalog := loadCatalog(cmd)
 	defer pricing.WaitBackground(2 * time.Second)
+	// Slash-routed OpenRouter tokens render as the catalog label ("DeepSeek:
+	// DeepSeek V4") in progress and output; NameOf is nil-safe, so a missing
+	// catalog simply leaves the raw slug.
+	providers.SetOpenRouterNamer(catalog.NameOf)
 
 	// Handle batch mode
 	if flagBatch != "" {
@@ -261,8 +268,8 @@ func runConclave(cmd *cobra.Command, args []string) error {
 
 	// Build context from stdin and files
 	ctx, err := context.Build(context.Options{
-		Files:      flagFiles,
-		MaxSize:    flagMaxContext,
+		Files:       flagFiles,
+		MaxSize:     flagMaxContext,
 		IgnoreStdin: flagNoStdin,
 	})
 	if err != nil {
@@ -393,7 +400,8 @@ func listProviders() {
 	// When -g is explicitly set, show only that mode (preserves scriptable
 	// behavior for callers parsing this output).
 	if flagGeneral {
-		printProviderList("API (general mode)", providers.AllAPIProviders(), "no API key")
+		printProviderList("API (general mode)", apiProviderListing(), "no API key")
+		printOpenRouterNote()
 		return
 	}
 
@@ -405,9 +413,22 @@ func listProviders() {
 	fmt.Println()
 	printProviderList("CLI mode (coding-focused)", providers.AllCLIProviders(), "not installed")
 	fmt.Println()
-	printProviderList("API mode (--general / -g)", providers.AllAPIProviders(), "no API key")
+	printProviderList("API mode (--general / -g)", apiProviderListing(), "no API key")
+	printOpenRouterNote()
 	fmt.Println()
 	fmt.Println("Use -g to query in API mode; default is CLI mode.")
+}
+
+// apiProviderListing is AllAPIProviders plus the non-routable "openrouter"
+// row. Listing only: --all and AnyAvailable use the registry's own lists so
+// OpenRouter models are never auto-included (ADR-010).
+func apiProviderListing() []providers.Provider {
+	return append(providers.AllAPIProviders(), providers.OpenRouterListing())
+}
+
+func printOpenRouterNote() {
+	fmt.Println("    openrouter: any model as a vendor/model slug in place of a provider name,")
+	fmt.Println("                e.g. -g deepseek/deepseek-v4-pro (API mode only; `conclave models` lists slugs)")
 }
 
 func printProviderList(heading string, providerList []providers.Provider, notAvailableMsg string) {
@@ -475,6 +496,12 @@ func warnModelDrift(catalog *pricing.Catalog, providerList []providers.Provider)
 		hint := ""
 		if alts := catalog.ByVendor(p.Name()); len(alts) > 0 {
 			hint = fmt.Sprintf(" Newest listed: %s.", alts[0].Slug())
+		}
+		if providers.IsOpenRouterModel(p.Name()) {
+			// The token IS the model; naming it twice and suggesting -m is noise.
+			fmt.Fprintf(os.Stderr, "  warning: OpenRouter slug %q is not in the catalog (fetched %s); OpenRouter will likely reject it.%s See `conclave models %s`.\n",
+				model, catalog.FetchedAt.Format("2006-01-02"), hint, p.Name())
+			continue
 		}
 		fmt.Fprintf(os.Stderr, "  warning: %s model %q is not in the OpenRouter catalog (fetched %s); it may be retired.%s Override with -m %s:<model>.\n",
 			p.Name(), model, catalog.FetchedAt.Format("2006-01-02"), hint, p.Name())
