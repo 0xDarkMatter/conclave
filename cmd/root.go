@@ -369,6 +369,8 @@ func runConclave(cmd *cobra.Command, args []string) error {
 			Raw:     flagRaw,
 			Blind:   flagBlind,
 			Timeout: flagTimeout,
+			Pricing: catalog,
+			APIMode: flagGeneral,
 		})
 		_ = out.Render(output.Result{
 			Query:     prompt,
@@ -406,6 +408,9 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		Raw:     flagRaw,
 		Blind:   flagBlind,
 		Timeout: flagTimeout,
+		// Dollars are API-mode only; flagCheap already implies flagGeneral.
+		Pricing: catalog,
+		APIMode: flagGeneral,
 	})
 
 	return out.Render(output.Result{

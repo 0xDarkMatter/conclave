@@ -5,15 +5,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // renderStyledOutput renders beautiful Lipgloss-styled output
-func (f *Formatter) renderStyledOutput(r Result) error {
+func (f *Formatter) renderStyledOutput(r Result, c costs) error {
 	var sections []string
 
 	// Header panel with metadata
-	headerPanel := renderHeaderPanel(r)
+	headerPanel := renderHeaderPanel(r, c)
 	sections = append(sections, headerPanel)
 
 	// Verdict box (if we have one)
@@ -42,13 +43,17 @@ func (f *Formatter) renderStyledOutput(r Result) error {
 	// providers actually returned instead of losing their work to a
 	// synthesis failure.
 	if f.opts.Verbose || r.Verdict == nil || r.Verdict.Result == "PARSE_ERROR" {
-		for _, resp := range r.Responses {
-			sections = append(sections, renderProviderResponse(resp.Provider, resp.Model, resp.Status, resp.Response, resp.Error))
+		for i, resp := range r.Responses {
+			var cost *float64
+			if i < len(c.byIndex) {
+				cost = c.byIndex[i]
+			}
+			sections = append(sections, renderProviderResponse(resp, cost))
 		}
 	}
 
 	// Footer with timing
-	footer := renderFooter(r)
+	footer := renderFooter(r, c)
 	sections = append(sections, footer)
 
 	// Print everything
@@ -111,8 +116,13 @@ func renderNumberedList(title string, items []string) string {
 	return header + "\n" + strings.Join(listItems, "\n")
 }
 
-// renderProviderResponse creates a provider response box
-func renderProviderResponse(provider, model, status, response, errMsg string) string {
+// renderProviderResponse creates a provider response box. cost is nil when the
+// dollar figure is unknown or CLI mode is in play — an unknown price is shown
+// as nothing, never as $0.00.
+func renderProviderResponse(resp providers.Response, cost *float64) string {
+	provider, model, status := resp.Provider, resp.Model, resp.Status
+	response, errMsg := resp.Response, resp.Error
+
 	// Header line. A slash-routed OpenRouter token is its own model id
 	// (ADR-010), so printing both would repeat the slug; show it once.
 	provName := providerHeaderStyle.Render(provider)
@@ -129,6 +139,9 @@ func renderProviderResponse(provider, model, status, response, errMsg string) st
 	}
 
 	header := fmt.Sprintf("%s %s%s", statusBadge, provName, modelName)
+	if cost != nil {
+		header += "  " + providerModelStyle.Render(formatUSD(*cost))
+	}
 
 	// Content
 	var content string
@@ -149,7 +162,7 @@ func renderProviderResponse(provider, model, status, response, errMsg string) st
 }
 
 // renderHeaderPanel creates the metadata header
-func renderHeaderPanel(r Result) string {
+func renderHeaderPanel(r Result, c costs) string {
 	width := 68 // inner width
 
 	// Title row with timestamp right-aligned
@@ -186,7 +199,7 @@ func renderHeaderPanel(r Result) string {
 }
 
 // renderFooter creates the timing footer
-func renderFooter(r Result) string {
+func renderFooter(r Result, c costs) string {
 	var parts []string
 
 	// Timing info
@@ -212,6 +225,10 @@ func renderFooter(r Result) string {
 	}
 	if totalIn > 0 || totalOut > 0 {
 		parts = append(parts, fmt.Sprintf("Tokens: %d in / %d out", totalIn, totalOut))
+	}
+
+	if c.enabled() {
+		parts = append(parts, "Cost: "+c.formatTotal())
 	}
 
 	return footerStyle.Render(strings.Join(parts, " │ "))

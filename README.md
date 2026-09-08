@@ -436,6 +436,26 @@ conclave gemini,claude "Analyze" --judge claude --json | jq '.verdict'
 
 Structured output for scripting and CI/CD integration.
 
+### Cost Fields (API mode only)
+
+In API mode (`-g` / `-c`) conclave prices each response from the cached
+OpenRouter catalog and shows the dollar figure on the provider block, in the
+header panel, and in the `Completed in` footer. `--json` carries the same
+numbers as `responses.<provider>.cost_usd` and `meta.total_cost_usd` (providers
+plus judge).
+
+Three rules govern the numbers:
+
+- **CLI mode shows nothing about dollars.** Those providers ride subscriptions
+  (Claude Max, Codex, the GLM Coding Plan), so a per-token price would be fiction.
+- **An unknown price is omitted, never printed as `$0.00`.** If the catalog is
+  offline, disabled with `CONCLAVE_NO_PRICING=1`, or simply does not list the
+  model, the field is absent. A displayed zero always means a real zero.
+- **A total ending in `+` is a floor.** At least one response could not be
+  priced, so the true spend is higher than shown.
+
+`--raw` and `--brief` are unchanged: both are fixed-shape contracts.
+
 ### Brief (`--brief`)
 
 One-line summary: verdict, confidence, and key recommendation.

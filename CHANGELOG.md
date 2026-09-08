@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-query cost in API mode (`-g` / `-c`): each provider block, the header
+  panel and the `Completed in` footer show the dollar figure derived from the
+  OpenRouter catalog and the response's token metrics, and `--json` gains
+  `responses.<provider>.cost_usd` plus `meta.total_cost_usd` (providers +
+  judge). An unpriceable model is omitted rather than shown as `$0.00`, and a
+  total ending in `+` means at least one response could not be priced. CLI mode
+  shows nothing about dollars because it is subscription-billed. `--raw` and
+  `--brief` are unchanged.
+
 - Runtime pricing catalog (`internal/pricing`): conclave caches OpenRouter's
   public models feed under the user cache directory, refreshes it in the
   background once per `CONCLAVE_PRICING_TTL` hours (default 24), and never

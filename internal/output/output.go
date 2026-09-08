@@ -10,6 +10,7 @@ import (
 
 	"github.com/0xDarkMatter/conclave-cli/internal/context"
 	"github.com/0xDarkMatter/conclave-cli/internal/judge"
+	"github.com/0xDarkMatter/conclave-cli/internal/pricing"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
 
@@ -23,6 +24,12 @@ type Options struct {
 	Template string // Custom template name
 	Blind    bool
 	Timeout  int
+
+	// Pricing is the advisory OpenRouter catalog; nil is normal and means no
+	// dollar figures are shown. APIMode gates dollars entirely: CLI mode is
+	// subscription-billed, so it must never display a per-token price.
+	Pricing *pricing.Catalog
+	APIMode bool
 }
 
 // Result holds all data for output
@@ -49,21 +56,41 @@ func New(opts Options) *Formatter {
 
 // Render outputs the result
 func (f *Formatter) Render(r Result) error {
+	// --raw is a machine contract (sentinel blocks); costs would corrupt it.
 	if f.opts.Raw {
 		return f.renderRaw(r)
 	}
+
+	c := f.priceResult(r)
+
 	if f.opts.JSON {
-		return f.renderJSON(r)
+		return f.renderJSON(r, c)
 	}
 	if f.opts.Quiet {
 		return f.renderQuiet(r)
 	}
 	if f.opts.Brief {
+		// --brief is a deliberate one-liner; adding dollars would change its shape.
 		return f.renderBrief(r)
 	}
 
 	// Use Lipgloss-styled output
-	return f.renderStyledOutput(r)
+	return f.renderStyledOutput(r, c)
+}
+
+// priceResult computes the render's dollar figures and writes each known
+// per-response figure back into Metrics.CostUSD, which is the field the JSON
+// output and the template data model already read. Providers do not populate
+// it themselves (they know tokens, not prices), so this is the one place it
+// is filled.
+func (f *Formatter) priceResult(r Result) costs {
+	c := computeCosts(f.opts.Pricing, r, f.opts.APIMode)
+	for i, v := range c.byIndex {
+		if v != nil && r.Responses[i].Metrics != nil {
+			r.Responses[i].Metrics.CostUSD = *v
+		}
+	}
+	return c
 }
 
 // renderRaw emits sentinel-separated provider blocks suitable for downstream
@@ -331,6 +358,9 @@ type JSONOutput struct {
 	Meta      struct {
 		TotalDurationMs int64 `json:"total_duration_ms"`
 		JudgeDurationMs int64 `json:"judge_duration_ms,omitempty"`
+		// TotalCostUSD covers providers + judge. Pointer for the same reason as
+		// ResponseJSON.CostUSD. Absent in CLI mode.
+		TotalCostUSD *float64 `json:"total_cost_usd,omitempty"`
 	} `json:"meta"`
 }
 
@@ -340,6 +370,10 @@ type ResponseJSON struct {
 	Response   string `json:"response,omitempty"`
 	Error      string `json:"error,omitempty"`
 	DurationMs int64  `json:"duration_ms"`
+	// CostUSD is a POINTER on purpose: nil means "price unknown" (no catalog
+	// entry, no token metrics, or CLI mode) while 0 means a genuine zero.
+	// A plain float64 with omitempty could not tell those apart.
+	CostUSD *float64 `json:"cost_usd,omitempty"`
 }
 
 type VerdictJSON struct {
@@ -351,7 +385,7 @@ type VerdictJSON struct {
 	Recommendations []string `json:"recommendations"`
 }
 
-func (f *Formatter) renderJSON(r Result) error {
+func (f *Formatter) renderJSON(r Result, c costs) error {
 	out := JSONOutput{
 		Version:   "1.0",
 		Query:     r.Query,
@@ -368,14 +402,18 @@ func (f *Formatter) renderJSON(r Result) error {
 
 	out.Responses = make(map[string]ResponseJSON)
 	var maxDuration time.Duration
-	for _, resp := range r.Responses {
-		out.Responses[resp.Provider] = ResponseJSON{
+	for i, resp := range r.Responses {
+		rj := ResponseJSON{
 			Status:     resp.Status,
 			Model:      resp.Model,
 			Response:   resp.Response,
 			Error:      resp.Error,
 			DurationMs: resp.Duration.Milliseconds(),
 		}
+		if i < len(c.byIndex) {
+			rj.CostUSD = c.byIndex[i]
+		}
+		out.Responses[resp.Provider] = rj
 		if resp.Duration > maxDuration {
 			maxDuration = resp.Duration
 		}
@@ -393,6 +431,7 @@ func (f *Formatter) renderJSON(r Result) error {
 		out.Meta.JudgeDurationMs = r.Verdict.JudgeDuration.Milliseconds()
 	}
 
+	out.Meta.TotalCostUSD = c.total
 	out.Meta.TotalDurationMs = maxDuration.Milliseconds()
 	if r.Verdict != nil {
 		out.Meta.TotalDurationMs += r.Verdict.JudgeDuration.Milliseconds()

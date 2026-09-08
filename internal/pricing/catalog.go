@@ -526,3 +526,18 @@ func ttlFromEnv() time.Duration {
 	}
 	return defaultTTL
 }
+
+// NewCatalog builds an in-memory catalog from an explicit model list and
+// indexes it. Exists so callers outside this package (tests, fixtures) can
+// construct a queryable catalog without a network round trip; Lookup depends
+// on an index that plain json.Unmarshal does not build.
+func NewCatalog(models []Model) *Catalog {
+	c := &Catalog{FetchedAt: time.Now().UTC(), Source: "in-memory", Models: models}
+	c.index()
+	return c
+}
+
+// CacheDir is the conclave cache root ($XDG_CACHE_HOME/conclave, or the OS
+// equivalent). Exported so sibling caches (internal/cache) sit beside the
+// pricing cache instead of re-deriving the XDG rules and drifting from them.
+func CacheDir() string { return defaultCacheDir() }
