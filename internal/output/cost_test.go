@@ -101,11 +101,11 @@ func TestPartialTotalIsMarked(t *testing.T) {
 }
 
 func TestFormatUSDSubCentIsNotRoundedToFree(t *testing.T) {
-	if got := formatUSD(0.00001); got != "<$0.0001" {
-		t.Fatalf("formatUSD(0.00001) = %q", got)
+	if got := pricing.FormatUSD(0.00001); got != "<$0.0001" {
+		t.Fatalf("FormatUSD(0.00001) = %q", got)
 	}
-	if got := formatUSD(0); got != "$0.0000" {
-		t.Fatalf("formatUSD(0) = %q", got)
+	if got := pricing.FormatUSD(0); got != "$0.0000" {
+		t.Fatalf("FormatUSD(0) = %q", got)
 	}
 }
 

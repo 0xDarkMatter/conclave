@@ -686,7 +686,9 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 	fmt.Fprintf(os.Stderr, "\nBatch complete: %d/%d items processed (%s)\n", stats.Completed, stats.Total, formatDuration(duration))
 	fmt.Fprintf(os.Stderr, "  Success: %d (%.1f%%) | Failed: %d (%.1f%%)\n",
 		stats.Succeeded, pct(stats.Succeeded), stats.Failed, pct(stats.Failed))
-	fmt.Fprintf(os.Stderr, "  Estimated cost: $%.4f\n", stats.TotalCost)
+	// Shared formatter: a real but sub-tenth-of-a-cent estimate must not print
+	// as $0.0000, which reads as free.
+	fmt.Fprintf(os.Stderr, "  Estimated cost: %s\n", pricing.FormatUSD(stats.TotalCost))
 
 	// A budget stop is a non-zero exit: the run is incomplete on purpose and a
 	// caller in a pipeline must be able to tell that apart from a clean finish.

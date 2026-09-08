@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xDarkMatter/conclave-cli/internal/pricing"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -143,7 +144,7 @@ func renderProviderResponse(resp providers.Response, cost *float64) string {
 		header += "  " + providerModelStyle.Render("(cached)")
 	}
 	if cost != nil {
-		header += "  " + providerModelStyle.Render(formatUSD(*cost))
+		header += "  " + providerModelStyle.Render(pricing.FormatUSD(*cost))
 	}
 
 	// Content

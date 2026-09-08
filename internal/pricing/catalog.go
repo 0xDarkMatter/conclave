@@ -541,3 +541,53 @@ func NewCatalog(models []Model) *Catalog {
 // equivalent). Exported so sibling caches (internal/cache) sit beside the
 // pricing cache instead of re-deriving the XDG rules and drifting from them.
 func CacheDir() string { return defaultCacheDir() }
+
+// === Costing ===
+//
+// This is the ONE cost engine. Before it existed, internal/output and
+// internal/batch each priced responses with their own copy of the maths and
+// their own copy of the judge split, and they had already diverged. Anything
+// that turns tokens into dollars belongs here.
+
+// JudgeInputShare splits a judge's single token count into input and output for
+// pricing. The Provider interface reports one total (judge.Verdict carries
+// JudgeTokens, not a split), and a synthesis prompt is dominated by the pasted
+// provider answers, so the bias is heavily toward input.
+const JudgeInputShare = 0.7
+
+// CostOf returns the USD cost of one call. ok=false means the catalog cannot
+// price this model, which callers must treat as "unknown" — never as zero.
+// A nil catalog always reports ok=false, so the advisory contract holds.
+func (c *Catalog) CostOf(provider, model string, inTokens, outTokens int) (cost float64, ok bool) {
+	in, out, ok := c.Price(provider, model)
+	if !ok {
+		return 0, false
+	}
+	return float64(inTokens)*in/1_000_000 + float64(outTokens)*out/1_000_000, true
+}
+
+// JudgeCostOf prices a judge call from its combined token count, applying
+// JudgeInputShare. Same ok semantics as CostOf.
+func (c *Catalog) JudgeCostOf(provider, model string, totalTokens int) (cost float64, ok bool) {
+	in, out, ok := c.Price(provider, model)
+	if !ok {
+		return 0, false
+	}
+	t := float64(totalTokens)
+	return t*JudgeInputShare*in/1_000_000 + t*(1-JudgeInputShare)*out/1_000_000, true
+}
+
+// FormatUSD renders a KNOWN cost. Never call it for an unknown one: an unknown
+// price must be omitted, because a printed $0.00 reads as "this was free".
+// A real amount below a tenth of a cent renders as "<$0.0001" rather than
+// rounding down to a zero that would read the same way.
+func FormatUSD(v float64) string {
+	switch {
+	case v <= 0:
+		return "$0.0000"
+	case v < 0.0001:
+		return "<$0.0001"
+	default:
+		return fmt.Sprintf("$%.4f", v)
+	}
+}

@@ -649,42 +649,44 @@ var fallbackCosts = map[string]struct{ in, out float64 }{
 	"glm":        {0.00, 0.00}, // free tier
 }
 
-// priceFor resolves ($/1M in, $/1M out) for a provider+model: live catalog
-// first, compiled fallback second, zero if neither knows the provider.
-func (p *Processor) priceFor(provider, model string) (in, out float64) {
-	if in, out, ok := p.pricing.Price(provider, model); ok {
-		return in, out
-	}
-	if c, ok := fallbackCosts[provider]; ok {
-		return c.in, c.out
-	}
-	return 0, 0
-}
-
-// estimateCost estimates the cost of a query based on token usage. Prices are
-// pay-as-you-go API prices; batch mode always runs in API mode so that is the
-// right basis here.
+// estimateCost estimates the cost of a query from token usage. The arithmetic
+// and the judge split live in internal/pricing, which is the single cost
+// engine; this function only adds the layer pricing deliberately does not have.
+//
+// That layer is the fallback table, and the difference from internal/output is
+// intentional rather than drift. Display must OMIT a price it cannot look up,
+// because a printed $0.00 reads as "this was free". A budget cap must produce
+// SOME number or it silently never binds, so batch mode falls back to the
+// compiled table. Both call the same engine; only the miss policy differs.
+//
+// Prices are pay-as-you-go API prices, which is the right basis because batch
+// mode always forces API mode.
 func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.Verdict) float64 {
 	var totalCost float64
 	for _, r := range responses {
 		// A cache hit was not billed by anyone; counting it would inflate the
 		// running total the budget cap reads.
-		if r.Cached {
+		if r.Cached || r.Metrics == nil {
 			continue
 		}
-		if r.Metrics != nil {
-			in, out := p.priceFor(r.Provider, r.Model)
-			totalCost += float64(r.Metrics.InputTokens) * in / 1_000_000
-			totalCost += float64(r.Metrics.OutputTokens) * out / 1_000_000
+		if cost, ok := p.pricing.CostOf(r.Provider, r.Model, r.Metrics.InputTokens, r.Metrics.OutputTokens); ok {
+			totalCost += cost
+			continue
+		}
+		if c, ok := fallbackCosts[r.Provider]; ok {
+			totalCost += float64(r.Metrics.InputTokens)*c.in/1_000_000 +
+				float64(r.Metrics.OutputTokens)*c.out/1_000_000
 		}
 	}
 
-	// Add judge cost
 	if verdict != nil && verdict.JudgeTokens > 0 {
-		in, out := p.priceFor(verdict.JudgeProvider, verdict.JudgeModel)
-		// Rough split: 70% input, 30% output
-		totalCost += float64(verdict.JudgeTokens) * 0.7 * in / 1_000_000
-		totalCost += float64(verdict.JudgeTokens) * 0.3 * out / 1_000_000
+		if cost, ok := p.pricing.JudgeCostOf(verdict.JudgeProvider, verdict.JudgeModel, verdict.JudgeTokens); ok {
+			totalCost += cost
+		} else if c, ok := fallbackCosts[verdict.JudgeProvider]; ok {
+			t := float64(verdict.JudgeTokens)
+			totalCost += t*pricing.JudgeInputShare*c.in/1_000_000 +
+				t*(1-pricing.JudgeInputShare)*c.out/1_000_000
+		}
 	}
 
 	return totalCost
