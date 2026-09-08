@@ -54,15 +54,18 @@ func init() {
 }
 
 func runModels(cmd *cobra.Command, args []string) error {
+	// Both of these mean "unknown", not "wrong", so they exit distinctly from
+	// real drift and must never fail a build.
 	if pricing.Disabled() {
-		return fmt.Errorf("pricing catalog is disabled (CONCLAVE_NO_PRICING is set)")
+		return withExitCode(ExitCatalogUnavailable,
+			fmt.Errorf("pricing catalog is disabled (CONCLAVE_NO_PRICING is set)"))
 	}
 	cat, err := pricing.Load(cmd.Context(), pricing.Options{ForceRefresh: flagModelsRefresh})
 	if cat == nil {
 		if err == nil {
 			err = fmt.Errorf("no catalog available")
 		}
-		return err
+		return withExitCode(ExitCatalogUnavailable, err)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
@@ -76,7 +79,9 @@ func runModels(cmd *cobra.Command, args []string) error {
 	}
 
 	if flagModelsCheck {
-		return checkDefaults(cat)
+		// Drift is a real finding and gets its own code, so `make check` and CI
+		// can fail on it while still skipping an unreachable catalog.
+		return withExitCode(ExitDrift, checkDefaults(cat))
 	}
 
 	providersToShow := pricing.Providers()

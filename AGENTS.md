@@ -102,16 +102,19 @@ make check
 ```
 
 `make check` is THE gate: `go vet ./...`, `gofmt -l` (must print nothing),
-`go test ./...`, then a build plus `./bin/conclave models --check` for catalog
-drift. Run it before every commit. The catalog step degrades to a skip when the
-network or the catalog is unavailable (or `CONCLAVE_NO_PRICING=1` is set), but a
-real drift still fails.
+`go test ./...`, `go test -race ./...`, then a build plus
+`./bin/conclave models --check`. Run it before every commit.
 
-`.github/workflows/check.yml` runs the same steps on ubuntu-latest and
-windows-latest with the Go version from `go.mod`. There the `models --check`
-step is `continue-on-error`, because it needs the network and an outage on the
-OpenRouter feed must not redden an unrelated PR. If you change `make check`,
-change that workflow in the same commit.
+Two steps adapt rather than being skipped by hand. The race pass is skipped on
+Windows, where a cgo toolchain is usually absent. The catalog step branches on
+`conclave models --check`'s exit code: **2 is real drift and fails**, **3 means
+the catalog is unreachable** (offline, or `CONCLAVE_NO_PRICING=1`) and only
+skips. Do not go back to matching its message text — a reworded error silently
+turns a hard failure into a skip.
+
+`.github/workflows/check.yml` runs `make check` verbatim on ubuntu-latest and
+windows-latest with the Go version from `go.mod`. It deliberately does not
+re-list the steps; that is how the two drifted before.
 
 ### Run Tests
 

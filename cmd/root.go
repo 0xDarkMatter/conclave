@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -173,6 +174,12 @@ func Execute() {
 	_ = config.LoadEnvFile()
 
 	if err := rootCmd.Execute(); err != nil {
+		// A command may ask for a specific exit code so callers can branch on
+		// the reason; see cmd/exit.go.
+		var coded exitCoder
+		if errors.As(err, &coded) {
+			os.Exit(coded.ExitCode())
+		}
 		os.Exit(1)
 	}
 }

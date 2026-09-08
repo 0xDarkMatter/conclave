@@ -89,6 +89,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--budget` warns when it cannot bind: on a non-batch query, where it does
   nothing, and when the pricing catalog is unavailable, where estimates cover
   only the built-in providers.
+- Batch mode no longer checkpoints items that a cancellation stopped from ever
+  running, which made `--resume` skip them permanently.
+- A batch run now keeps a checkpoint even without `--resume`, so the resume
+  hint printed by the budget-stop and interrupt summaries is actually true.
+- Error paths in batch mode now carry the spend they incurred, so a failing
+  judge model no longer makes `--budget` unenforceable.
+- `--json` gains `meta.total_cost_partial`, marking a total that understates
+  the real spend because something could not be priced. The styled output
+  already showed this as a trailing `+`.
+- Runtime failures no longer print the whole usage block after the error,
+  which buried the batch summaries. Argument misuse still shows usage.
+- `conclave models --check` exits 2 on real drift and 3 when the catalog is
+  unreachable, so `make check` and CI branch on the code instead of matching
+  message text.
 - `--json` now reports the timeout actually in force as
   `execution.timeout_seconds`. The field existed but was never populated, so it
   always read `0` regardless of `-t`.

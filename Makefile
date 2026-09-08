@@ -4,7 +4,7 @@ PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build install release clean test lint check vet fmt-check models-check
+.PHONY: build install release clean test lint check vet fmt-check race models-check
 
 # Build for current platform
 build:
@@ -40,8 +40,9 @@ lint:
 	golangci-lint run
 
 # THE gate. Everything that must be true before a commit lands runs here, in
-# one command, in the order that fails cheapest first. CI runs exactly this.
-check: vet fmt-check test models-check
+# one command, in the order that fails cheapest first. CI runs exactly this
+# command, so the two cannot drift.
+check: vet fmt-check test race models-check
 	@echo "check: all gates passed"
 
 vet:
@@ -54,12 +55,20 @@ fmt-check:
 	@echo "==> gofmt"
 	@out=$$(gofmt -l . 2>/dev/null); 	if [ -n "$$out" ]; then 		echo "gofmt: these files need formatting:"; 		echo "$$out"; 		exit 1; 	fi
 
-# Catalog drift check. Needs the network, so it degrades to a skip rather than
-# a failure when the catalog cannot be reached or is switched off. A real drift
-# (a compiled default OpenRouter no longer lists) still fails the gate.
+# The race detector needs a working cgo toolchain. Windows commonly has none,
+# and the concurrent code here is not platform-specific, so skipping there
+# costs nothing while a missing toolchain would otherwise fail the whole gate.
+race:
+	@echo "==> go test -race"
+	@if [ "$$(go env GOOS)" = "windows" ]; then 		echo "skipped: the race detector needs a cgo toolchain, which Windows often lacks"; 	else 		go test -race ./...; 	fi
+
+# Catalog drift check. `conclave models --check` exits 2 for real drift and 3
+# when the catalog cannot be reached, so this branches on the CODE rather than
+# grepping the message: a reworded error used to be able to turn a hard failure
+# into a silent skip.
 models-check: build
 	@echo "==> conclave models --check"
-	@if [ -n "$$CONCLAVE_NO_PRICING" ]; then 		echo "skipped: CONCLAVE_NO_PRICING is set"; 	else 		out=$$(./bin/$(BINARY) models --check 2>&1); rc=$$?; 		echo "$$out"; 		if [ $$rc -ne 0 ]; then 			case "$$out" in 				*"catalog unavailable"*|*"no catalog available"*|*"pricing catalog is disabled"*) 					echo "skipped: pricing catalog unreachable (offline?)";; 				*) exit $$rc;; 			esac; 		fi; 	fi
+	@./bin/$(BINARY) models --check; rc=$$?; 	if [ $$rc -eq 3 ]; then 		echo "skipped: pricing catalog unavailable (offline, or CONCLAVE_NO_PRICING set)"; 	elif [ $$rc -ne 0 ]; then 		exit $$rc; 	fi
 
 # Clean build artifacts
 clean:

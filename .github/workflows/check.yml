@@ -1,9 +1,12 @@
 name: check
 
-# Mirrors `make check` (the local gate). The steps are spelled out rather than
-# invoking make so the workflow does not depend on make being present on the
-# Windows runner, and so the catalog check can be a separate, non-blocking step.
-# If you change `make check`, change this file in the same commit.
+# CI runs `make check` verbatim. Re-listing the steps here is exactly how the
+# two drift: an earlier version of this file grew a race pass the Makefile
+# lacked, and marked the catalog check continue-on-error, so real model drift
+# could never fail a PR. There is one gate, and this runs it.
+#
+# Depends on GNU make existing on both runner images, which it does. If that
+# ever changes the job fails loudly rather than quietly checking less.
 
 on:
   push:
@@ -24,6 +27,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     defaults:
       run:
+        # bash on both, so the Makefile's shell fragments behave identically.
         shell: bash
     steps:
       - uses: actions/checkout@v4
@@ -33,39 +37,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: go vet
-        run: go vet ./...
-
-      # gofmt exits 0 whether or not it finds anything; the gate is that its
-      # file list is empty. .gitattributes pins LF so this is stable on Windows.
-      - name: gofmt
-        run: |
-          out=$(gofmt -l .)
-          if [ -n "$out" ]; then
-            echo "these files need gofmt:"
-            echo "$out"
-            exit 1
-          fi
-
-      - name: go test
-        run: go test ./...
-
-      # The race detector needs a working cgo toolchain, which the Windows
-      # runner does not reliably provide; the batch and cache packages are the
-      # concurrent ones and their behaviour is not platform-specific, so one
-      # Linux pass is enough to catch a data race.
-      - name: go test -race
-        if: matrix.os == 'ubuntu-latest'
-        run: go test -race ./...
-
-      - name: build
-        run: go build -o bin/conclave .
-
-      # Model drift against the live OpenRouter catalog. Network-dependent, so a
-      # failure here is a signal to look, not a reason to block a PR: an outage
-      # or a rate limit on the feed would otherwise redden unrelated changes.
-      # Check the step output when it is red — real drift looks the same as an
-      # outage from the exit code alone.
-      - name: conclave models --check
-        continue-on-error: true
-        run: ./bin/conclave models --check
+      # vet, gofmt, go test, go test -race, then build + models --check.
+      #
+      # The gate adapts per platform rather than being weakened here: the race
+      # pass skips on Windows, where a cgo toolchain is usually absent, and
+      # `conclave models --check` skips only when it exits 3 (catalog
+      # unreachable). Exit 2 is real drift against the live catalog and fails
+      # the job, which is what continue-on-error used to prevent.
+      - name: make check
+        run: make check
