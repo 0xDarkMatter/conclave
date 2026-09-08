@@ -6,3 +6,6 @@
 *.md       text eol=lf
 Makefile   text eol=lf
 *.yml      text eol=lf
+*.svg      text eol=lf
+*.html     text eol=lf
+*.py       text eol=lf
