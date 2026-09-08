@@ -401,6 +401,13 @@ func (f *Formatter) renderJSON(r Result, c costs) error {
 
 	out.Execution.Providers = r.Providers
 	out.Execution.Judge = r.JudgeName
+	// The timeout is carried on both the formatter options and the Result;
+	// callers set them together, so read whichever is populated rather than
+	// silently reporting 0 when only one was filled in.
+	out.Execution.TimeoutSeconds = f.opts.Timeout
+	if out.Execution.TimeoutSeconds == 0 {
+		out.Execution.TimeoutSeconds = r.Timeout
+	}
 
 	out.Responses = make(map[string]ResponseJSON)
 	var maxDuration time.Duration

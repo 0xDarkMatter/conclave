@@ -72,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `--json` now reports the timeout actually in force as
+  `execution.timeout_seconds`. The field existed but was never populated, so it
+  always read `0` regardless of `-t`.
+
 - `gemini` CLI mode: pass `-p` (gemini-cli 0.58 treats a positional prompt as
   interactive mode and never returns headless) and `--skip-trust` plus
   `GEMINI_CLI_TRUST_WORKSPACE=true` (exit 55 in any un-trusted directory).
