@@ -26,11 +26,11 @@ func TestDefaultConfig(t *testing.T) {
 	// Check all models are set
 	expectedModels := map[string]string{
 		"gemini":     "gemini-3.1-pro-preview",
-		"openai":     "gpt-5.5",
-		"claude":     "claude-opus-4-8",
+		"openai":     "gpt-5.6-sol",
+		"claude":     "claude-opus-5",
 		"perplexity": "sonar-pro",
-		"grok":       "grok-4-1-fast-reasoning",
-		"glm":        "glm-5.2",
+		"grok":       "grok-4.6",
+		"glm":        "glm-5.3",
 	}
 
 	for provider, expectedModel := range expectedModels {
@@ -120,8 +120,8 @@ func TestLoadWithEnvOverrides(t *testing.T) {
 	}
 
 	// Other models should be defaults
-	if cfg.Models["openai"] != "gpt-5.5" {
-		t.Errorf("expected openai model 'gpt-5.5', got %s", cfg.Models["openai"])
+	if cfg.Models["openai"] != "gpt-5.6-sol" {
+		t.Errorf("expected openai model 'gpt-5.6-sol', got %s", cfg.Models["openai"])
 	}
 }
 

@@ -26,7 +26,7 @@ func NewGLMProvider() *GLMProvider {
 	return &GLMProvider{
 		apiBaseProvider: apiBaseProvider{
 			name:         "glm",
-			defaultModel: "glm-5.2",
+			defaultModel: "glm-5.3",
 			apiKeyEnv:    "GLM_API_KEY",
 			baseURL:      codingGLMBaseURL,
 		},

@@ -165,8 +165,11 @@ var modelDisplayNames = map[string]string{
 	"gemini-3-pro-preview":   "Gemini 3 Pro",
 	"gemini-3.1-pro-preview": "Gemini 3.1 Pro",
 	// OpenAI
-	"gpt-5.5":     "GPT-5.5",
-	"gpt-5.2":     "GPT-5.2",
+	"gpt-5.6-sol":   "GPT-5.6 Sol",
+	"gpt-5.6-terra": "GPT-5.6 Terra",
+	"gpt-5.6-luna":  "GPT-5.6 Luna",
+	"gpt-5.5":       "GPT-5.5",
+	"gpt-5.2":       "GPT-5.2",
 	"gpt-5-nano":  "GPT-5 Nano",
 	"gpt-4o":      "GPT-4o",
 	"gpt-4o-mini": "GPT-4o Mini",
@@ -178,10 +181,13 @@ var modelDisplayNames = map[string]string{
 	"opus":   "Claude Opus",
 	"haiku":  "Claude Haiku",
 	// Claude (API)
+	"claude-opus-5":              "Claude Opus 5",
+	"claude-sonnet-5":            "Claude Sonnet 5",
+	"claude-fable-5-1":           "Claude Fable 5.1",
 	"claude-opus-4-8":            "Claude Opus 4.8",
 	"claude-opus-4-5-20251101":   "Claude Opus 4.5",
 	"claude-sonnet-4-5-20250929": "Claude Sonnet 4.5",
-	"claude-haiku-4-5-20251015":  "Claude Haiku 4.5",
+	"claude-haiku-4-5-20251001":  "Claude Haiku 4.5", // matches the cheap-model id in config.go
 	// Perplexity
 	"sonar-pro":           "Sonar Pro",
 	"sonar":               "Sonar",
@@ -192,6 +198,9 @@ var modelDisplayNames = map[string]string{
 	"grok-code-fast-1": "Grok Code Fast",
 	"grok-4-latest":    "Grok 4",
 	// Grok (API)
+	"grok-4.6":                    "Grok 4.6",
+	"grok-4.20":                   "Grok 4.20",
+	"grok-build-0.1":              "Grok Build 0.1",
 	"grok-4-1-fast-reasoning":     "Grok 4.1 Fast",
 	"grok-4-1-fast-non-reasoning": "Grok 4.1 Fast NR",
 	// GLM (CLI)
@@ -199,6 +208,8 @@ var modelDisplayNames = map[string]string{
 	"zai-coding-plan/glm-4.7": "GLM-4.7",
 	"glm-4":                   "GLM-4",
 	// GLM (API)
+	"glm-5.3":         "GLM-5.3",
+	"glm-5.3-flash":   "GLM-5.3 Flash",
 	"glm-5.2":         "GLM-5.2",
 	"glm-4.7":         "GLM-4.7",
 	"glm-4.6v-flashx": "GLM-4.6V FlashX",

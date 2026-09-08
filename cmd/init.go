@@ -11,6 +11,7 @@ import (
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // Provider setup info
@@ -185,6 +186,15 @@ func validateAPIKey(provider, envVar, key string) error {
 func RunInitIfNeeded(general bool) bool {
 	// Check if any providers are available
 	if providers.AnyAvailable(general) {
+		return false
+	}
+
+	// Never prompt when stdin is not a terminal. A pipeline or subprocess
+	// (praxis grade, CI, cron) that reaches here would otherwise block forever
+	// on an invisible "Enter API key:" prompt and look like a hang. Reported
+	// 2026-09-08 as a 110s+ stall on a two-word prompt.
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintln(os.Stderr, "No providers configured and stdin is not a terminal; skipping interactive setup. Run 'conclave init' or set API keys in the environment.")
 		return false
 	}
 

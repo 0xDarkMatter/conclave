@@ -89,8 +89,9 @@ func TestRunPreflightTimeout(t *testing.T) {
 	if len(failures) != 1 {
 		t.Fatalf("expected 1 failure from timeout, got %d", len(failures))
 	}
-	if elapsed > 3*time.Second {
-		t.Errorf("expected timeout within ~2s, took %v", elapsed)
+	// RunPreflight's budget is 5s (claude/codex cold starts on Windows exceed 2s).
+	if elapsed > 6*time.Second {
+		t.Errorf("expected timeout within ~5s, took %v", elapsed)
 	}
 }
 

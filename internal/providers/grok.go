@@ -19,7 +19,7 @@ func NewGrokProvider() *GrokProvider {
 	return &GrokProvider{
 		baseProvider: baseProvider{
 			name:         "grok",
-			defaultModel: "grok-4-1-fast-reasoning",
+			defaultModel: "grok-4.6",
 			command:      "grok",
 		},
 	}

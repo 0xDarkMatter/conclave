@@ -227,11 +227,11 @@ conclave -c --all "Summarize" -f doc.md --brief
 | Provider | Default Model | Cheap Model |
 |----------|---------------|-------------|
 | gemini | gemini-3.1-pro-preview | gemini-3-flash-preview |
-| openai | gpt-5.5 | gpt-5-nano |
-| claude | claude-opus-4-8 | claude-haiku-4-5 |
+| openai | gpt-5.6-sol | gpt-5-nano |
+| claude | claude-opus-5 | claude-haiku-4-5 |
 | perplexity | sonar-pro | sonar |
-| grok | grok-4-1-fast | grok-4-1-fast-non-reasoning |
-| glm | glm-5.2 | glm-4.6v-flashx |
+| grok | grok-4.6 | grok-build-0.1 |
+| glm | glm-5.3 | glm-5.3-flash |
 
 ### Batch Mode (`--batch`)
 
@@ -283,10 +283,10 @@ See [docs/BATCH_MODE.md](docs/BATCH_MODE.md) for full documentation and [docs/BA
 | Provider | CLI Mode | API Mode |
 |----------|----------|----------|
 | gemini | gemini-3.1-pro-preview | gemini-3.1-pro-preview |
-| openai | gpt-5.5 | gpt-5.5 |
-| claude | claude-opus-4-8 | claude-opus-4-8 |
+| openai | gpt-5.6-sol | gpt-5.6-sol |
+| claude | claude-opus-5 | claude-opus-5 |
 | perplexity | sonar-pro | sonar-pro |
-| grok | grok-4-1-fast-reasoning | grok-4-1-fast-reasoning |
+| grok | grok-4.6 | grok-4.6 |
 
 Override with `-m provider:model`:
 ```bash
@@ -343,6 +343,26 @@ conclave --list-providers
 # API mode
 conclave --list-providers -g
 ```
+
+### Model Catalog and Prices
+
+Conclave keeps a cached copy of the [OpenRouter](https://openrouter.ai/models) model feed
+(refreshed in the background once a day) and uses it to warn you when a configured model
+id has disappeared, to price batch-mode cost estimates, and to answer "what exists and
+what does it cost" without leaving the terminal:
+
+```bash
+conclave models                 # every provider, newest models first
+conclave models claude          # one provider
+conclave models --check         # do the compiled defaults still exist? exit 1 on drift
+conclave models --refresh       # fetch now instead of waiting for the daily refresh
+```
+
+Prices shown are pay-as-you-go API prices and apply to API mode (`-g`, `-c`, `--batch`).
+CLI mode runs on each provider's subscription and costs nothing per token. Set
+`CONCLAVE_NO_PRICING=1` to disable the catalog entirely, or `CONCLAVE_PRICING_TTL=<hours>`
+to change how often it refreshes. See [docs/MODEL_REGISTRY.md](docs/MODEL_REGISTRY.md)
+for the annotated reference.
 
 ## Usage Examples
 
@@ -511,6 +531,8 @@ CONCLAVE_TIMEOUT=30               # Override timeout
 CONCLAVE_GEMINI_MODEL=...         # Override default model
 CONCLAVE_CHEAP_CLAUDE_MODEL=...   # Override cheap mode model
 CONCLAVE_EXCLUDE=glm,grok         # Exclude providers from --all
+CONCLAVE_PRICING_TTL=24           # Hours between OpenRouter catalog refreshes
+CONCLAVE_NO_PRICING=1             # Disable the catalog (no network, no drift warnings)
 ```
 
 ## How It Works

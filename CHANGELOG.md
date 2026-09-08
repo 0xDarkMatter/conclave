@@ -5,6 +5,58 @@ All notable changes to Conclave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Runtime pricing catalog (`internal/pricing`): conclave caches OpenRouter's
+  public models feed under the user cache directory, refreshes it in the
+  background once per `CONCLAVE_PRICING_TTL` hours (default 24), and never
+  blocks a query on the network once a cache exists. `CONCLAVE_NO_PRICING=1`
+  disables it. ADR-009.
+- Model drift warning: when a configured model id is not in the catalog,
+  conclave prints one stderr line naming the newest listed alternative and
+  proceeds. Suppressed under `--json`, `--raw`, `-q`.
+- `conclave models [provider] [--check|--refresh|--json|--all]` to inspect
+  current ids, context sizes and API prices, and to gate releases
+  (`--check` exits 1 when a compiled default is missing).
+
+### Fixed
+
+- `gemini` CLI mode: pass `-p` (gemini-cli 0.58 treats a positional prompt as
+  interactive mode and never returns headless) and `--skip-trust` plus
+  `GEMINI_CLI_TRUST_WORKSPACE=true` (exit 55 in any un-trusted directory).
+  When gemini-cli still fails on auth (Google retired the free Code Assist
+  OAuth tier it defaults to) and a `GEMINI_API_KEY` is present, the query
+  falls back to the direct Gemini API with the same model. Set
+  `security.auth.selectedType` to `gemini-api-key` in `~/.gemini/settings.json`
+  to keep the CLI route.
+- Preflight budget raised 2s → 5s; claude/codex cold starts on Windows were
+  tripping it. `codex login status` prints to stderr, which the old check
+  never read.
+- Auto-`init` no longer runs when stdin is not a terminal. A subprocess with
+  no provider keys visible used to block forever on an invisible prompt and
+  look like a 110s+ hang.
+- `openai` CLI-mode preflight asks `codex login status` before demanding
+  `OPENAI_API_KEY`, so ChatGPT-subscription users are no longer rejected.
+  Remediation text for gemini/openai now says which mode needs what.
+
+### Changed
+
+- Default models bumped (all verified live 2026-09-08): openai
+  `gpt-5.5` → `gpt-5.6-sol`, claude `claude-opus-4-8` → `claude-opus-5`,
+  grok `grok-4-1-fast-reasoning` → `grok-4.6` (the only id the grok CLI
+  offers), glm `glm-5.2` → `glm-5.3`. Cheap models: grok → `grok-build-0.1`,
+  glm → `glm-5.3-flash`. `conclave models --check` now passes clean.
+- Batch-mode cost estimates now use live per-model prices from the catalog;
+  the hardcoded table in `internal/batch/processor.go` is demoted to an
+  offline fallback (and its gpt-5-nano input price corrected 0.10 → 0.05).
+- `docs/MODEL_REGISTRY.md` refreshed against the 2026-09-08 feed: GPT-5.6
+  Sol/Terra/Luna, Claude Fable 5 / 5.1, Opus 5, Sonnet 5, Gemini 3.5–3.8
+  Flash, Grok 4.20–4.6 and Build 0.1, GLM 5.3 / 5.3 Flash. Notes that all
+  prices are API-mode only. Adds a Drift Watch section: `grok-4-1-fast-*`
+  and `glm-4.6v-flashx` are no longer listed on OpenRouter.
+
 ## [1.2.0] - 2026-06-18
 
 ### Added

@@ -12,6 +12,7 @@ import (
 	"github.com/0xDarkMatter/conclave-cli/internal/judge"
 	"github.com/0xDarkMatter/conclave-cli/internal/orchestrator"
 	"github.com/0xDarkMatter/conclave-cli/internal/output"
+	"github.com/0xDarkMatter/conclave-cli/internal/pricing"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 	"github.com/0xDarkMatter/conclave-cli/internal/tui"
 	"github.com/spf13/cobra"
@@ -247,9 +248,15 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// Apply model overrides from flags
 	modelOverrides := parseModelOverrides(flagModel)
 
+	// Pricing catalog (advisory; nil when offline or disabled). Loaded once
+	// here so both the drift warning and batch cost estimates share it. Any
+	// background refresh gets a short grace period to finish writing the cache.
+	catalog := loadCatalog(cmd)
+	defer pricing.WaitBackground(2 * time.Second)
+
 	// Handle batch mode
 	if flagBatch != "" {
-		return runBatchMode(cmd, cfg, providerNames, prompt, modelOverrides)
+		return runBatchMode(cmd, cfg, providerNames, prompt, modelOverrides, catalog)
 	}
 
 	// Build context from stdin and files
@@ -274,6 +281,8 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
+	warnModelDrift(catalog, providerList)
 
 	// Preflight auth checks
 	if !flagSkipPreflight {
@@ -433,7 +442,46 @@ func printPreflightFailures(failures []providers.PreflightResult) {
 	fmt.Fprintf(os.Stderr, "\n  Use --skip-preflight to bypass.\n\n")
 }
 
-func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string, defaultPrompt string, modelOverrides map[string]string) error {
+// loadCatalog fetches the OpenRouter pricing catalog under the pricing package's
+// cache rules. Failures are reported once on stderr (never fatal) and only when
+// the user would see other diagnostics anyway.
+func loadCatalog(cmd *cobra.Command) *pricing.Catalog {
+	catalog, err := pricing.Load(cmd.Context(), pricing.Options{})
+	if err != nil && !flagQuiet && !flagJSON && !flagRaw {
+		fmt.Fprintf(os.Stderr, "  note: %v\n", err)
+	}
+	return catalog
+}
+
+// warnModelDrift prints one stderr line per provider whose configured model id
+// is absent from the OpenRouter catalog. The catalog is a proxy for the vendor
+// list, so this is advice, not a refusal: the query proceeds unchanged.
+//
+// Skipped when: no catalog; the model is a CLI alias with no version digits
+// ("sonnet", "opus") which OpenRouter cannot know about; or output is a
+// machine format where a stray line would be noise.
+func warnModelDrift(catalog *pricing.Catalog, providerList []providers.Provider) {
+	if catalog == nil || flagQuiet || flagJSON || flagRaw {
+		return
+	}
+	for _, p := range providerList {
+		model := p.DefaultModel()
+		if !strings.ContainsAny(model, "0123456789") {
+			continue
+		}
+		if _, known := pricing.VendorPrefix(p.Name()); !known || catalog.Has(p.Name(), model) {
+			continue
+		}
+		hint := ""
+		if alts := catalog.ByVendor(p.Name()); len(alts) > 0 {
+			hint = fmt.Sprintf(" Newest listed: %s.", alts[0].Slug())
+		}
+		fmt.Fprintf(os.Stderr, "  warning: %s model %q is not in the OpenRouter catalog (fetched %s); it may be retired.%s Override with -m %s:<model>.\n",
+			p.Name(), model, catalog.FetchedAt.Format("2006-01-02"), hint, p.Name())
+	}
+}
+
+func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string, defaultPrompt string, modelOverrides map[string]string, catalog *pricing.Catalog) error {
 	// Open input file
 	var input *os.File
 	var err error
@@ -471,6 +519,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		if err != nil {
 			return err
 		}
+		warnModelDrift(catalog, tempProviders)
 		if failures := providers.RunPreflight(cmd.Context(), tempProviders); len(failures) > 0 {
 			printPreflightFailures(failures)
 			return fmt.Errorf("preflight auth check failed for %d provider(s)", len(failures))
@@ -491,6 +540,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		Blind:          flagBlind,
 		NoRateLimit:    flagNoRateLimit,
 		Retries:        flagRetries,
+		Pricing:        catalog,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create batch processor: %w", err)

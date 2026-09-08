@@ -24,6 +24,7 @@ internal/
   judge/           # Verdict synthesis logic
   orchestrator/    # Parallel provider execution
   output/          # Result formatting (JSON, human, brief)
+  pricing/         # Cached OpenRouter model catalog: drift warnings, batch prices (ADR-009)
   progress/        # Terminal progress display
   providers/       # Provider implementations
     provider.go    # Provider interface
@@ -58,8 +59,13 @@ type Provider interface {
 2. Implement the `Provider` interface
 3. Register in `AllCLIProviders()` or `AllAPIProviders()` in `registry.go`
 4. Add to `providerSetupInfo` in `cmd/init.go` for interactive setup
-5. Update tests in `provider_test.go`
-6. Document in `README.md` and `docs/MODEL_REGISTRY.md`
+5. Add its OpenRouter vendor prefix to `vendorPrefix` in `internal/pricing/catalog.go` (or drift checks silently skip it)
+6. Update tests in `provider_test.go`
+7. Document in `README.md` and `docs/MODEL_REGISTRY.md`
+
+### Changing a Default Model
+
+Defaults live in `internal/config/config.go` (`Models`, `CheapModels`) and each provider's `defaultModel`. After changing one, run `conclave models --check` (exit 1 on drift) and update the Defaults / Cheap Mode tables in `docs/MODEL_REGISTRY.md` in the same commit.
 
 ### Error Handling
 
@@ -120,6 +126,8 @@ make install  # Builds and installs to ~/.local/bin
 | `internal/judge/judge.go` | Verdict synthesis prompt and parsing |
 | `internal/config/env.go` | .env file loading/saving |
 | `cmd/keyring.go` | `conclave keyring set/list/rm` — manage keys in the OS keyring |
+| `cmd/models.go` | `conclave models [provider] [--check\|--refresh\|--json]` — inspect the pricing catalog, gate drift |
+| `internal/pricing/catalog.go` | OpenRouter catalog cache, TTL, vendor-id → slug rewriter; advisory, nil-safe |
 | `docs/adr/` | Architecture Decision Records (the directory is the index) |
 
 ## Code Style
@@ -142,3 +150,7 @@ make install  # Builds and installs to ~/.local/bin
 2. **Timeouts**: Per-provider timeout, not total - parallel execution
 3. **GLM API mode disabled**: `-g glm` is excluded (pay-as-you-go endpoint latency/balance — ADR-006). CLI-mode `glm` works via the Coding Plan HTTP endpoint (ADR-007).
 4. **Blind mode**: Anonymizes provider names for unbiased judging
+5. **Pricing catalog is advisory**: `internal/pricing` may return a nil catalog (offline, `CONCLAVE_NO_PRICING=1`); every caller must tolerate nil. A model missing from OpenRouter is a warning, never an error — the GLM Coding Plan serves ids OpenRouter does not list. Cache: `$XDG_CACHE_HOME/conclave/openrouter-models.json`, TTL `CONCLAVE_PRICING_TTL` hours (default 24). Prices are API-mode only; CLI mode is subscription-billed.
+6. **Batch cost fallback table**: `fallbackCosts` in `internal/batch/processor.go` is only used when the catalog is unavailable. Do not extend it; fix the catalog lookup instead.
+7. **gemini CLI needs a key even in CLI mode**: Google retired gemini-cli's free OAuth tier (2026-09). `gemini.go` passes `-p` and `--skip-trust` (removing either reintroduces an interactive hang or exit 55), and when gemini-cli still fails on auth it falls back to the direct Gemini API with the same key and model (`isGeminiCLIAuthError`). gemini-cli ignores an exported key while `~/.gemini/settings.json` says `"selectedType": "oauth-personal"`; switching that to `"gemini-api-key"` makes the CLI route work again and skips the ~13s failed attempt. codex and claude CLIs, by contrast, run on subscriptions and must NOT be gated on API keys.
+8. **Never prompt without a TTY**: `RunInitIfNeeded` bails when stdin is not a terminal. Subprocess callers (praxis grade) cannot answer a prompt; a prompt there is a hang.

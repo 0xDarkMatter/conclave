@@ -16,6 +16,7 @@ import (
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
 	"github.com/0xDarkMatter/conclave-cli/internal/judge"
 	"github.com/0xDarkMatter/conclave-cli/internal/orchestrator"
+	"github.com/0xDarkMatter/conclave-cli/internal/pricing"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
 
@@ -101,6 +102,9 @@ type Processor struct {
 	verbose       bool
 	blind         bool
 	retries       int
+	// pricing is the OpenRouter catalog used for cost estimates. May be nil
+	// (offline / disabled); estimateCost then falls back to fallbackCosts.
+	pricing *pricing.Catalog
 }
 
 // Options configures the batch processor
@@ -118,6 +122,8 @@ type Options struct {
 	Blind          bool
 	NoRateLimit    bool
 	Retries        int
+	// Pricing is optional; nil means "use the compiled fallback table".
+	Pricing *pricing.Catalog
 }
 
 // NewProcessor creates a new batch processor
@@ -163,6 +169,7 @@ func NewProcessor(opts Options) (*Processor, error) {
 		verbose:       opts.Verbose,
 		blind:         opts.Blind,
 		retries:       opts.Retries,
+		pricing:       opts.Pricing,
 	}, nil
 }
 
@@ -500,36 +507,51 @@ func (p *Processor) readItems(input io.Reader) ([]Item, error) {
 	return items, scanner.Err()
 }
 
-// estimateCost estimates the cost of a query based on token usage
-func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.Verdict) float64 {
-	// Rough cost estimation based on MODEL_REGISTRY.md pricing
-	// Using cheap mode defaults ($/1M tokens)
-	costs := map[string]struct{ in, out float64 }{
-		"gemini":     {0.50, 3.00},    // gemini-3-flash-preview
-		"openai":     {0.10, 0.40},    // gpt-5-nano
-		"claude":     {1.00, 5.00},    // claude-haiku-4-5
-		"perplexity": {1.00, 1.00},    // sonar
-		"grok":       {0.20, 0.50},    // grok-4-1-fast-non-reasoning
-		"glm":        {0.00, 0.00},    // free tier
-	}
+// fallbackCosts is the LAST-RESORT price table ($/1M tokens), used only when
+// the OpenRouter catalog is unavailable or does not list the model. It mirrors
+// the cheap-mode defaults in config.go at the time of writing; the live catalog
+// is the source of truth and this table is expected to drift. Keep it, do not
+// grow it: batch mode must estimate something even fully offline.
+var fallbackCosts = map[string]struct{ in, out float64 }{
+	"gemini":     {0.50, 3.00}, // gemini-3-flash-preview
+	"openai":     {0.05, 0.40}, // gpt-5-nano
+	"claude":     {1.00, 5.00}, // claude-haiku-4-5
+	"perplexity": {1.00, 1.00}, // sonar
+	"grok":       {0.20, 0.50}, // grok-4-1-fast-non-reasoning
+	"glm":        {0.00, 0.00}, // free tier
+}
 
+// priceFor resolves ($/1M in, $/1M out) for a provider+model: live catalog
+// first, compiled fallback second, zero if neither knows the provider.
+func (p *Processor) priceFor(provider, model string) (in, out float64) {
+	if in, out, ok := p.pricing.Price(provider, model); ok {
+		return in, out
+	}
+	if c, ok := fallbackCosts[provider]; ok {
+		return c.in, c.out
+	}
+	return 0, 0
+}
+
+// estimateCost estimates the cost of a query based on token usage. Prices are
+// pay-as-you-go API prices; batch mode always runs in API mode so that is the
+// right basis here.
+func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.Verdict) float64 {
 	var totalCost float64
 	for _, r := range responses {
 		if r.Metrics != nil {
-			if c, ok := costs[r.Provider]; ok {
-				totalCost += float64(r.Metrics.InputTokens) * c.in / 1_000_000
-				totalCost += float64(r.Metrics.OutputTokens) * c.out / 1_000_000
-			}
+			in, out := p.priceFor(r.Provider, r.Model)
+			totalCost += float64(r.Metrics.InputTokens) * in / 1_000_000
+			totalCost += float64(r.Metrics.OutputTokens) * out / 1_000_000
 		}
 	}
 
 	// Add judge cost
 	if verdict != nil && verdict.JudgeTokens > 0 {
-		if c, ok := costs[verdict.JudgeProvider]; ok {
-			// Rough split: 70% input, 30% output
-			totalCost += float64(verdict.JudgeTokens) * 0.7 * c.in / 1_000_000
-			totalCost += float64(verdict.JudgeTokens) * 0.3 * c.out / 1_000_000
-		}
+		in, out := p.priceFor(verdict.JudgeProvider, verdict.JudgeModel)
+		// Rough split: 70% input, 30% output
+		totalCost += float64(verdict.JudgeTokens) * 0.7 * in / 1_000_000
+		totalCost += float64(verdict.JudgeTokens) * 0.3 * out / 1_000_000
 	}
 
 	return totalCost

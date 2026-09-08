@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -73,7 +74,25 @@ func (p *baseProvider) IsAvailable() bool {
 
 // runCommand executes an external command with optional stdin
 func runCommand(ctx context.Context, name string, args []string, stdin io.Reader) (string, error) {
+	return runCommandEnv(ctx, name, args, stdin, nil)
+}
+
+// runCommandCombined runs a command and returns stdout+stderr together plus the
+// exit error. For status probes (codex login status prints to stderr on
+// success) where the stream split of runCommand hides the answer.
+func runCommandCombined(ctx context.Context, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+// runCommandEnv is runCommand with extra KEY=VALUE pairs appended to the
+// child's environment (the parent environment is inherited; later entries win).
+func runCommandEnv(ctx context.Context, name string, args []string, stdin io.Reader, extraEnv []string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	if len(extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), extraEnv...)
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

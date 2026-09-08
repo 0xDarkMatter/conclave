@@ -25,21 +25,26 @@ func DefaultConfig() *Config {
 		DefaultProviders: []string{"gemini", "openai", "claude"},
 		DefaultJudge:     "claude",
 		TimeoutSeconds:   60,
+		// Defaults are verified against the OpenRouter catalog by
+		// `conclave models --check`; keep them to ids that feed lists, or
+		// every run prints a drift warning. Mirror any change in
+		// docs/MODEL_REGISTRY.md and the per-provider defaultModel fields.
+		// Last verified live (CLI + API) 2026-09-08.
 		Models: map[string]string{
 			"gemini":     "gemini-3.1-pro-preview",
-			"openai":     "gpt-5.5",
-			"claude":     "claude-opus-4-8",
+			"openai":     "gpt-5.6-sol",
+			"claude":     "claude-opus-5",
 			"perplexity": "sonar-pro",
-			"grok":       "grok-4-1-fast-reasoning",
-			"glm":        "glm-5.2",
+			"grok":       "grok-4.6", // the only id the grok CLI accepts; API serves it too
+			"glm":        "glm-5.3",
 		},
 		CheapModels: map[string]string{
 			"gemini":     "gemini-3-flash-preview",
 			"openai":     "gpt-5-nano",
 			"claude":     "claude-haiku-4-5-20251001",
 			"perplexity": "sonar",
-			"grok":       "grok-4-1-fast-non-reasoning",
-			"glm":        "glm-4.6v-flashx",
+			"grok":       "grok-build-0.1", // cheapest grok still listed; grok-4-1-fast-* work on xAI's API but are unlisted
+			"glm":        "glm-5.3-flash",
 		},
 		MaxFileSize:    102400,  // 100KB
 		MaxContextSize: 512000,  // 500KB

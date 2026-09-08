@@ -245,7 +245,7 @@ Batch mode uses cheap models by default:
 | openai | gpt-5-nano | $0.10 | $0.40 |
 | claude | claude-haiku-4-5 | $1.00 | $5.00 |
 | perplexity | sonar | $1.00 | $1.00 |
-| grok | grok-4-1-fast-non-reasoning | $0.20 | $0.50 |
+| grok | grok-build-0.1 | $1.00 | $2.00 |
 
 **Estimated cost per item (5 providers + judge):** ~$0.002-0.005
 

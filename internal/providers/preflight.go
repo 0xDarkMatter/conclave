@@ -9,7 +9,9 @@ import (
 // RunPreflight checks auth for all providers that implement Preflighter.
 // Returns failures only, or nil if all pass.
 func RunPreflight(ctx context.Context, providerList []Provider) []PreflightResult {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	// 5s, not 2s: claude and codex preflights spawn a Node/Rust process each,
+	// and cold starts on Windows regularly exceed 2s (observed 2026-09-08).
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var results []PreflightResult
@@ -63,9 +65,9 @@ func getRemediation(name string) string {
 	case "claude":
 		return "Run: claude auth login"
 	case "gemini":
-		return "Set GEMINI_API_KEY or GOOGLE_API_KEY env var"
+		return "Set GEMINI_API_KEY or GOOGLE_API_KEY env var (gemini-cli's free OAuth tier was retired; a key is required in both modes)"
 	case "openai":
-		return "Set OPENAI_API_KEY env var"
+		return "Run: codex login (CLI mode) or set OPENAI_API_KEY env var (API mode)"
 	case "grok":
 		return "Set XAI_API_KEY env var"
 	case "perplexity":

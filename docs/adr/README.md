@@ -12,3 +12,4 @@
 | ADR-006 | accepted | 2025-12-25 | GLM API mode disabled for latency |
 | ADR-007 | accepted | 2026-06-18 | GLM uses the Coding Plan HTTP endpoint, not the opencode CLI |
 | ADR-008 | accepted | 2026-06-18 | API keys resolve from environment then OS keyring |
+| ADR-009 | accepted | 2026-09-08 | Runtime pricing catalog from OpenRouter, cached daily |
