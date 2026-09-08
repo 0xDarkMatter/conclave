@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `make check`: one gate running `go vet`, `gofmt -l`, `go test` and
   `conclave models --check`, plus a `.github/workflows/check.yml` running the
   same on ubuntu-latest and windows-latest.
+- Tests for `internal/batch`, which had none: item parsing (malformed line
+  skipped, missing id assigned, duplicate id dropped), worker fan-out,
+  rate-limit retry and retry exhaustion, checkpoint resume, cost estimation
+  precedence, and the budget stop, plus `checkpoint_test.go` for
+  load/append/corrupt-line handling.
 
 - Runtime pricing catalog (`internal/pricing`): conclave caches OpenRouter's
   public models feed under the user cache directory, refreshes it in the

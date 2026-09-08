@@ -264,10 +264,11 @@ conclave --all --batch items.jsonl -o out.jsonl --budget 5.00 --resume
 
 Three things to understand before relying on it:
 
-- **Overshoot is expected, by up to `--workers` items.** Cost is measured
-  post-hoc from each item's real token counts, not guessed before dispatch. When
-  the cap trips, the items already in flight run to completion. With
-  `--workers 5` a $5 cap can land at $5.01.
+- **Overshoot is expected, by roughly `--workers` items.** Cost is measured
+  post-hoc from each item's real token counts, not guessed before dispatch, and
+  the cap is compared against spend already *recorded*. When it trips, whatever
+  is already in flight or queued runs to completion. With `--workers 5` a $5 cap
+  typically lands a few cents over; treat it as a guard rail, not a hard limit.
 - **Undispatched items never enter the checkpoint.** Rerunning the same command
   with `--resume` picks up exactly where the cap bit.
 - **A capped run exits non-zero.** That is deliberate, so a pipeline can tell a
