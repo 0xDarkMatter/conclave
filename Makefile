@@ -50,10 +50,14 @@ vet:
 	@go vet ./...
 
 # gofmt -l lists files that WOULD change; the gate is that it prints nothing.
+# Files are enumerated via `go list`, never `gofmt -l .`: gofmt recurses into
+# dot-directories, and the repo root package's dir IS the repo root, so a bare
+# `.` (or the root package dir) sweeps every nested .claude/worktrees/* checkout
+# and fails the gate on other sessions' files (bit us 2026-09-08).
 # gofmt itself exits 0 either way, so the emptiness is the assertion.
 fmt-check:
 	@echo "==> gofmt"
-	@out=$$(gofmt -l . 2>/dev/null); 	if [ -n "$$out" ]; then 		echo "gofmt: these files need formatting:"; 		echo "$$out"; 		exit 1; 	fi
+	@out=$$(gofmt -l $$(go list -f '{{range .GoFiles}}{{$$.Dir}}/{{.}} {{end}}{{range .TestGoFiles}}{{$$.Dir}}/{{.}} {{end}}{{range .XTestGoFiles}}{{$$.Dir}}/{{.}} {{end}}' ./...) 2>/dev/null); 	if [ -n "$$out" ]; then 		echo "gofmt: these files need formatting:"; 		echo "$$out"; 		exit 1; 	fi
 
 # The race detector needs a working cgo toolchain. Windows commonly has none,
 # and the concurrent code here is not platform-specific, so skipping there
