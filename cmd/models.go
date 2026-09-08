@@ -38,7 +38,7 @@ subscription and pays nothing per token.
 
   conclave models                 # every provider, newest models first
   conclave models claude          # one provider
-  conclave models --check         # verify compiled defaults still exist (exit 1 on drift)
+  conclave models --check         # verify compiled defaults still exist (exit 2 on drift, 3 if the catalog is unreachable)
   conclave models --refresh       # force a fetch now
   conclave models --json          # machine-readable dump of the cache`,
 	Args: cobra.MaximumNArgs(1),
@@ -48,7 +48,7 @@ subscription and pays nothing per token.
 func init() {
 	modelsCmd.Flags().BoolVar(&flagModelsRefresh, "refresh", false, "Fetch the catalog now instead of using the cache")
 	modelsCmd.Flags().BoolVar(&flagModelsJSON, "json", false, "Print the cached catalog as JSON")
-	modelsCmd.Flags().BoolVar(&flagModelsCheck, "check", false, "Check conclave's default and cheap models against the catalog; exit 1 if any are missing")
+	modelsCmd.Flags().BoolVar(&flagModelsCheck, "check", false, "Check conclave's default and cheap models against the catalog; exit 2 if any are missing, 3 if the catalog is unreachable")
 	modelsCmd.Flags().BoolVar(&flagModelsAll, "all", false, "Include OpenRouter-only variants (:free, :batch, ...)")
 	rootCmd.AddCommand(modelsCmd)
 }
