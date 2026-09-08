@@ -178,6 +178,14 @@ func Execute() {
 }
 
 func runConclave(cmd *cobra.Command, args []string) error {
+	// Past argument validation, every error we return is a RUNTIME failure (a
+	// provider is down, a budget cap was reached, a batch was interrupted).
+	// Cobra's default is to print the whole usage block after any error from
+	// here, which buries a summary the user needs to read under sixty lines of
+	// flag help. Setting this here rather than on the command keeps usage where
+	// it belongs: on a genuine misuse of the CLI, which Args catches earlier.
+	cmd.SilenceUsage = true
+
 	// Handle --list-providers
 	if flagListProviders {
 		listProviders()

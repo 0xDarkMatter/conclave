@@ -33,17 +33,23 @@ func (c *countingProvider) Query(ctx context.Context, prompt, model string) (str
 // most for a content-addressed store: a torn or interleaved write handing one
 // prompt another prompt's answer. Conclave queries providers in parallel, and
 // two conclave processes can share the store, so writes genuinely overlap.
+//
+// Rounds run SEQUENTIALLY on purpose. Firing every round at once leaves no
+// ordering between a round's Put and the next round's Get, so a run where all
+// 16 prompts miss in every round is legal and the hit-rate assertion below
+// would flake, most visibly under the race detector. Within a round the
+// queries are still concurrent, which is what actually exercises the store.
 func TestConcurrentQueriesNeverServeTheWrongAnswer(t *testing.T) {
 	c := newTestCache(t, time.Hour)
 	prov := &countingProvider{name: "openai"}
 	p := Wrap(prov, c, ModeAPI)
 
 	const prompts = 16
-	const rounds = 8
-	var wg sync.WaitGroup
-	errs := make(chan string, prompts*rounds)
+	const rounds = 4
 
 	for r := 0; r < rounds; r++ {
+		var wg sync.WaitGroup
+		errs := make(chan string, prompts)
 		for i := 0; i < prompts; i++ {
 			wg.Add(1)
 			go func(i int) {
@@ -59,22 +65,26 @@ func TestConcurrentQueriesNeverServeTheWrongAnswer(t *testing.T) {
 				}
 			}(i)
 		}
-	}
-	wg.Wait()
-	close(errs)
-	for e := range errs {
-		t.Error(e)
+		wg.Wait()
+		close(errs)
+		for e := range errs {
+			t.Error(e)
+		}
+
+		// After the first round every prompt is on disk, so no further round
+		// may reach the provider at all. This is exact, not a heuristic,
+		// because the rounds are ordered.
+		if r == 0 {
+			continue
+		}
+		if calls := int(prov.calls.Load()); calls > prompts {
+			t.Fatalf("round %d: provider called %d times in total, want at most %d: the cache stopped hitting",
+				r, calls, prompts)
+		}
 	}
 
-	// Every distinct prompt must be answered, and the cache must have spared
-	// at least some of the repeat work. An exact count is a race; the floor
-	// and ceiling are not.
-	calls := int(prov.calls.Load())
-	if calls < prompts {
-		t.Fatalf("provider called %d times, fewer than the %d distinct prompts", calls, prompts)
-	}
-	if calls == prompts*rounds {
-		t.Fatalf("provider called %d times: the cache never hit at all", calls)
+	if calls := int(prov.calls.Load()); calls != prompts {
+		t.Fatalf("provider called %d times, want exactly %d (one per distinct prompt)", calls, prompts)
 	}
 }
 

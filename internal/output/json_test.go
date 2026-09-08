@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/0xDarkMatter/conclave-cli/internal/pricing"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
 
@@ -73,5 +74,59 @@ func TestJSONTimeoutFallsBackToTheResult(t *testing.T) {
 	out := renderJSONTo(t, New(Options{JSON: true}), result)
 	if out.Execution.TimeoutSeconds != 30 {
 		t.Fatalf("timeout_seconds = %d, want 30 from the Result", out.Execution.TimeoutSeconds)
+	}
+}
+
+// TestJSONMarksAnUnderstatedTotal is the trap a machine consumer falls into:
+// a cache hit is a known zero, so a panel of one cached response and one
+// unpriceable live response yields a total of 0 that looks complete. The
+// styled output says "+"; JSON has no room for that, so it needs a flag.
+func TestJSONMarksAnUnderstatedTotal(t *testing.T) {
+	cat := pricing.NewCatalog([]pricing.Model{
+		{ID: "openai/gpt-test", InputPerM: 1, OutputPerM: 0},
+	})
+	cached := providers.Response{
+		Provider: "openai", Model: "gpt-test", Status: "success", Cached: true,
+		Metrics: &providers.Metrics{InputTokens: 1_000_000},
+	}
+	unpriceable := providers.Response{
+		Provider: "claude", Model: "not-in-catalog", Status: "success",
+		Metrics: &providers.Metrics{InputTokens: 1_000_000},
+	}
+
+	out := renderJSONTo(t, New(Options{JSON: true, APIMode: true, Pricing: cat}),
+		Result{Query: "q", Providers: []string{"openai", "claude"},
+			Responses: []providers.Response{cached, unpriceable}})
+
+	if out.Meta.TotalCostUSD == nil {
+		t.Fatal("total is absent; the cached zero should still be reported")
+	}
+	if *out.Meta.TotalCostUSD != 0 {
+		t.Fatalf("total = %v, want 0 (only the cached response was priceable)", *out.Meta.TotalCostUSD)
+	}
+	if !out.Meta.TotalCostPartial {
+		t.Fatal("total_cost_partial is false, so a consumer reads an understated 0 as the whole bill")
+	}
+	if out.Responses["claude"].CostUSD != nil {
+		t.Fatal("an unpriceable response must have no cost_usd at all")
+	}
+}
+
+// TestJSONCompleteTotalIsNotMarkedPartial is the inverse: flagging every total
+// would make the flag meaningless.
+func TestJSONCompleteTotalIsNotMarkedPartial(t *testing.T) {
+	cat := pricing.NewCatalog([]pricing.Model{{ID: "openai/gpt-test", InputPerM: 1, OutputPerM: 0}})
+	out := renderJSONTo(t, New(Options{JSON: true, APIMode: true, Pricing: cat}),
+		Result{Query: "q", Providers: []string{"openai"},
+			Responses: []providers.Response{{
+				Provider: "openai", Model: "gpt-test", Status: "success",
+				Metrics: &providers.Metrics{InputTokens: 1_000_000},
+			}}})
+
+	if out.Meta.TotalCostPartial {
+		t.Fatal("a fully priced panel was marked partial")
+	}
+	if out.Meta.TotalCostUSD == nil || *out.Meta.TotalCostUSD != 1 {
+		t.Fatalf("total = %v, want 1.00", out.Meta.TotalCostUSD)
 	}
 }

@@ -37,6 +37,8 @@ type costs struct {
 	total *float64
 	// partial is true when at least one response could not be priced, so the
 	// total understates the real spend and must be shown as an "at least".
+	// It is tracked independently of cache hits: a hit is a KNOWN zero and
+	// must not make a total look complete when something else was unpriceable.
 	partial bool
 }
 

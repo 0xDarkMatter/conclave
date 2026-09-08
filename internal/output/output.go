@@ -80,9 +80,11 @@ func (f *Formatter) Render(r Result) error {
 
 // priceResult computes the render's dollar figures and writes each known
 // per-response figure back into Metrics.CostUSD, which is the field the JSON
-// output and the template data model already read. Providers do not populate
-// it themselves (they know tokens, not prices), so this is the one place it
-// is filled.
+// output and the template data model already read.
+//
+// Two CLI-mode providers (claude.go, perplexity.go) report a cost of their own
+// there. They are never overwritten, because this only runs in API mode where
+// those providers are not used.
 func (f *Formatter) priceResult(r Result) costs {
 	c := computeCosts(f.opts.Pricing, r, f.opts.APIMode)
 	for i, v := range c.byIndex {
@@ -361,6 +363,12 @@ type JSONOutput struct {
 		// TotalCostUSD covers providers + judge. Pointer for the same reason as
 		// ResponseJSON.CostUSD. Absent in CLI mode.
 		TotalCostUSD *float64 `json:"total_cost_usd,omitempty"`
+		// TotalCostPartial marks a total that is only a LOWER BOUND because at
+		// least one response could not be priced. The styled output shows this
+		// as a trailing "+", which JSON has no room for, and without the flag a
+		// consumer cannot tell an understated total from a complete one. Absent
+		// when the total is complete.
+		TotalCostPartial bool `json:"total_cost_partial,omitempty"`
 	} `json:"meta"`
 }
 
@@ -442,6 +450,7 @@ func (f *Formatter) renderJSON(r Result, c costs) error {
 	}
 
 	out.Meta.TotalCostUSD = c.total
+	out.Meta.TotalCostPartial = c.total != nil && c.partial
 	out.Meta.TotalDurationMs = maxDuration.Milliseconds()
 	if r.Verdict != nil {
 		out.Meta.TotalDurationMs += r.Verdict.JudgeDuration.Milliseconds()
