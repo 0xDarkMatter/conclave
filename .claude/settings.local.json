@@ -8,7 +8,16 @@
       "Bash(\"$HOME/.local/bin/conclave.exe\" -g gemini,grok,openai \"What is 2+2? Answer in one word.\" --judge gemini)",
       "Bash(xargs rg:*)",
       "Bash(./bin/conclave.exe:*)",
-      "Bash(go build:*)"
+      "Bash(go build:*)",
+      "Bash(claude auth:*)",
+      "Bash(cd \"X:/Forge/Conclave\" && go test ./internal/providers/... -v -run \"Preflight|Remediation\" 2>&1)",
+      "Bash(cd \"X:/Forge/Conclave\" && go test ./... 2>&1)",
+      "Bash(cd \"X:/Forge/Conclave\" && OPENAI_API_KEY=\"\" ./bin/conclave.exe openai \"Say hello\" --no-judge 2>&1)",
+      "Bash(cd \"X:/Forge/Conclave\" && PERPLEXITY_API_KEY=\"\" ./bin/conclave.exe -g perplexity \"test\" --no-judge 2>&1)",
+      "Bash(cd \"X:/Forge/Conclave\" && env -u GEMINI_API_KEY -u GOOGLE_API_KEY ./bin/conclave.exe gemini \"test\" --no-judge 2>&1)",
+      "Bash(cd \"X:/Forge/Conclave\" && go test ./internal/providers/ -run \"TestRunPreflight\" -v -count=1 2>&1)",
+      "Skill(pigeon)",
+      "Skill(pigeon:*)"
     ]
   }
 }
