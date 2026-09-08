@@ -307,7 +307,9 @@ conclave -g google/gemini-3.8-flash,claude "Summarise" --judge claude   # mix wi
 
 Set `OPENROUTER_API_KEY` (env, `.env`, or `conclave keyring set OPENROUTER_API_KEY`).
 `conclave models` prints current slugs and prices; `--list-providers -g` shows whether the key
-is configured. `--all` never auto-includes OpenRouter models.
+is configured. `--all` never auto-includes OpenRouter models. A slug the catalog does not list
+still runs (with a warning) as a panel member, but is refused as the judge so a typo cannot cost
+you the whole panel; `--skip-preflight` overrides that.
 
 - **API mode only, pay-as-you-go.** OpenRouter cannot use subscriptions (Claude Max, Codex,
   GLM Coding Plan), and it adds a platform fee of about 5% over the vendor's list price. In CLI

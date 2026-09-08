@@ -117,10 +117,12 @@ func VendorPrefix(provider string) (string, bool) {
 	return vendorFor(provider)
 }
 
-// isSlashToken mirrors providers.IsOpenRouterModel without importing it: the
-// pricing package must stay free of a providers dependency.
+// isSlashToken mirrors providers.IsOpenRouterModel (both halves of
+// "vendor/model" non-empty) without importing it: the pricing package must
+// stay free of a providers dependency. Change both together.
 func isSlashToken(provider string) bool {
-	return strings.IndexByte(provider, '/') > 0
+	i := strings.IndexByte(provider, '/')
+	return i > 0 && i < len(provider)-1
 }
 
 func vendorFor(provider string) (string, bool) {

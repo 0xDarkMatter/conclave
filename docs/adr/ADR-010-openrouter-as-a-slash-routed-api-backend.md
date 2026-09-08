@@ -45,14 +45,14 @@ OpenRouter is pay-as-you-go only. The subscriptions that make CLI mode free (Cla
 ### Negative
 - Discovery is indirect: `--list-providers` shows a placeholder `openrouter` row and a note, and users find real slugs via `conclave models` or openrouter.ai. There is deliberately no hardcoded list.
 - The pricing catalog never rewrites slash tokens, so a vendor-style id in a slug (`anthropic/claude-opus-4-8`) is a miss and a drift warning, by design: the user typed an OpenRouter slug, and the catalog is the authority on those.
-- `IsOpenRouterModel` is a bare `strings.Contains(name, "/")`. Provider names containing a slash for any other reason would be misrouted; none exist and none are planned.
+- `IsOpenRouterModel` is "contains a slash with non-empty halves". Provider names containing a slash for any other reason would be misrouted; none exist and none are planned. `/model` and `model/` are rejected as malformed rather than sent upstream.
 - Display names for slash tokens depend on the catalog label ("DeepSeek: DeepSeek V4 Pro"); offline or with `CONCLAVE_NO_PRICING=1` the raw slug is shown.
 
 ### Non-goals
 - Does not add OpenRouter to `AllAPIProviders`, so `--all -g` is unchanged and never fans out across the catalog.
 - Does not change which provider is the default judge, nor any compiled default model.
 - Does not attempt OpenRouter-specific features (provider routing preferences, fallbacks, `:free`/`:nitro` variants beyond passing the slug through verbatim).
-- Does not make the catalog authoritative for routing: a slug the catalog does not list is still sent to OpenRouter, with a warning, because the feed lags.
+- Does not make the catalog authoritative for routing panel members: a slug the catalog does not list is still sent to OpenRouter, with a warning, because the feed lags. The one exception is the judge: a slash-routed judge missing from the catalog is refused before the panel runs (the alternative is paying for the whole panel and then failing at synthesis); `--skip-preflight` sends it anyway. The judge is resolved and preflighted before orchestration for the same reason.
 
 ## See also
 

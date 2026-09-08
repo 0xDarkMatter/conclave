@@ -102,7 +102,13 @@ func runModels(cmd *cobra.Command, args []string) error {
 		if flagModelsAll {
 			models = allForVendor(cat, p)
 		}
-		fmt.Fprintf(os.Stdout, "\n%s\n", strings.ToUpper(p))
+		// A vendor/model token (ADR-010) filters by its vendor; say so in the header.
+		label := p
+		if strings.Contains(p, "/") {
+			label, _ = pricing.VendorPrefix(p)
+			label += " (OpenRouter vendor)"
+		}
+		fmt.Fprintf(os.Stdout, "\n%s\n", strings.ToUpper(label))
 		if len(models) == 0 {
 			fmt.Fprintf(os.Stdout, "  (no models listed)\n")
 			continue

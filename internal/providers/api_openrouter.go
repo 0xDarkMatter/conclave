@@ -42,11 +42,33 @@ const (
 )
 
 // IsOpenRouterModel reports whether a provider token is a slash-routed
-// OpenRouter model id ("vendor/model"). This is the ONLY routing rule; keep it
-// trivially cheap because the registry, the CLI and the pricing catalog all
-// call it on every token.
+// OpenRouter model id ("vendor/model": both halves non-empty). This is the
+// ONLY routing rule; keep it trivially cheap because the registry, the CLI and
+// the pricing catalog all call it on every token. pricing.isSlashToken mirrors
+// it; change both together.
 func IsOpenRouterModel(token string) bool {
-	return strings.Contains(token, "/")
+	i := strings.IndexByte(token, '/')
+	return i > 0 && i < len(token)-1
+}
+
+// openRouterInlineError catches the case where OpenRouter answers HTTP 200
+// but the body is an error envelope (upstream provider failures are relayed
+// this way), which would otherwise surface as a bare "no choices in response".
+func openRouterInlineError(body []byte) error {
+	var env struct {
+		Error *struct {
+			Message string `json:"message"`
+			Code    any    `json:"code"`
+		} `json:"error"`
+		Choices []json.RawMessage `json:"choices"`
+	}
+	if json.Unmarshal(body, &env) != nil || env.Error == nil || env.Error.Message == "" || len(env.Choices) > 0 {
+		return nil
+	}
+	if env.Error.Code != nil {
+		return fmt.Errorf("OpenRouter error %v: %s", env.Error.Code, env.Error.Message)
+	}
+	return fmt.Errorf("OpenRouter error: %s", env.Error.Message)
 }
 
 // OpenRouterAPIProvider sends one OpenRouter model through the shared
@@ -111,6 +133,9 @@ func (p *OpenRouterAPIProvider) Query(ctx context.Context, prompt string, model 
 	duration := time.Since(start)
 
 	if err != nil {
+		return "", duration, nil, err
+	}
+	if err := openRouterInlineError(respBody); err != nil {
 		return "", duration, nil, err
 	}
 

@@ -234,7 +234,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		}
 		if len(providerNames) == 0 {
 			if flagGeneral {
-				return fmt.Errorf("no providers available (check API keys)")
+				return fmt.Errorf("no providers available (check API keys; --all never includes OpenRouter vendor/model tokens, name them explicitly)")
 			}
 			return fmt.Errorf("no providers available (check CLI installations)")
 		}
@@ -242,7 +242,16 @@ func runConclave(cmd *cobra.Command, args []string) error {
 			prompt = args[0]
 		}
 	} else {
-		providerNames = strings.Split(args[0], ",")
+		// Trim so "a, b" works; a stray space in a vendor/model slug would
+		// otherwise be sent to OpenRouter verbatim and rejected.
+		for _, n := range strings.Split(args[0], ",") {
+			if n = strings.TrimSpace(n); n != "" {
+				providerNames = append(providerNames, n)
+			}
+		}
+		if len(providerNames) == 0 {
+			return fmt.Errorf("no providers given")
+		}
 		if len(args) > 1 {
 			prompt = args[1]
 		}
@@ -289,11 +298,31 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	warnModelDrift(catalog, providerList)
+	// Resolve the judge BEFORE the panel runs. A judge that cannot be built
+	// (mode, missing key, malformed slug) must fail before any provider is
+	// paid for; with OpenRouter judges a typo is one keystroke away.
+	var judgeProvider providers.Provider
+	if !flagNoJudge && len(providerList) > 1 {
+		judgeProvider, err = registry.GetProvider(flagJudge, modelOverrides)
+		if err != nil {
+			return fmt.Errorf("judge provider error: %w", err)
+		}
+		// A slash-routed judge is the one place a catalog miss is fatal rather
+		// than advisory: the whole panel would be paid for and then synthesis
+		// would 400. The catalog can lag (ADR-009), so --skip-preflight sends
+		// the slug anyway.
+		if !flagSkipPreflight && providers.IsOpenRouterModel(judgeProvider.Name()) && catalog != nil && !catalog.Has(judgeProvider.Name(), judgeProvider.DefaultModel()) {
+			return fmt.Errorf("judge %q is not in the OpenRouter catalog (fetched %s); the panel would run and then fail at synthesis. Check `conclave models %s`, or pass --skip-preflight to send it anyway",
+				judgeProvider.DefaultModel(), catalog.FetchedAt.Format("2006-01-02"), judgeProvider.Name())
+		}
+	}
+	checked := withJudge(providerList, judgeProvider)
 
-	// Preflight auth checks
+	warnModelDrift(catalog, checked)
+
+	// Preflight auth checks (judge included, deduplicated by name)
 	if !flagSkipPreflight {
-		if failures := providers.RunPreflight(cmd.Context(), providerList); len(failures) > 0 {
+		if failures := providers.RunPreflight(cmd.Context(), checked); len(failures) > 0 {
 			printPreflightFailures(failures)
 			return fmt.Errorf("preflight auth check failed for %d provider(s)", len(failures))
 		}
@@ -355,12 +384,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 
 	// Phase 2: Judge synthesis (unless --no-judge or single provider)
 	var verdict *judge.Verdict
-	if !flagNoJudge && len(providerList) > 1 {
-		judgeProvider, err := registry.GetProvider(flagJudge, modelOverrides)
-		if err != nil {
-			return fmt.Errorf("judge provider error: %w", err)
-		}
-
+	if judgeProvider != nil {
 		prog.StartSynthesis()
 		j := judge.New(judgeProvider)
 		verdict, err = j.Synthesize(cmd.Context(), prompt, results, flagTimeout, flagBlind)
@@ -441,6 +465,22 @@ func printProviderList(heading string, providerList []providers.Provider, notAva
 		}
 		fmt.Printf("    %-12s  %-30s  [%s]\n", p.Name(), p.DefaultModel(), status)
 	}
+}
+
+// withJudge appends the judge to the panel for drift/preflight purposes unless
+// it is already a panel member (same name). Nil judge returns the panel as is.
+func withJudge(panel []providers.Provider, judge providers.Provider) []providers.Provider {
+	if judge == nil {
+		return panel
+	}
+	for _, p := range panel {
+		if p.Name() == judge.Name() {
+			return panel
+		}
+	}
+	out := make([]providers.Provider, 0, len(panel)+1)
+	out = append(out, panel...)
+	return append(out, judge)
 }
 
 func parseModelOverrides(overrides []string) map[string]string {

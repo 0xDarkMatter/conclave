@@ -2,6 +2,7 @@ package providers
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
 )
@@ -104,6 +105,12 @@ func AnyAvailable(general bool) bool {
 // routing note at the top of this file.
 func (r *Registry) GetProvider(name string, modelOverrides map[string]string) (Provider, error) {
 	p, ok := r.providers[name]
+	if !ok && name == OpenRouterListingName {
+		return nil, fmt.Errorf("%q is not a provider: name an OpenRouter model as vendor/model, e.g. -g deepseek/deepseek-v4-pro", name)
+	}
+	if !ok && !IsOpenRouterModel(name) && strings.Contains(name, "/") {
+		return nil, fmt.Errorf("malformed OpenRouter slug %q: expected vendor/model", name)
+	}
 	if !ok && IsOpenRouterModel(name) {
 		if !r.general {
 			return nil, fmt.Errorf("provider %q is an OpenRouter model (vendor/model) and OpenRouter is API-only: add -g", name)

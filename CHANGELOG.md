@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   credit". Drift warnings, display names and batch cost estimates resolve
   the slug directly in the pricing catalog. CLI mode rejects slash tokens
   (API-only, pay-as-you-go). ADR-010.
+- The judge is now resolved (and preflighted) before the panel runs, so a
+  judge that cannot be built fails before any provider is paid for. A
+  slash-routed judge that is not in the OpenRouter catalog is refused
+  outright (`--skip-preflight` sends it anyway); panel members only warn.
+- Provider lists are trimmed (`"a, b"` works); malformed slugs (`/model`,
+  `model/`) and a bare `openrouter` token get specific errors; an
+  OpenRouter error envelope inside an HTTP 200 surfaces as an error.
 
 ### Fixed
 

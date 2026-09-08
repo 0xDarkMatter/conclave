@@ -151,6 +151,9 @@ func TestIsOpenRouterModel(t *testing.T) {
 		"gemini":                  false,
 		"zai-coding-plan/glm-5.2": true, // a slash is a slash; -m values never reach this check
 		"":                        false,
+		"/model":                  false, // malformed: empty vendor
+		"model/":                  false, // malformed: empty slug
+		"/":                       false,
 	}
 	for in, want := range cases {
 		if got := IsOpenRouterModel(in); got != want {
@@ -221,10 +224,63 @@ func TestRegistry_SlashRouting(t *testing.T) {
 
 	t.Run("plain openrouter is not a provider", func(t *testing.T) {
 		r := NewRegistry(cfg, true, false)
-		if _, err := r.GetProvider(OpenRouterListingName, nil); err == nil {
-			t.Error("bare 'openrouter' must not resolve; slash tokens are the whole surface")
+		_, err := r.GetProvider(OpenRouterListingName, nil)
+		if err == nil {
+			t.Fatal("bare 'openrouter' must not resolve; slash tokens are the whole surface")
+		}
+		if !strings.Contains(err.Error(), "vendor/model") {
+			t.Errorf("bare 'openrouter' should hint at the slash syntax; got: %s", err)
 		}
 	})
+
+	t.Run("malformed slugs are rejected, not sent upstream", func(t *testing.T) {
+		r := NewRegistry(cfg, true, false)
+		for _, bad := range []string{"/model", "model/", "/"} {
+			_, err := r.GetProvider(bad, nil)
+			if err == nil || !strings.Contains(err.Error(), "malformed") {
+				t.Errorf("GetProvider(%q) = %v, want malformed-slug error", bad, err)
+			}
+		}
+	})
+}
+
+func TestOpenRouter_InlineErrorIn200(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantErr string // empty: no inline error detected
+	}{
+		{"upstream failure relayed as 200", `{"error":{"message":"Provider returned error","code":502},"user_id":"u"}`, "OpenRouter error 502: Provider returned error"},
+		{"error without code", `{"error":{"message":"boom"}}`, "OpenRouter error: boom"},
+		{"normal response", `{"choices":[{"message":{"content":"OK"}}]}`, ""},
+		{"error field but choices present wins", `{"error":{"message":"partial"},"choices":[{"message":{"content":"OK"}}]}`, ""},
+		{"not json", `nope`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := openRouterInlineError([]byte(tt.body))
+			if tt.wantErr == "" && err != nil {
+				t.Fatalf("unexpected: %v", err)
+			}
+			if tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr) {
+				t.Fatalf("got %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+
+	// End to end: a 200 error envelope must surface as an error from Query.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"error":{"message":"Provider returned error","code":502}}`))
+	}))
+	defer srv.Close()
+	t.Setenv(OpenRouterKeyEnv, "test-key")
+	p := NewOpenRouterAPIProvider(orTestModel)
+	p.baseURL = srv.URL
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, _, _, err := p.Query(ctx, "x", ""); err == nil || !strings.Contains(err.Error(), "Provider returned error") {
+		t.Errorf("Query should surface the inline error; got %v", err)
+	}
 }
 
 func TestAllAPIProvidersExcludesOpenRouter(t *testing.T) {
