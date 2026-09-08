@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   costs nothing. Judge synthesis is never cached. Works in CLI and API mode;
   batch mode honours it per item. `conclave cache stats` and
   `conclave cache clear` manage the store. ADR-011.
+- `make check`: one gate running `go vet`, `gofmt -l`, `go test` and
+  `conclave models --check`, plus a `.github/workflows/check.yml` running the
+  same on ubuntu-latest and windows-latest.
 
 - Runtime pricing catalog (`internal/pricing`): conclave caches OpenRouter's
   public models feed under the user cache directory, refreshes it in the

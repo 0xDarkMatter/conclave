@@ -95,6 +95,24 @@ API keys loaded from (highest to lowest):
 
 ## Common Tasks
 
+### The Gate
+
+```bash
+make check
+```
+
+`make check` is THE gate: `go vet ./...`, `gofmt -l` (must print nothing),
+`go test ./...`, then a build plus `./bin/conclave models --check` for catalog
+drift. Run it before every commit. The catalog step degrades to a skip when the
+network or the catalog is unavailable (or `CONCLAVE_NO_PRICING=1` is set), but a
+real drift still fails.
+
+`.github/workflows/check.yml` runs the same steps on ubuntu-latest and
+windows-latest with the Go version from `go.mod`. There the `models --check`
+step is `continue-on-error`, because it needs the network and an outage on the
+OpenRouter feed must not redden an unrelated PR. If you change `make check`,
+change that workflow in the same commit.
+
 ### Run Tests
 
 ```bash

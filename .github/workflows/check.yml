@@ -1,0 +1,63 @@
+name: check
+
+# Mirrors `make check` (the local gate). The steps are spelled out rather than
+# invoking make so the workflow does not depend on make being present on the
+# Windows runner, and so the catalog check can be a separate, non-blocking step.
+# If you change `make check`, change this file in the same commit.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      # gofmt exits 0 whether or not it finds anything; the gate is that its
+      # file list is empty. .gitattributes pins LF so this is stable on Windows.
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "these files need gofmt:"
+            echo "$out"
+            exit 1
+          fi
+
+      - name: go test
+        run: go test ./...
+
+      - name: build
+        run: go build -o bin/conclave .
+
+      # Model drift against the live OpenRouter catalog. Network-dependent, so a
+      # failure here is a signal to look, not a reason to block a PR: an outage
+      # or a rate limit on the feed would otherwise redden unrelated changes.
+      # Check the step output when it is red — real drift looks the same as an
+      # outage from the exit code alone.
+      - name: conclave models --check
+        continue-on-error: true
+        run: ./bin/conclave models --check

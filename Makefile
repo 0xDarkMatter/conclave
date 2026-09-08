@@ -4,7 +4,7 @@ PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build install release clean test lint
+.PHONY: build install release clean test lint check vet fmt-check models-check
 
 # Build for current platform
 build:
@@ -39,6 +39,28 @@ test:
 lint:
 	golangci-lint run
 
+# THE gate. Everything that must be true before a commit lands runs here, in
+# one command, in the order that fails cheapest first. CI runs exactly this.
+check: vet fmt-check test models-check
+	@echo "check: all gates passed"
+
+vet:
+	@echo "==> go vet"
+	@go vet ./...
+
+# gofmt -l lists files that WOULD change; the gate is that it prints nothing.
+# gofmt itself exits 0 either way, so the emptiness is the assertion.
+fmt-check:
+	@echo "==> gofmt"
+	@out=$$(gofmt -l . 2>/dev/null); 	if [ -n "$$out" ]; then 		echo "gofmt: these files need formatting:"; 		echo "$$out"; 		exit 1; 	fi
+
+# Catalog drift check. Needs the network, so it degrades to a skip rather than
+# a failure when the catalog cannot be reached or is switched off. A real drift
+# (a compiled default OpenRouter no longer lists) still fails the gate.
+models-check: build
+	@echo "==> conclave models --check"
+	@if [ -n "$$CONCLAVE_NO_PRICING" ]; then 		echo "skipped: CONCLAVE_NO_PRICING is set"; 	else 		out=$$(./bin/$(BINARY) models --check 2>&1); rc=$$?; 		echo "$$out"; 		if [ $$rc -ne 0 ]; then 			case "$$out" in 				*"catalog unavailable"*|*"no catalog available"*|*"pricing catalog is disabled"*) 					echo "skipped: pricing catalog unreachable (offline?)";; 				*) exit $$rc;; 			esac; 		fi; 	fi
+
 # Clean build artifacts
 clean:
 	rm -rf bin/
@@ -52,6 +74,7 @@ help:
 	@echo "Conclave CLI Makefile"
 	@echo ""
 	@echo "Targets:"
+	@echo "  check    - THE gate: vet + gofmt + tests + models --check"
 	@echo "  build    - Build for current platform"
 	@echo "  install  - Build and install to /usr/local/bin"
 	@echo "  release  - Build for all platforms"
