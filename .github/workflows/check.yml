@@ -50,6 +50,14 @@ jobs:
       - name: go test
         run: go test ./...
 
+      # The race detector needs a working cgo toolchain, which the Windows
+      # runner does not reliably provide; the batch and cache packages are the
+      # concurrent ones and their behaviour is not platform-specific, so one
+      # Linux pass is enough to catch a data race.
+      - name: go test -race
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -race ./...
+
       - name: build
         run: go build -o bin/conclave .
 

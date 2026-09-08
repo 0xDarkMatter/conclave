@@ -5,9 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/0xDarkMatter/conclave-cli/internal/pricing"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
 
@@ -190,14 +192,50 @@ func TestNilCacheIsAPassThrough(t *testing.T) {
 	}
 }
 
-// TestWrapperDoesNotForwardPreflighter pins the guard documented in
-// provider.go: if this ever starts passing, wrapping before RunPreflight would
-// silently skip auth checks.
-func TestWrapperDoesNotForwardPreflighter(t *testing.T) {
-	f := &fakeProvider{name: "openai", reply: "x"}
-	w := Wrap(f, newTestCache(t, time.Hour), ModeAPI)
-	if _, ok := w.(providers.Preflighter); ok {
-		t.Fatal("wrapper now satisfies Preflighter; re-check the wrap-after-preflight ordering in cmd/root.go")
+// preflightingProvider is a fake whose auth check always fails.
+type preflightingProvider struct {
+	fakeProvider
+	checks int
+}
+
+func (p *preflightingProvider) Preflight(ctx context.Context) error {
+	p.checks++
+	return errors.New("not authenticated")
+}
+
+// TestPreflightStillReachesAWrappedProvider is the adversary that would
+// otherwise be invisible: decorating a provider must not disable its auth
+// check. Embedding does not promote the optional Preflighter interface, so
+// without the Unwrap hook a cache-wrapped provider would silently pass
+// preflight and fail with a 401 mid-query instead.
+func TestPreflightStillReachesAWrappedProvider(t *testing.T) {
+	inner := &preflightingProvider{fakeProvider: fakeProvider{name: "openai", reply: "x"}}
+	wrapped := Wrap(inner, newTestCache(t, time.Hour), ModeAPI)
+
+	failures := providers.RunPreflight(context.Background(), []providers.Provider{wrapped})
+	if len(failures) != 1 {
+		t.Fatalf("preflight reported %d failures, want 1: the wrapper hid the check", len(failures))
+	}
+	if failures[0].Provider != "openai" {
+		t.Fatalf("failure names %q, want the underlying provider name", failures[0].Provider)
+	}
+	if inner.checks != 1 {
+		t.Fatalf("inner Preflight ran %d times, want 1", inner.checks)
+	}
+}
+
+// TestPreflightIsNeverServedFromCache: an auth check must hit the provider
+// every run. A cached PASS would let a revoked credential look healthy.
+func TestPreflightIsNeverServedFromCache(t *testing.T) {
+	inner := &preflightingProvider{fakeProvider: fakeProvider{name: "openai", reply: "x"}}
+	c := newTestCache(t, time.Hour)
+	wrapped := Wrap(inner, c, ModeAPI)
+
+	for i := 1; i <= 3; i++ {
+		providers.RunPreflight(context.Background(), []providers.Provider{wrapped})
+		if inner.checks != i {
+			t.Fatalf("after %d runs the provider was checked %d times", i, inner.checks)
+		}
 	}
 }
 
@@ -237,5 +275,47 @@ func TestEntriesAreSharded(t *testing.T) {
 	want := filepath.Join(c.Dir(), key[:2], key+".json")
 	if _, err := os.Stat(want); err != nil {
 		t.Fatalf("entry not at sharded path %s: %v", want, err)
+	}
+}
+
+// TestDefaultDirIsBelowTheCacheRootNotTheRootItself is a guard on the scariest
+// line in this package: Clear calls os.RemoveAll on Dir(). If a refactor ever
+// pointed the store at the conclave cache root, `conclave cache clear` would
+// silently delete the pricing cache alongside the responses, and every future
+// run would refetch the catalog with no hint why.
+func TestDefaultDirIsBelowTheCacheRootNotTheRootItself(t *testing.T) {
+	root := pricing.CacheDir()
+	dir := DefaultDir()
+
+	if dir == root {
+		t.Fatal("the response store IS the cache root; Clear would delete the pricing cache too")
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		t.Fatalf("response store %q is not under the cache root %q: %v", dir, root, err)
+	}
+	if rel == "." || strings.HasPrefix(rel, "..") {
+		t.Fatalf("response store %q escapes the cache root %q (rel %q)", dir, root, rel)
+	}
+}
+
+// TestClearLeavesSiblingCacheFilesAlone proves the same property by doing it:
+// a file beside the store must survive a clear.
+func TestClearLeavesSiblingCacheFilesAlone(t *testing.T) {
+	root := t.TempDir()
+	sibling := filepath.Join(root, "openrouter-models.json")
+	if err := os.WriteFile(sibling, []byte(`{"models":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := New(filepath.Join(root, "responses"), time.Hour)
+	if err := c.Put(&Entry{Key: Key(ModeAPI, "openai", "m", "q", ""), Response: "r"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sibling); err != nil {
+		t.Fatalf("clear removed a sibling cache file: %v", err)
 	}
 }

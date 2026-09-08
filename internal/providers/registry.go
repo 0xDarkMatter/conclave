@@ -170,6 +170,10 @@ type modelOverrideProvider struct {
 	model string
 }
 
+// Unwrap exposes the decorated provider so preflight can find an optional
+// Preflighter that embedding does not promote. See unwrapPreflighter.
+func (p *modelOverrideProvider) Unwrap() Provider { return p.Provider }
+
 func (p *modelOverrideProvider) DefaultModel() string {
 	if p.model != "" {
 		return p.model

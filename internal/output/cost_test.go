@@ -116,3 +116,61 @@ func TestFailedResponseIsNotBilled(t *testing.T) {
 		t.Fatalf("errored response was billed: %v", c.formatTotal())
 	}
 }
+
+// TestSlashRoutedModelIsPriced: an OpenRouter token is both the provider name
+// and the model id (ADR-010), and the whole point of the catalog is that it
+// lists exactly those slugs. Failing to price them would silently drop cost
+// reporting for every OpenRouter query.
+func TestSlashRoutedModelIsPriced(t *testing.T) {
+	cat := pricing.NewCatalog([]pricing.Model{
+		{ID: "deepseek/deepseek-v4", Name: "DeepSeek V4", InputPerM: 1, OutputPerM: 2},
+	})
+	r := Result{Responses: []providers.Response{
+		resp("deepseek/deepseek-v4", "deepseek/deepseek-v4", 1_000_000, 1_000_000),
+	}}
+	c := computeCosts(cat, r, true)
+	if c.byIndex[0] == nil {
+		t.Fatal("an OpenRouter slug the catalog lists was not priced")
+	}
+	if got := *c.byIndex[0]; got < 2.999 || got > 3.001 {
+		t.Fatalf("cost = %v, want 3.00", got)
+	}
+}
+
+// TestCachedResponseIsAKnownZeroNotAnUnknown: a cache hit must render
+// $0.0000, not vanish. A missing figure reads as "we could not price this",
+// which is the opposite of what happened.
+func TestCachedResponseIsAKnownZeroNotAnUnknown(t *testing.T) {
+	hit := resp("claude", "claude-unlisted", 1_000_000, 1_000_000)
+	hit.Cached = true
+	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{hit}}, true)
+
+	if c.byIndex[0] == nil {
+		t.Fatal("cached response was treated as unpriceable")
+	}
+	if *c.byIndex[0] != 0 {
+		t.Fatalf("cached response cost %v, want 0", *c.byIndex[0])
+	}
+	if c.partial {
+		t.Fatal("a cached response must not mark the total as understated")
+	}
+	if got := c.formatTotal(); got != "$0.0000" {
+		t.Fatalf("formatTotal = %q, want $0.0000", got)
+	}
+}
+
+// TestMixedCachedAndLivePanelTotalsOnlyTheLiveWork is the money question for a
+// half-cached panel: the total must be what this run actually cost.
+func TestMixedCachedAndLivePanelTotalsOnlyTheLiveWork(t *testing.T) {
+	cached := resp("openai", "gpt-test", 1_000_000, 0)
+	cached.Cached = true
+	live := resp("openai", "gpt-test", 1_000_000, 0)
+
+	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{cached, live}}, true)
+	if c.total == nil || *c.total < 0.999 || *c.total > 1.001 {
+		t.Fatalf("total = %v, want 1.00 (only the live call)", c.total)
+	}
+	if c.partial {
+		t.Fatal("nothing was unpriceable; partial must be false")
+	}
+}

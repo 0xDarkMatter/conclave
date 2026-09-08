@@ -46,16 +46,28 @@ func RunPreflight(ctx context.Context, providerList []Provider) []PreflightResul
 	return results
 }
 
-// unwrapPreflighter extracts a Preflighter from a provider,
-// looking through the modelOverrideProvider wrapper if needed.
+// unwrapper is implemented by every provider decorator so preflight can reach
+// the real provider underneath. Embedding the Provider interface only promotes
+// the four methods Provider declares, so a decorator never inherits the
+// OPTIONAL Preflighter interface from what it wraps. Without this, decorating a
+// provider silently disables its auth check — a failure that shows up as a
+// mysterious 401 mid-query rather than a clear preflight error.
+type unwrapper interface{ Unwrap() Provider }
+
+// unwrapPreflighter extracts a Preflighter from a provider, following any chain
+// of decorators (model override, response cache, whatever comes next) down to
+// the provider that actually implements the check. The loop is bounded because
+// a decorator cycle would be a bug, not a reason to hang.
 func unwrapPreflighter(p Provider) (Preflighter, bool) {
-	if pf, ok := p.(Preflighter); ok {
-		return pf, true
-	}
-	if mop, ok := p.(*modelOverrideProvider); ok {
-		if pf, ok := mop.Provider.(Preflighter); ok {
+	for depth := 0; p != nil && depth < 8; depth++ {
+		if pf, ok := p.(Preflighter); ok {
 			return pf, true
 		}
+		u, ok := p.(unwrapper)
+		if !ok {
+			break
+		}
+		p = u.Unwrap()
 	}
 	return nil, false
 }

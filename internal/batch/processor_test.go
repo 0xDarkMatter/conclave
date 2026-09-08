@@ -28,6 +28,9 @@ type fakeProvider struct {
 	metrics *providers.Metrics
 	delay   time.Duration
 	calls   atomic.Int32
+	// finished counts calls that ran to completion, i.e. work that was paid
+	// for. Every one of these must end up in the output.
+	finished atomic.Int32
 	// answer returns the response for one call. attempt is 1-based per process.
 	answer func(attempt int32, prompt string) (string, error)
 }
@@ -48,6 +51,7 @@ func (f *fakeProvider) Query(ctx context.Context, prompt, model string) (string,
 	if err != nil {
 		return "", time.Millisecond, nil, err
 	}
+	f.finished.Add(1)
 	return resp, time.Millisecond, f.metrics, nil
 }
 
@@ -518,5 +522,155 @@ func TestItemWithNoPromptAtAllFails(t *testing.T) {
 	}
 	if errStr, _ := results[0]["error"].(string); !strings.Contains(errStr, "no prompt") {
 		t.Fatalf("error = %q, want it to name the missing prompt", errStr)
+	}
+}
+
+// TestCancellationMarksTheRunPartial: a batch cut short by Ctrl-C leaves a
+// PARTIAL output file. If that is not recorded, a pipeline treats a
+// half-finished JSONL as the complete answer.
+func TestCancellationMarksTheRunPartial(t *testing.T) {
+	const n = 40
+	var sb strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&sb, "{\"id\":\"item-%d\",\"prompt\":\"q\"}\n", i)
+	}
+
+	prov := okProvider("openai")
+	prov.delay = 30 * time.Millisecond
+	p := newTestProcessor(t, Options{Workers: 2}, prov)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(60 * time.Millisecond)
+		cancel()
+	}()
+
+	var out bytes.Buffer
+	stats, err := p.Process(ctx, strings.NewReader(sb.String()), &out, "")
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if !stats.Cancelled {
+		t.Fatalf("stats = %+v, want Cancelled", stats)
+	}
+	if stats.Skipped == 0 {
+		t.Fatalf("stats = %+v, want undispatched items recorded", stats)
+	}
+	if stats.BudgetStopped {
+		t.Fatal("a cancellation must not be reported as a budget stop")
+	}
+	if stats.Completed+stats.Skipped != stats.Total {
+		t.Fatalf("completed %d + skipped %d != total %d", stats.Completed, stats.Skipped, stats.Total)
+	}
+}
+
+// TestCleanRunIsNotMarkedPartial is the other half: a run that finishes must
+// not look interrupted, or every batch would exit non-zero.
+func TestCleanRunIsNotMarkedPartial(t *testing.T) {
+	p := newTestProcessor(t, Options{Workers: 2}, okProvider("openai"))
+	input := `{"id":"a","prompt":"q"}
+{"id":"b","prompt":"q"}
+`
+	_, stats := runBatch(t, p, input, "")
+	if stats.Cancelled || stats.Skipped != 0 || stats.BudgetStopped {
+		t.Fatalf("stats = %+v, want a clean run", stats)
+	}
+}
+
+// TestBudgetStopIsNotMarkedCancelled keeps the two exit reasons distinct: the
+// summary and the error message differ, and so does what the user should do.
+func TestBudgetStopIsNotMarkedCancelled(t *testing.T) {
+	var sb strings.Builder
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&sb, "{\"id\":\"item-%d\",\"prompt\":\"q\"}\n", i)
+	}
+	cat := pricing.NewCatalog([]pricing.Model{{ID: "openai/gpt-test", InputPerM: 1, OutputPerM: 0}})
+	prov := okProvider("openai")
+	prov.model = "gpt-test"
+	prov.metrics = &providers.Metrics{InputTokens: 1_000_000}
+	prov.delay = 20 * time.Millisecond
+
+	p := newTestProcessor(t, Options{Workers: 2, Budget: 2.00, Pricing: cat}, prov)
+	_, stats := runBatch(t, p, sb.String(), "")
+
+	if !stats.BudgetStopped {
+		t.Fatalf("stats = %+v, want a budget stop", stats)
+	}
+	if stats.Cancelled {
+		t.Fatal("a budget stop must not be reported as a cancellation")
+	}
+}
+
+// slowWriter models a slow output sink (a file on a busy disk, a pipe whose
+// reader is behind). It is what makes the result channel back up, which is the
+// only condition under which a worker's send can lose a select race against a
+// cancelled context.
+type slowWriter struct {
+	mu    sync.Mutex
+	buf   bytes.Buffer
+	delay time.Duration
+}
+
+func (w *slowWriter) Write(b []byte) (int, error) {
+	time.Sleep(w.delay)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(b)
+}
+
+func (w *slowWriter) lines() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n := 0
+	for _, l := range strings.Split(strings.TrimSpace(w.buf.String()), "\n") {
+		if l != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// TestCancellationDiscardsNoPaidWork is the adversary a shutdown path invites:
+// a worker that has already called the provider, been billed, and produced a
+// result, then throws it away because the context ended while its send was
+// waiting on a backed-up writer. The item leaves no output line, no checkpoint
+// entry and no trace that it ran.
+//
+// The slow writer is load-bearing. With a fast sink the send never blocks, the
+// race never happens, and the test passes whether or not the bug is present.
+func TestCancellationDiscardsNoPaidWork(t *testing.T) {
+	const n = 24
+	var sb strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&sb, "{\"id\":\"item-%d\",\"prompt\":\"q\"}\n", i)
+	}
+
+	prov := okProvider("openai")
+	p := newTestProcessor(t, Options{Workers: 2}, prov)
+
+	out := &slowWriter{delay: 8 * time.Millisecond}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(40 * time.Millisecond)
+		cancel()
+	}()
+
+	stats, err := p.Process(ctx, strings.NewReader(sb.String()), out, "")
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+
+	if lines := out.lines(); lines != stats.Completed {
+		t.Fatalf("wrote %d result lines but Completed says %d", lines, stats.Completed)
+	}
+	if got := int(prov.finished.Load()); got > stats.Completed {
+		t.Fatalf("%d provider calls completed but only %d results were written: %d paid results were discarded",
+			got, stats.Completed, got-stats.Completed)
+	}
+	if stats.Completed == 0 {
+		t.Fatal("nothing completed before cancellation; the test proves nothing")
+	}
+	if stats.Completed+stats.Skipped != stats.Total {
+		t.Fatalf("completed %d + skipped %d != total %d", stats.Completed, stats.Skipped, stats.Total)
 	}
 }

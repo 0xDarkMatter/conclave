@@ -72,6 +72,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Batch mode no longer discards a result that has already been paid for. A
+  worker whose send raced a cancelled context threw the result away, so an item
+  that had been queried and billed left no output line, no checkpoint entry and
+  no trace it had run. Results are now always handed to the writer.
+- An interrupted batch exits non-zero and says how many items were not
+  dispatched. It previously exited 0, letting a pipeline read a partial JSONL
+  as the complete answer.
+- Provider decorators no longer hide a provider's auth check. Embedding the
+  `Provider` interface does not promote the optional `Preflighter`, so wrapping
+  a provider silently skipped its preflight; every decorator now implements
+  `Unwrap` and `RunPreflight` follows the chain.
+- The response cache no longer deletes an entry before replacing it, which
+  opened a window where a concurrent reader saw nothing, and it no longer leaks
+  a temp file when the replacement is refused.
+- `--budget` warns when it cannot bind: on a non-batch query, where it does
+  nothing, and when the pricing catalog is unavailable, where estimates cover
+  only the built-in providers.
 - `--json` now reports the timeout actually in force as
   `execution.timeout_seconds`. The field existed but was never populated, so it
   always read `0` regardless of `-t`.

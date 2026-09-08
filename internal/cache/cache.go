@@ -20,7 +20,11 @@
 //     entries.
 //   - Every failure is soft. A corrupt entry, an unreadable directory, or a
 //     full disk degrades to a cache miss and a live query; it must never fail
-//     a user's question.
+//     a real question. Windows adds one more soft failure: a reader holding an
+//     entry open blocks a rename over it, so a Put racing a concurrent read can
+//     be refused. Put retries briefly and then gives up, because a refused
+//     write costs one cache miss and nothing else. What is NOT allowed to
+//     degrade is a read: a reader sees a whole entry or none.
 package cache
 
 import (
@@ -162,10 +166,25 @@ func (c *Cache) Put(e *Entry) error {
 		os.Remove(tmpName)
 		return err
 	}
-	// Same reason as internal/pricing.writeCache: Windows can refuse a rename
-	// over an existing file, and losing the entry only costs a cache miss.
-	_ = os.Remove(p)
-	return os.Rename(tmpName, p)
+	// Publish atomically. os.Rename replaces an existing destination on every
+	// platform Go supports, Windows included (MoveFileEx with
+	// MOVEFILE_REPLACE_EXISTING), so do NOT remove the destination first: that
+	// opens a window where a concurrent reader sees no entry at all, and it
+	// makes a concurrent writer's rename fail with "Access is denied" once the
+	// destination has been recreated underneath it. Windows can still refuse
+	// transiently while another process holds the file mid-operation, so retry
+	// briefly rather than discarding the work on the first refusal.
+	var err2 error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err2 = os.Rename(tmpName, p); err2 == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(attempt+1) * 5 * time.Millisecond)
+	}
+	// Never leave the temp behind: Stat counts only *.json, so a leaked temp is
+	// invisible to `conclave cache stats` and reclaimed only by `cache clear`.
+	os.Remove(tmpName)
+	return err2
 }
 
 // Info summarises a store for `conclave cache stats`.

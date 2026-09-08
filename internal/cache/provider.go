@@ -18,13 +18,12 @@ const (
 
 // cachedProvider decorates a Provider with a read-through response cache.
 //
-// GUARD: this wrapper deliberately does NOT forward the optional Preflighter
-// interface. A type assertion for Preflighter against the wrapper fails, so
-// wrapping a provider before providers.RunPreflight would silently skip its
-// auth check. Callers must wrap AFTER preflight — cmd/root.go does, and batch
-// mode preflights unwrapped providers in cmd/root.go before the processor is
-// built. If you ever make this type forward Preflight, make sure a cache hit
-// still cannot mask a broken credential.
+// Embedding the Provider interface promotes only the four methods Provider
+// declares, so this type does not inherit the OPTIONAL Preflighter interface
+// from whatever it wraps. Unwrap below is what keeps that from silently
+// disabling a provider's auth check: providers.RunPreflight follows the
+// decorator chain down to the real provider. Preflight is never served from the
+// cache — a cached answer must not be able to mask a broken credential.
 type cachedProvider struct {
 	providers.Provider
 	cache *Cache
@@ -39,6 +38,11 @@ func Wrap(p providers.Provider, c *Cache, mode string) providers.Provider {
 	}
 	return &cachedProvider{Provider: p, cache: c, mode: mode}
 }
+
+// Unwrap exposes the decorated provider. Preflight uses it to reach an
+// optional Preflighter that embedding does not promote; see
+// providers.unwrapPreflighter.
+func (p *cachedProvider) Unwrap() providers.Provider { return p.Provider }
 
 // WrapAll is Wrap over a slice, preserving order.
 func WrapAll(list []providers.Provider, c *Cache, mode string) []providers.Provider {

@@ -45,7 +45,8 @@ Three properties of conclave shape what a cache may do here. A query is a fan-ou
 ### Negative
 - The hit rate is brittle by construction. Any whitespace change, any edit to an attached file, any model default bump is a miss. That is the intended trade, but it means the cache helps repetition and does nothing for near-duplicates.
 - Entries are stored in plain JSON under the user cache directory. Prompts and responses are readable by anything with access to that directory, so the cache should stay off for sensitive material. It is off by default.
-- The cache wrapper deliberately does not forward the optional `Preflighter` interface, so providers must be wrapped **after** `providers.RunPreflight` or auth checks would be silently skipped. `internal/cache/provider.go` carries the guard comment and a test pins the behaviour.
+- Decorating a provider hides the optional `Preflighter` interface, because embedding the `Provider` interface promotes only the four methods it declares. Rather than depend on wrapping order, every decorator now implements `Unwrap() Provider` and `providers.RunPreflight` follows that chain to the real provider. Preflight is never served from the cache, so a cached answer cannot mask a revoked credential.
+- On Windows a `Put` racing a concurrent read of the same entry can be refused, because a reader holding the file open blocks the rename. Put retries briefly and then gives up: a refused write costs one cache miss. Reads are never partial.
 - Expired entries are ignored, not deleted. The store only shrinks on `conclave cache clear`.
 
 ## Notes

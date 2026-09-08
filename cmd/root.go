@@ -287,6 +287,12 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// Response cache (nil = disabled, which is the default).
 	responseCache := resolveCache()
 
+	// --budget only gates batch dispatch. Silently ignoring it on a single
+	// query would let someone believe they had capped spend when they had not.
+	if flagBudget > 0 && flagBatch == "" {
+		fmt.Fprintln(os.Stderr, "  warning: --budget applies to --batch runs only; it does not cap this query.")
+	}
+
 	// Handle batch mode
 	if flagBatch != "" {
 		return runBatchMode(cmd, cfg, providerNames, prompt, modelOverrides, catalog, responseCache)
@@ -622,6 +628,16 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		}
 	}
 
+	budget := resolveBatchBudget()
+	// A cap can only bind on spend the tool can actually estimate. Without the
+	// catalog, estimates come from the compiled fallback table, which covers
+	// only the six built-in providers — an OpenRouter slug would be costed at
+	// zero and the cap would never trip. Say so rather than implying a
+	// guarantee that is not there.
+	if budget > 0 && catalog == nil {
+		fmt.Fprintln(os.Stderr, "  warning: --budget is set but the pricing catalog is unavailable; estimates fall back to a compiled table covering only the built-in providers, so the cap may not bind.")
+	}
+
 	processor, err := batch.NewProcessor(batch.Options{
 		Registry:       registry,
 		Config:         cfg,
@@ -636,7 +652,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		Blind:          flagBlind,
 		NoRateLimit:    flagNoRateLimit,
 		Retries:        flagRetries,
-		Budget:         resolveBatchBudget(),
+		Budget:         budget,
 		Pricing:        catalog,
 		Cache:          responseCache,
 	})
@@ -675,6 +691,17 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 			fmt.Fprintln(os.Stderr, "  Use -o <file> --resume to continue a capped run later.")
 		}
 		return fmt.Errorf("budget cap $%.4f reached after %d item(s); %d not dispatched", stats.Budget, stats.Completed, stats.Skipped)
+	}
+
+	// An interrupted run leaves a PARTIAL output file. Exiting 0 here would let
+	// a pipeline treat a half-finished JSONL as the complete answer, which is
+	// the kind of silent truncation nobody notices until the numbers are wrong.
+	if stats.Skipped > 0 {
+		fmt.Fprintf(os.Stderr, "  Interrupted: %d item(s) not dispatched; the output is partial.\n", stats.Skipped)
+		if flagOutput != "" && flagOutput != "-" {
+			fmt.Fprintf(os.Stderr, "  Resume with: conclave ... --batch <input> -o %s --resume\n", flagOutput)
+		}
+		return fmt.Errorf("batch interrupted after %d of %d item(s); %d not dispatched", stats.Completed, stats.Total, stats.Skipped)
 	}
 
 	return nil

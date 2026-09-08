@@ -95,6 +95,10 @@ type Stats struct {
 	Budget        float64
 	BudgetStopped bool
 	Skipped       int
+	// Cancelled records that the run was cut short by a signal or a cancelled
+	// context rather than by the budget. Either way Skipped is non-zero and the
+	// output file is a PARTIAL result, which callers must be able to detect.
+	Cancelled bool
 }
 
 // Processor handles batch processing of JSONL files
@@ -305,11 +309,14 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 			defer wg.Done()
 			for item := range itemChan {
 				result := p.processItem(ctx, item, defaultPrompt)
-				select {
-				case resultChan <- result:
-				case <-ctx.Done():
-					return
-				}
+				// Send unconditionally. A select on ctx.Done() here would throw
+				// away a result that has ALREADY been paid for and computed,
+				// which is the one thing a shutdown should not do: the item
+				// leaves no output line, no checkpoint entry, and no trace that
+				// it ran. This cannot block, because the writer goroutine
+				// consumes resultChan until it is closed, and closing only
+				// happens after every worker has returned.
+				resultChan <- result
 			}
 		}()
 	}
@@ -323,7 +330,6 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 	// holding items will finish them, so actual spend can exceed the cap by up
 	// to `workers` items. Items never dispatched are left out of the
 	// checkpoint, so --resume continues exactly where the cap bit.
-	dispatched := 0
 feed:
 	for _, item := range items {
 		if p.budget > 0 {
@@ -339,7 +345,6 @@ feed:
 		}
 		select {
 		case itemChan <- item:
-			dispatched++
 		case <-ctx.Done():
 			// A bare `break` here would only leave the select, leaving the
 			// feeder spinning through the remaining items after cancellation.
@@ -358,7 +363,14 @@ feed:
 	p.progress.Stop()
 
 	statsLock.Lock()
-	stats.Skipped = stats.Total - dispatched
+	// Skipped is measured against COMPLETED items, not dispatched ones, so it
+	// is exactly the set --resume will re-run: only completed ids reach the
+	// checkpoint. Counting dispatches instead would under-report by any item
+	// that was dispatched but produced no result line.
+	stats.Skipped = stats.Total - stats.Completed
+	if ctx.Err() != nil {
+		stats.Cancelled = true
+	}
 	statsLock.Unlock()
 
 	return stats, nil

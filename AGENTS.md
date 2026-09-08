@@ -188,6 +188,8 @@ make install  # Builds and installs to ~/.local/bin
    the assembled text — question plus every `-f` file and piped stdin. Any
    change to attached context is a cache miss by design, so a low hit rate on a
    changing file is correct, not a bug. Judge synthesis is never cached (a
-   verdict depends on the whole response set — ADR-011), and the cache wrapper
-   deliberately does not forward `Preflighter`, so providers must be wrapped
-   AFTER `providers.RunPreflight` or auth checks are silently skipped.
+   verdict depends on the whole response set — ADR-011). Preflight is never
+   cached: every provider decorator implements `Unwrap() Provider` and
+   `RunPreflight` follows that chain, because embedding the `Provider`
+   interface does NOT promote the optional `Preflighter` — a decorator that
+   forgets `Unwrap` silently disables its provider's auth check.

@@ -274,6 +274,10 @@ Three things to understand before relying on it:
 - **A capped run exits non-zero.** That is deliberate, so a pipeline can tell a
   budget stop apart from a clean finish. The summary names the cap, the number
   of items completed, and the number skipped.
+- **`--budget` needs the pricing catalog.** Offline, estimates fall back to a
+  small compiled table covering only the six built-in providers, so a cap over
+  OpenRouter slugs would never bind. Conclave warns when that combination
+  appears.
 
 Estimates use the live OpenRouter catalog, falling back to a small compiled
 table when the catalog is unavailable. Neither is a bill: treat the cap as a
@@ -369,8 +373,20 @@ Batch complete: 2000/2000 items processed (47m23s)
   Estimated cost: $4.52
 ```
 
+An **interrupted** run (Ctrl-C, or a cancelled context) also exits non-zero and
+says so, because the output file is partial and a pipeline must not read it as
+the complete answer:
+
+```
+Batch complete: 312/2000 items processed (7m02s)
+  Success: 312 (100.0%) | Failed: 0 (0.0%)
+  Estimated cost: $0.7104
+  Interrupted: 1688 item(s) not dispatched; the output is partial.
+  Resume with: conclave ... --batch <input> -o out.jsonl --resume
+```
+
 When `--budget` stops the run early, two more lines appear and the exit code is
-non-zero:
+also non-zero:
 
 ```
 Batch complete: 1204/2000 items processed (28m10s)
