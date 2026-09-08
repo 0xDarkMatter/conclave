@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/cache"
@@ -20,6 +19,8 @@ import (
 	"github.com/0xDarkMatter/conclave-cli/internal/pricing"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
+
+// === Types ===
 
 // Item represents a single input item from the JSONL file
 type Item struct {
@@ -163,6 +164,8 @@ type Options struct {
 	Pricing *pricing.Catalog
 }
 
+// === Construction ===
+
 // NewProcessor creates a new batch processor
 func NewProcessor(opts Options) (*Processor, error) {
 	// Get provider instances (explicit injection wins; see Options.Providers)
@@ -238,6 +241,8 @@ func NewProcessor(opts Options) (*Processor, error) {
 		pricing:       opts.Pricing,
 	}, nil
 }
+
+// === Pipeline ===
 
 // Process runs the batch processing pipeline
 func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writer, defaultPrompt string) (*Stats, error) {
@@ -411,6 +416,8 @@ feed:
 
 	return stats, nil
 }
+
+// === Per-item work ===
 
 // processItem processes a single item through the pipeline with retry support
 func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt string) Result {
@@ -596,6 +603,8 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 	return result
 }
 
+// === Input parsing ===
+
 // readItems reads all items from the input
 func (p *Processor) readItems(input io.Reader) ([]Item, error) {
 	var items []Item
@@ -634,6 +643,8 @@ func (p *Processor) readItems(input io.Reader) ([]Item, error) {
 
 	return items, scanner.Err()
 }
+
+// === Cost estimation ===
 
 // fallbackCosts is the LAST-RESORT price table ($/1M tokens), used only when
 // the OpenRouter catalog is unavailable or does not list the model. It mirrors
@@ -692,6 +703,8 @@ func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.
 	return totalCost
 }
 
+// === Lifecycle and helpers ===
+
 // Close cleans up processor resources (checkpoint file handle)
 func (p *Processor) Close() error {
 	if p.checkpoint != nil {
@@ -710,6 +723,3 @@ func isRateLimitError(err error) bool {
 		strings.Contains(strings.ToLower(s), "rate limit") ||
 		strings.Contains(strings.ToLower(s), "too many requests")
 }
-
-// Summary prints a summary of the batch processing
-var completedItems atomic.Int32

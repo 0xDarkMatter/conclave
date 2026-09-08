@@ -101,20 +101,9 @@ API keys loaded from (highest to lowest):
 make check
 ```
 
-`make check` is THE gate: `go vet ./...`, `gofmt -l` (must print nothing),
-`go test ./...`, `go test -race ./...`, then a build plus
-`./bin/conclave models --check`. Run it before every commit.
-
-Two steps adapt rather than being skipped by hand. The race pass is skipped on
-Windows, where a cgo toolchain is usually absent. The catalog step branches on
-`conclave models --check`'s exit code: **2 is real drift and fails**, **3 means
-the catalog is unreachable** (offline, or `CONCLAVE_NO_PRICING=1`) and only
-skips. Do not go back to matching its message text — a reworded error silently
-turns a hard failure into a skip.
-
-`.github/workflows/check.yml` runs `make check` verbatim on ubuntu-latest and
-windows-latest with the Go version from `go.mod`. It deliberately does not
-re-list the steps; that is how the two drifted before.
+One command gates everything: vet, gofmt, tests, race, and catalog drift. Run it
+before every commit. CI runs the same command. Details and the exit-code
+contract: [docs/CHECK_GATE.md](docs/CHECK_GATE.md).
 
 ### Run Tests
 

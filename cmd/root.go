@@ -1,3 +1,17 @@
+// Package cmd is conclave's CLI surface: flag parsing, the single-query flow,
+// batch mode, and the subcommands.
+//
+// Section map for this file, which is long because one command owns the whole
+// flow:
+//
+//	Flags and command definition   flag vars, rootCmd, init
+//	Entry point                    Execute, exit-code handling
+//	Single-query flow              runConclave, the default path
+//	Provider listing               --list-providers and its helpers
+//	Pricing catalog                catalog load and drift warnings
+//	Batch mode                     runBatchMode and its summary
+//	Response cache resolution      --cache / CONCLAVE_CACHE_TTL
+//	Budget and formatting helpers
 package cmd
 
 import (
@@ -169,6 +183,8 @@ func init() {
 	rootCmd.Version = version
 }
 
+// === Entry point ===
+
 func Execute() {
 	// Load API keys from ~/.config/conclave/.env before anything else
 	_ = config.LoadEnvFile()
@@ -183,6 +199,8 @@ func Execute() {
 		os.Exit(1)
 	}
 }
+
+// === Single-query flow ===
 
 func runConclave(cmd *cobra.Command, args []string) error {
 	// Past argument validation, every error we return is a RUNTIME failure (a
@@ -470,6 +488,8 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	})
 }
 
+// === Provider listing ===
+
 func listProviders() {
 	// When -g is explicitly set, show only that mode (preserves scriptable
 	// behavior for callers parsing this output).
@@ -556,6 +576,8 @@ func printPreflightFailures(failures []providers.PreflightResult) {
 // loadCatalog fetches the OpenRouter pricing catalog under the pricing package's
 // cache rules. Failures are reported once on stderr (never fatal) and only when
 // the user would see other diagnostics anyway.
+// === Pricing catalog ===
+
 func loadCatalog(cmd *cobra.Command) *pricing.Catalog {
 	catalog, err := pricing.Load(cmd.Context(), pricing.Options{})
 	if err != nil && !flagQuiet && !flagJSON && !flagRaw {
@@ -597,6 +619,8 @@ func warnModelDrift(catalog *pricing.Catalog, providerList []providers.Provider)
 			p.Name(), model, catalog.FetchedAt.Format("2006-01-02"), hint, p.Name())
 	}
 }
+
+// === Batch mode ===
 
 func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string, defaultPrompt string, modelOverrides map[string]string, catalog *pricing.Catalog, responseCache *cache.Cache) error {
 	// Open input file
@@ -727,6 +751,8 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 // cacheMode is the mode component of the response-cache key. CLI and API paths
 // send materially different requests for the same provider name, so their
 // answers must never be interchangeable.
+// === Response cache resolution ===
+
 func cacheMode() string {
 	if flagGeneral {
 		return cache.ModeAPI
@@ -780,6 +806,8 @@ func parseCacheTTL(v string) (time.Duration, error) {
 // CONCLAVE_BATCH_BUDGET, then uncapped. A malformed or non-positive env value
 // is ignored with a warning rather than failing the run — a typo in an
 // exported variable should not stop a batch that is otherwise free to proceed.
+// === Budget and formatting helpers ===
+
 func resolveBatchBudget() float64 {
 	if flagBudget > 0 {
 		return flagBudget
