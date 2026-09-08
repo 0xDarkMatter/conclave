@@ -316,7 +316,8 @@ you the whole panel; `--skip-preflight` overrides that.
   mode a slash token is rejected with a hint to add `-g`.
 - **Direct providers remain better for gemini, openai and claude**: no fee, provider-specific
   request fields, and subscription billing in CLI mode. Use OpenRouter for models conclave has
-  no direct provider for. See [ADR-010](docs/adr/ADR-010-openrouter-as-a-slash-routed-api-backend.md).
+  no direct provider for. Full guide (setup, finding slugs, costs, the judge rule, error decoder):
+  [docs/OPENROUTER.md](docs/OPENROUTER.md); rationale in [ADR-010](docs/adr/ADR-010-openrouter-as-a-slash-routed-api-backend.md).
 
 ## Setup
 

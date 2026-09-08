@@ -133,6 +133,7 @@ make install  # Builds and installs to ~/.local/bin
 | `cmd/keyring.go` | `conclave keyring set/list/rm` — manage keys in the OS keyring |
 | `cmd/models.go` | `conclave models [provider] [--check\|--refresh\|--json]` — inspect the pricing catalog, gate drift |
 | `internal/providers/api_openrouter.go` | OpenRouter transport + `/auth/key` preflight; `IsOpenRouterModel` is the routing rule |
+| `docs/OPENROUTER.md` | User guide for slash-routed OpenRouter models: setup, slugs, cost, judge rule, error decoder |
 | `internal/pricing/catalog.go` | OpenRouter catalog cache, TTL, vendor-id → slug rewriter; advisory, nil-safe |
 | `docs/adr/` | Architecture Decision Records (the directory is the index) |
 
