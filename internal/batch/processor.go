@@ -41,6 +41,12 @@ type Result struct {
 	Error       string                 `json:"error,omitempty"`
 	DurationMs  int64                  `json:"duration_ms,omitempty"`
 	ExtraFields map[string]interface{} `json:"-"` // Passthrough fields
+
+	// cancelled marks a result produced by a shutdown rather than by real
+	// work. Such an item must NOT be checkpointed: --resume would skip it
+	// forever, silently dropping it from the batch. Unexported so it cannot
+	// reach the JSON output, which MarshalJSON builds from named fields.
+	cancelled bool
 }
 
 // MarshalJSON handles custom JSON marshaling to include extra fields
@@ -115,6 +121,9 @@ type Processor struct {
 	verbose       bool
 	blind         bool
 	retries       int
+	// resume is whether this run should SKIP ids the checkpoint already holds.
+	// A checkpoint is written either way; see NewProcessor.
+	resume bool
 	// budget caps cumulative ESTIMATED spend in USD; 0 disables the cap.
 	// The estimate is post-hoc (an item is priced only once it has returned),
 	// so up to `workers` items may already be in flight when the cap trips.
@@ -181,12 +190,26 @@ func NewProcessor(opts Options) (*Processor, error) {
 	// Caching it would serve a synthesis of a different panel. See ADR-011.
 	providerList = cache.WrapAll(providerList, opts.Cache, cache.ModeAPI)
 
-	// Create checkpoint if resume is enabled
+	// A checkpoint is written whenever there is an output file to resume into,
+	// not only when --resume was passed. Recording it only on resumed runs made
+	// the "Resume with: --resume" hint a lie for the FIRST run: there would be
+	// no checkpoint, so a resumed run re-pays for everything and appends
+	// duplicates to the output.
+	//
+	// Resume decides how the existing file is treated, not whether one is kept:
+	//   --resume  -> load it, and skip ids it already holds
+	//   otherwise -> clear it, because the output file is truncated too and a
+	//                stale checkpoint would make a later --resume skip items
+	//                that are no longer in the output.
 	var checkpoint *Checkpoint
-	if opts.Resume && opts.OutputPath != "" {
+	if opts.OutputPath != "" {
 		checkpoint = NewCheckpoint(opts.OutputPath)
-		if err := checkpoint.Load(); err != nil {
-			return nil, fmt.Errorf("failed to load checkpoint: %w", err)
+		if opts.Resume {
+			if err := checkpoint.Load(); err != nil {
+				return nil, fmt.Errorf("failed to load checkpoint: %w", err)
+			}
+		} else if err := checkpoint.Clear(); err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to reset checkpoint: %w", err)
 		}
 	}
 
@@ -210,6 +233,7 @@ func NewProcessor(opts Options) (*Processor, error) {
 		verbose:       opts.Verbose,
 		blind:         opts.Blind,
 		retries:       opts.Retries,
+		resume:        opts.Resume,
 		budget:        opts.Budget,
 		pricing:       opts.Pricing,
 	}, nil
@@ -250,8 +274,10 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 		}
 		seen[item.ID] = true
 
-		// Skip already-processed items if resuming
-		if p.checkpoint != nil && p.checkpoint.IsProcessed(item.ID) {
+		// Skip already-processed items if resuming. Gated on resume, not on the
+		// checkpoint existing: a fresh run keeps a checkpoint too, and must not
+		// skip anything.
+		if p.resume && p.checkpoint != nil && p.checkpoint.IsProcessed(item.ID) {
 			continue
 		}
 		filtered = append(filtered, item)
@@ -283,7 +309,9 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 			if err := encoder.Encode(result); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: failed to write result for %s: %v\n", result.ID, err)
 			}
-			if p.checkpoint != nil {
+			// A cancelled item never really ran, so recording it would make
+			// --resume skip work that was never done.
+			if p.checkpoint != nil && !result.cancelled {
 				_ = p.checkpoint.MarkProcessed(result.ID)
 			}
 
@@ -308,6 +336,14 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 		go func() {
 			defer wg.Done()
 			for item := range itemChan {
+				// Drain without working once the run is over. Starting an item
+				// against a dead context burns a rate-limit slot to produce a
+				// "context canceled" result that is worth nothing; leaving it
+				// undispatched instead lets Skipped count it and --resume run
+				// it for real.
+				if ctx.Err() != nil {
+					continue
+				}
 				result := p.processItem(ctx, item, defaultPrompt)
 				// Send unconditionally. A select on ctx.Done() here would throw
 				// away a result that has ALREADY been paid for and computed,
@@ -407,8 +443,9 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 		// Wait for rate limit
 		if err := p.rateLimiter.Wait(ctx); err != nil {
 			return Result{
-				ID:    item.ID,
-				Error: fmt.Sprintf("rate limit error: %v", err),
+				ID:        item.ID,
+				Error:     fmt.Sprintf("rate limit error: %v", err),
+				cancelled: ctx.Err() != nil,
 			}
 		}
 
@@ -450,6 +487,7 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 				ID:         item.ID,
 				Error:      fmt.Sprintf("cancelled after %d attempts", attempt),
 				DurationMs: time.Since(start).Milliseconds(),
+				cancelled:  true,
 			}
 		case <-time.After(backoff):
 			// Continue to next attempt
@@ -457,10 +495,14 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 	}
 
 	if lastErr != nil {
+		// Failed attempts still consumed tokens on any provider that answered,
+		// so the cost must reach stats.TotalCost or --budget cannot see it.
 		return Result{
 			ID:         item.ID,
 			Error:      fmt.Sprintf("query error after %d attempts: %v", maxAttempts, lastErr),
 			DurationMs: time.Since(start).Milliseconds(),
+			CostUSD:    p.estimateCost(responses, nil),
+			cancelled:  ctx.Err() != nil,
 		}
 	}
 
@@ -476,12 +518,14 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 					ID:         item.ID,
 					Error:      fmt.Sprintf("provider error after retries: %s", resp.Error),
 					DurationMs: time.Since(start).Milliseconds(),
+					CostUSD:    p.estimateCost(responses, nil),
 				}
 			}
 			return Result{
 				ID:         item.ID,
 				Error:      resp.Error,
 				DurationMs: time.Since(start).Milliseconds(),
+				CostUSD:    p.estimateCost(responses, nil),
 			}
 		}
 		result = Result{
@@ -500,6 +544,11 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 				ID:         item.ID,
 				Error:      fmt.Sprintf("judge error: %v", err),
 				DurationMs: time.Since(start).Milliseconds(),
+				// The panel answered and was billed even though synthesis
+				// failed; without this a broken judge model makes --budget
+				// unenforceable.
+				CostUSD:   p.estimateCost(responses, nil),
+				cancelled: ctx.Err() != nil,
 			}
 		}
 		result = Result{

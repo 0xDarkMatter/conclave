@@ -674,3 +674,149 @@ func TestCancellationDiscardsNoPaidWork(t *testing.T) {
 		t.Fatalf("completed %d + skipped %d != total %d", stats.Completed, stats.Skipped, stats.Total)
 	}
 }
+
+// TestCancelledItemsAreNotCheckpointed is the worst failure this package can
+// have: an item that never ran being recorded as done, so --resume skips it
+// forever and it silently vanishes from the batch. After a cancellation the
+// workers still drain a buffered channel, and every one of those items would
+// otherwise produce a "context canceled" result that got written AND marked.
+func TestCancelledItemsAreNotCheckpointed(t *testing.T) {
+	const n = 40
+	var sb strings.Builder
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&sb, "{\"id\":\"item-%d\",\"prompt\":\"q\"}\n", i)
+	}
+
+	outPath := filepath.Join(t.TempDir(), "out.jsonl")
+	prov := okProvider("openai")
+	prov.delay = 20 * time.Millisecond
+	p := newTestProcessor(t, Options{Workers: 2, OutputPath: outPath}, prov)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	var out bytes.Buffer
+	stats, err := p.Process(ctx, strings.NewReader(sb.String()), &out, "")
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if !stats.Cancelled || stats.Skipped == 0 {
+		t.Fatalf("stats = %+v, want an interrupted run", stats)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cp := NewCheckpoint(outPath)
+	if err := cp.Load(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Every checkpointed id must correspond to a real, successful result line.
+	succeeded := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		if line == "" {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("bad result line %q: %v", line, err)
+		}
+		if _, isErr := m["error"]; !isErr {
+			succeeded[m["id"].(string)] = true
+		}
+	}
+	if cp.ProcessedCount() > len(succeeded) {
+		t.Fatalf("checkpoint holds %d ids but only %d items produced a real result: %d items would be skipped forever",
+			cp.ProcessedCount(), len(succeeded), cp.ProcessedCount()-len(succeeded))
+	}
+	for id := range succeeded {
+		if !cp.IsProcessed(id) {
+			t.Fatalf("successful item %s is missing from the checkpoint, so it would be re-paid on resume", id)
+		}
+	}
+}
+
+// TestCheckpointExistsWithoutResumeSoTheHintIsTrue: the interrupted and
+// budget-stop summaries both tell the user to rerun with --resume. That advice
+// is only true if the FIRST run left a checkpoint behind.
+func TestCheckpointExistsWithoutResumeSoTheHintIsTrue(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "out.jsonl")
+	p := newTestProcessor(t, Options{Workers: 1, OutputPath: outPath}, okProvider("openai"))
+	runBatch(t, p, "{\"id\":\"a\",\"prompt\":\"q\"}\n{\"id\":\"b\",\"prompt\":\"q\"}\n", "")
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cp := NewCheckpoint(outPath)
+	if err := cp.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if !cp.IsProcessed("a") || !cp.IsProcessed("b") {
+		t.Fatalf("a run without --resume left no usable checkpoint (%d ids), so the resume hint is a lie", cp.ProcessedCount())
+	}
+}
+
+// TestFreshRunClearsAStaleCheckpoint: without --resume the output file is
+// truncated, so a checkpoint left from a previous run would make a LATER
+// --resume skip items that are no longer in the output.
+func TestFreshRunClearsAStaleCheckpoint(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "out.jsonl")
+	if err := os.WriteFile(outPath+".checkpoint", []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	prov := okProvider("openai")
+	p := newTestProcessor(t, Options{Workers: 1, OutputPath: outPath}, prov)
+	results, _ := runBatch(t, p, "{\"id\":\"a\",\"prompt\":\"q\"}\n", "")
+	if len(results) != 1 {
+		t.Fatalf("a fresh run honoured a stale checkpoint and skipped work: %v", results)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cp := NewCheckpoint(outPath)
+	if err := cp.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if cp.IsProcessed("b") || cp.IsProcessed("c") {
+		t.Fatal("stale ids survived a fresh run; a later --resume would skip items absent from the output")
+	}
+}
+
+// TestJudgeFailureStillCountsThePanelSpend: the providers answered and were
+// billed. If that cost never reaches stats.TotalCost, a broken judge model
+// makes --budget unenforceable.
+func TestJudgeFailureStillCountsThePanelSpend(t *testing.T) {
+	// Both vendors are priced so the expected total is exact; a model missing
+	// from the catalog would fall back to the compiled table and muddy it.
+	cat := pricing.NewCatalog([]pricing.Model{
+		{ID: "openai/gpt-test", InputPerM: 1, OutputPerM: 0},
+		{ID: "google/gpt-test", InputPerM: 1, OutputPerM: 0},
+	})
+	prov := okProvider("openai")
+	prov.model = "gpt-test"
+	prov.metrics = &providers.Metrics{InputTokens: 1_000_000}
+	second := okProvider("gemini")
+	second.model = "gpt-test"
+	second.metrics = &providers.Metrics{InputTokens: 1_000_000}
+
+	brokenJudge := &fakeProvider{
+		name: "claude", model: "judge",
+		answer: func(int32, string) (string, error) { return "", fmt.Errorf("judge model not found") },
+	}
+
+	p := newTestProcessor(t, Options{Workers: 1, Pricing: cat, Judge: brokenJudge}, prov, second)
+	_, stats := runBatch(t, p, "{\"id\":\"a\",\"prompt\":\"q\"}\n", "")
+
+	if stats.Failed != 1 {
+		t.Fatalf("stats = %+v, want the judge failure recorded", stats)
+	}
+	if stats.TotalCost < 1.999 {
+		t.Fatalf("TotalCost = %v, want the two billed provider calls (~2.00) counted despite the judge failing", stats.TotalCost)
+	}
+}
