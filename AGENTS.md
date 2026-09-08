@@ -180,7 +180,11 @@ make install  # Builds and installs to ~/.local/bin
    the assembled text — question plus every `-f` file and piped stdin. Any
    change to attached context is a cache miss by design, so a low hit rate on a
    changing file is correct, not a bug. Judge synthesis is never cached (a
-   verdict depends on the whole response set — ADR-011). Preflight is never
+   verdict depends on the whole response set — ADR-011). A cache hit keeps
+   `status: "success"` and signals itself ONLY through the separate `cached`
+   field: downstream consumers read any other status as a panel failure, so
+   giving hits their own status would turn a healthy run into a phantom
+   degradation (pinned by `TestCachedHitKeepsStatusSuccess`). Preflight is never
    cached: every provider decorator implements `Unwrap() Provider` and
    `RunPreflight` follows that chain, because embedding the `Provider`
    interface does NOT promote the optional `Preflighter` — a decorator that

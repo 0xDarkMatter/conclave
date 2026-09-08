@@ -130,3 +130,33 @@ func TestJSONCompleteTotalIsNotMarkedPartial(t *testing.T) {
 		t.Fatalf("total = %v, want 1.00", out.Meta.TotalCostUSD)
 	}
 }
+
+// TestCachedHitKeepsStatusSuccessInJSON is the same contract as the
+// orchestrator test, asserted at the boundary consumers actually parse.
+// A downstream reader treats any status other than "success" as a panel
+// failure, so a cache hit that changed status would turn a healthy run into a
+// phantom degradation.
+func TestCachedHitKeepsStatusSuccessInJSON(t *testing.T) {
+	cached := providers.Response{
+		Provider: "openai", Model: "gpt-test", Status: "success", Cached: true,
+		Response: "an answer",
+		Metrics:  &providers.Metrics{InputTokens: 5, OutputTokens: 7},
+	}
+	out := renderJSONTo(t, New(Options{JSON: true, APIMode: true, Pricing: nil}),
+		Result{Query: "q", Providers: []string{"openai"},
+			Responses: []providers.Response{cached}})
+
+	got := out.Responses["openai"]
+	if got.Status != "success" {
+		t.Fatalf("status = %q, want \"success\": a consumer would read this as a panel failure", got.Status)
+	}
+	if !got.Cached {
+		t.Fatal("cached: true is missing, so the hit is invisible to a consumer")
+	}
+	if got.Error != "" {
+		t.Fatalf("a cache hit carries an error: %q", got.Error)
+	}
+	if got.Response != "an answer" {
+		t.Fatalf("response body = %q", got.Response)
+	}
+}
