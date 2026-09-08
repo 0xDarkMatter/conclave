@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   total ending in `+` means at least one response could not be priced. CLI mode
   shows nothing about dollars because it is subscription-billed. `--raw` and
   `--brief` are unchanged.
+- `--budget <usd>` for batch mode (also `CONCLAVE_BATCH_BUDGET`): stops
+  dispatching new items once cumulative estimated spend reaches the cap,
+  lets in-flight items finish, and exits non-zero with a summary naming the
+  cap, the completed count and the skipped count. Undispatched items stay out
+  of the checkpoint so `--resume` continues the run. Because cost is measured
+  post-hoc, overshoot by up to `--workers` items is expected.
 
 - Runtime pricing catalog (`internal/pricing`): conclave caches OpenRouter's
   public models feed under the user cache directory, refreshes it in the

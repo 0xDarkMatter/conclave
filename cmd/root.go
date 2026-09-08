@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ var (
 	flagNoRateLimit   bool
 	flagRetries       int
 	flagSkipPreflight bool
+	flagBudget        float64
 )
 
 func SetVersion(v string) {
@@ -150,6 +152,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&flagNoRateLimit, "no-rate-limit", false, "Disable rate limiting (for high-tier API accounts)")
 	rootCmd.Flags().IntVar(&flagRetries, "retries", 0, "Retry failed batch items N times with exponential backoff (batch mode only; single-call automatically retries 429/5xx)")
 	rootCmd.Flags().BoolVar(&flagSkipPreflight, "skip-preflight", false, "Skip auth preflight checks")
+	rootCmd.Flags().Float64Var(&flagBudget, "budget", 0, "Stop dispatching batch items once estimated spend reaches this many USD (batch mode only; also CONCLAVE_BATCH_BUDGET)")
 
 	rootCmd.Version = version
 }
@@ -612,6 +615,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		Blind:          flagBlind,
 		NoRateLimit:    flagNoRateLimit,
 		Retries:        flagRetries,
+		Budget:         resolveBatchBudget(),
 		Pricing:        catalog,
 	})
 	if err != nil {
@@ -627,13 +631,51 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 
 	// Print summary to stderr
 	duration := time.Since(stats.StartTime)
-	fmt.Fprintf(os.Stderr, "\nBatch complete: %d items processed (%s)\n", stats.Total, formatDuration(duration))
+	pct := func(n int) float64 {
+		if stats.Completed == 0 {
+			return 0
+		}
+		return float64(n) / float64(stats.Completed) * 100
+	}
+	fmt.Fprintf(os.Stderr, "\nBatch complete: %d/%d items processed (%s)\n", stats.Completed, stats.Total, formatDuration(duration))
 	fmt.Fprintf(os.Stderr, "  Success: %d (%.1f%%) | Failed: %d (%.1f%%)\n",
-		stats.Succeeded, float64(stats.Succeeded)/float64(stats.Total)*100,
-		stats.Failed, float64(stats.Failed)/float64(stats.Total)*100)
+		stats.Succeeded, pct(stats.Succeeded), stats.Failed, pct(stats.Failed))
 	fmt.Fprintf(os.Stderr, "  Estimated cost: $%.4f\n", stats.TotalCost)
 
+	// A budget stop is a non-zero exit: the run is incomplete on purpose and a
+	// caller in a pipeline must be able to tell that apart from a clean finish.
+	// The checkpoint holds every completed id, so --resume continues the rest.
+	if stats.BudgetStopped {
+		fmt.Fprintf(os.Stderr, "  Budget cap $%.4f reached: %d item(s) not dispatched.\n", stats.Budget, stats.Skipped)
+		if flagOutput != "" && flagOutput != "-" {
+			fmt.Fprintf(os.Stderr, "  Resume with: conclave ... --batch <input> -o %s --resume\n", flagOutput)
+		} else {
+			fmt.Fprintln(os.Stderr, "  Use -o <file> --resume to continue a capped run later.")
+		}
+		return fmt.Errorf("budget cap $%.4f reached after %d item(s); %d not dispatched", stats.Budget, stats.Completed, stats.Skipped)
+	}
+
 	return nil
+}
+
+// resolveBatchBudget reads the spend cap: --budget wins, then
+// CONCLAVE_BATCH_BUDGET, then uncapped. A malformed or non-positive env value
+// is ignored with a warning rather than failing the run — a typo in an
+// exported variable should not stop a batch that is otherwise free to proceed.
+func resolveBatchBudget() float64 {
+	if flagBudget > 0 {
+		return flagBudget
+	}
+	raw := strings.TrimSpace(os.Getenv("CONCLAVE_BATCH_BUDGET"))
+	if raw == "" {
+		return 0
+	}
+	v, err := strconv.ParseFloat(strings.TrimPrefix(raw, "$"), 64)
+	if err != nil || v <= 0 {
+		fmt.Fprintf(os.Stderr, "  warning: ignoring CONCLAVE_BATCH_BUDGET=%q (want a positive number of USD)\n", raw)
+		return 0
+	}
+	return v
 }
 
 func formatDuration(d time.Duration) string {

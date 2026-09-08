@@ -244,6 +244,9 @@ conclave -c grok "Classify this account" --batch items.jsonl -o results.jsonl
 # Parallel workers for faster throughput
 conclave -c gemini "Analyze" --batch items.jsonl --workers 50 -o results.jsonl
 
+# Cap the spend; the run exits non-zero and --resume continues it
+conclave --all --batch items.jsonl -o out.jsonl --budget 5.00 --resume
+
 # Resume an interrupted job
 conclave -c claude "Analyze" --batch items.jsonl -o results.jsonl --resume
 ```
@@ -505,6 +508,8 @@ Batch Mode:
   -o, --output <file>    Output file (default: stdout)
       --resume           Resume from checkpoint, skip processed items
       --retries <n>      Retry failed batch items N times with exponential backoff (batch mode only)
+      --no-rate-limit    Disable rate limiting (high-tier API accounts)
+      --budget <usd>     Stop dispatching once estimated spend hits this cap (also CONCLAVE_BATCH_BUDGET)
 
 Output Flags:
       --json             Structured JSON output

@@ -86,6 +86,14 @@ type Stats struct {
 	Failed    int
 	StartTime time.Time
 	TotalCost float64
+
+	// Budget is the cap that was in force (0 = uncapped) and BudgetStopped
+	// records that dispatch was cut short because TotalCost reached it.
+	// Skipped counts the items never dispatched; they stay absent from the
+	// checkpoint so --resume picks them up next run.
+	Budget        float64
+	BudgetStopped bool
+	Skipped       int
 }
 
 // Processor handles batch processing of JSONL files
@@ -102,6 +110,10 @@ type Processor struct {
 	verbose       bool
 	blind         bool
 	retries       int
+	// budget caps cumulative ESTIMATED spend in USD; 0 disables the cap.
+	// The estimate is post-hoc (an item is priced only once it has returned),
+	// so up to `workers` items may already be in flight when the cap trips.
+	budget float64
 	// pricing is the OpenRouter catalog used for cost estimates. May be nil
 	// (offline / disabled); estimateCost then falls back to fallbackCosts.
 	pricing *pricing.Catalog
@@ -122,6 +134,9 @@ type Options struct {
 	Blind          bool
 	NoRateLimit    bool
 	Retries        int
+	// Budget stops dispatch once estimated spend reaches this many USD.
+	// 0 means uncapped.
+	Budget float64
 	// Pricing is optional; nil means "use the compiled fallback table".
 	Pricing *pricing.Catalog
 }
@@ -169,6 +184,7 @@ func NewProcessor(opts Options) (*Processor, error) {
 		verbose:       opts.Verbose,
 		blind:         opts.Blind,
 		retries:       opts.Retries,
+		budget:        opts.Budget,
 		pricing:       opts.Pricing,
 	}, nil
 }
@@ -229,6 +245,7 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 	stats := &Stats{
 		Total:     len(items),
 		StartTime: time.Now(),
+		Budget:    p.budget,
 	}
 	var statsLock sync.Mutex
 
@@ -275,12 +292,36 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 		}()
 	}
 
-	// Feed items to workers
+	// Feed items to workers.
+	//
+	// The budget check reads the running total the writer goroutine maintains,
+	// so it only ever sees items that have already COMPLETED. That is the whole
+	// design: cost is known post-hoc, from real token counts, not guessed up
+	// front. The consequence is documented overshoot — the workers already
+	// holding items will finish them, so actual spend can exceed the cap by up
+	// to `workers` items. Items never dispatched are left out of the
+	// checkpoint, so --resume continues exactly where the cap bit.
+	dispatched := 0
+feed:
 	for _, item := range items {
+		if p.budget > 0 {
+			statsLock.Lock()
+			spent := stats.TotalCost
+			statsLock.Unlock()
+			if spent >= p.budget {
+				statsLock.Lock()
+				stats.BudgetStopped = true
+				statsLock.Unlock()
+				break feed
+			}
+		}
 		select {
 		case itemChan <- item:
+			dispatched++
 		case <-ctx.Done():
-			break
+			// A bare `break` here would only leave the select, leaving the
+			// feeder spinning through the remaining items after cancellation.
+			break feed
 		}
 	}
 	close(itemChan)
@@ -293,6 +334,10 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 	<-doneChan
 
 	p.progress.Stop()
+
+	statsLock.Lock()
+	stats.Skipped = stats.Total - dispatched
+	statsLock.Unlock()
 
 	return stats, nil
 }

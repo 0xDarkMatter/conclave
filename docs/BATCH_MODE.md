@@ -37,6 +37,7 @@ cat results.jsonl
 | `--resume` | false | Skip already-processed items |
 | `--retries N` | 0 | Retry failed items N times with exponential backoff (batch only — single-call queries auto-retry 429/5xx internally) |
 | `--no-rate-limit` | false | Disable rate limiting (for high-tier accounts) |
+| `--budget USD` | 0 (uncapped) | Stop dispatching new items once estimated spend reaches this cap (also `CONCLAVE_BATCH_BUDGET`) |
 
 Batch mode automatically implies:
 - `-c` (cheap mode) - uses fast, cost-effective models
@@ -251,6 +252,31 @@ Batch mode uses cheap models by default:
 
 **For 2000 items:** ~$4-10
 
+### Spend Cap (`--budget`)
+
+`--budget 5.00` stops the run once cumulative estimated spend reaches $5. The
+same value can come from `CONCLAVE_BATCH_BUDGET`; the flag wins.
+
+```bash
+conclave --all --batch items.jsonl -o out.jsonl --budget 5.00 --resume
+```
+
+Three things to understand before relying on it:
+
+- **Overshoot is expected, by up to `--workers` items.** Cost is measured
+  post-hoc from each item's real token counts, not guessed before dispatch. When
+  the cap trips, the items already in flight run to completion. With
+  `--workers 5` a $5 cap can land at $5.01.
+- **Undispatched items never enter the checkpoint.** Rerunning the same command
+  with `--resume` picks up exactly where the cap bit.
+- **A capped run exits non-zero.** That is deliberate, so a pipeline can tell a
+  budget stop apart from a clean finish. The summary names the cap, the number
+  of items completed, and the number skipped.
+
+Estimates use the live OpenRouter catalog, falling back to a small compiled
+table when the catalog is unavailable. Neither is a bill: treat the cap as a
+guard rail, not an accounting control.
+
 ---
 
 ## Examples
@@ -336,7 +362,18 @@ conclave --all "Query" --batch items.jsonl --output results.jsonl
 After batch completion, a summary is printed to stderr:
 
 ```
-Batch complete: 2000 items processed (47m23s)
+Batch complete: 2000/2000 items processed (47m23s)
   Success: 1987 (99.4%) | Failed: 13 (0.7%)
   Estimated cost: $4.52
+```
+
+When `--budget` stops the run early, two more lines appear and the exit code is
+non-zero:
+
+```
+Batch complete: 1204/2000 items processed (28m10s)
+  Success: 1200 (99.7%) | Failed: 4 (0.3%)
+  Estimated cost: $5.0031
+  Budget cap $5.0000 reached: 791 item(s) not dispatched.
+  Resume with: conclave ... --batch <input> -o out.jsonl --resume
 ```
