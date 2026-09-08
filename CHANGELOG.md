@@ -5,7 +5,7 @@ All notable changes to Conclave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-09-08
 
 ### Added
 
@@ -40,7 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rate-limit retry and retry exhaustion, checkpoint resume, cost estimation
   precedence, and the budget stop, plus `checkpoint_test.go` for
   load/append/corrupt-line handling.
-
 - Runtime pricing catalog (`internal/pricing`): conclave caches OpenRouter's
   public models feed under the user cache directory, refreshes it in the
   background once per `CONCLAVE_PRICING_TTL` hours (default 24), and never
@@ -51,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   proceeds. Suppressed under `--json`, `--raw`, `-q`.
 - `conclave models [provider] [--check|--refresh|--json|--all]` to inspect
   current ids, context sizes and API prices, and to gate releases
-  (`--check` exits 1 when a compiled default is missing).
+  (`--check` exits 2 when a compiled default is missing, 3 when the catalog is unreachable).
 - OpenRouter as an API-mode backend: in `-g` mode any provider token written
   as an OpenRouter slug (`deepseek/deepseek-v4-pro`, `anthropic/claude-opus-5`)
   routes through `openrouter.ai/api/v1/chat/completions`, with the slug as
@@ -140,6 +139,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Flash, Grok 4.20–4.6 and Build 0.1, GLM 5.3 / 5.3 Flash. Notes that all
   prices are API-mode only. Adds a Drift Watch section: `grok-4-1-fast-*`
   and `glm-4.6v-flashx` are no longer listed on OpenRouter.
+- Line endings pinned to LF via `.gitattributes` for `.go`, `.md`, `.yml` and
+  the Makefile, so gofmt agrees on Windows and Linux. A fresh worktree on an
+  `autocrlf` machine can still show CRLF until re-checked out; see
+  `docs/CHECK_GATE.md` landmines.
+- `make check` enumerates Go files via `go list` instead of `gofmt -l .`, which
+  recursed into nested `.claude/worktrees/*` checkouts and failed on other
+  sessions' files.
+- Makefile `VERSION` now tracks the release (it reported 1.1.0 for 1.2.0 code).
 
 ## [1.2.0] - 2026-06-18
 
@@ -242,5 +249,7 @@ Initial public release.
 - Blind mode for unbiased judging.
 - Interactive setup (`conclave init`) for API key configuration.
 
+[1.3.0]: https://github.com/0xDarkMatter/conclave/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/0xDarkMatter/conclave/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/0xDarkMatter/conclave/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/0xDarkMatter/conclave/releases/tag/v1.0.0

@@ -1,12 +1,13 @@
 # Conclave
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](https://go.dev/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Built with Charm](https://img.shields.io/badge/Built%20with-Charm-ff69b4?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyem0wIDE4Yy00LjQxIDAtOC0zLjU5LTgtOHMzLjU5LTggOC04IDggMy41OSA4IDgtMy41OSA4LTggOHoiLz48L3N2Zz4=)](https://charm.sh)
+[![Release](https://img.shields.io/github/v/release/0xDarkMatter/conclave?style=flat&labelColor=2d3142&color=eb6c36)](https://github.com/0xDarkMatter/conclave/releases)
+[![License](https://img.shields.io/badge/license-MIT-4f5d75?style=flat&labelColor=2d3142)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat&labelColor=2d3142&logo=go)](go.mod)
+[![Built with Charm](https://img.shields.io/badge/built%20with-Charm-ff69b4?style=flat&labelColor=2d3142)](https://charm.sh)
 
-> Stop juggling six AI CLIs. Query any model with one syntax, or unleash them all and let a judge synthesize the chaos.
+> Stop juggling six AI CLIs. Query any model with one syntax, or convene the whole council and let a judge synthesize the verdict.
 
-Tired of memorizing whether it's `--file` or `-f` or piping to stdin? Sick of context-switching between `gemini`, `claude`, `codex`, and whatever CLI Grok ships this week? **Conclave is your universal remote for LLMs** - one command, one syntax, any provider. Learn it once, query everything.
+Tired of memorizing whether it's `--file` or `-f` or piping to stdin? Sick of context-switching between `gemini`, `claude`, `codex`, and whatever CLI Grok ships this week? **Conclave is your universal remote for LLMs** - one command, one syntax, any provider. Six direct providers, plus any model on OpenRouter by its `vendor/model` slug. Learn it once, query everything.
 
 But here's where it gets interesting: why trust a single AI's opinion when you can convene an entire council? Conclave queries multiple models in parallel, then hands their responses to a judge who synthesizes a verdict with confidence levels, agreements, disagreements, and actionable recommendations. It's like having a room full of very expensive consultants who actually have to reach consensus before billing you.
 
@@ -14,14 +15,39 @@ Built with [Charm](https://charm.sh)'s Bubble Tea for a terminal UI that doesn't
 
 ## Why Conclave?
 
-- **One interface** - Same syntax for Gemini, Claude, GPT, Grok, Perplexity, GLM
+- **One interface** - Same syntax for Gemini, Claude, GPT, Grok, Perplexity, GLM, and any `vendor/model` on OpenRouter
 - **Reduce bias** - No single model's quirks dominate the response
-- **Increase confidence** - Agreement across models = higher signal
-- **Catch blind spots** - Different models notice different issues
-- **Faster iteration** - Parallel queries, one synthesized answer
+- **Catch blind spots** - Disagreements are surfaced, not averaged away; different models notice different issues
+- **Faster iteration** - Parallel queries, one synthesized answer, and an opt-in cache so re-runs are free
+- **Know what it cost** - API-mode runs print the real dollar figure per response, from a daily-refreshed price catalog
+- **Never run a dead model** - Conclave warns when a configured model id has vanished from the catalog
 - **Beautiful TUI** - Animated progress with [Charm](https://charm.sh) (Bubble Tea)
 
 ## Recent Updates
+
+### v1.3.0 — 2026-09-08
+
+**🚀 Claude Opus 5 and GPT-5.6 Sol by default**
+
+Defaults moved to the current flagships: claude `claude-opus-5`, openai `gpt-5.6-sol`, grok `grok-4.6`, glm `glm-5.3`, with `grok-build-0.1` and `glm-5.3-flash` in cheap mode. Every id was verified live on both the CLI and API routes before it shipped. Override any of them with `-m provider:model`.
+
+**🌐 Any model via OpenRouter**
+
+In API mode, write a provider as its OpenRouter slug and it just works: `conclave -g deepseek/deepseek-v4-pro,anthropic/claude-opus-5 "..." --judge openai/gpt-5.6-sol`. Slugs can sit beside direct providers on one panel or act as judge. Needs `OPENROUTER_API_KEY`; details in [docs/OPENROUTER.md](docs/OPENROUTER.md).
+
+**💸 Costs you can see**
+
+API-mode runs now print the dollar figure per response and in total, from a cached [OpenRouter](https://openrouter.ai/models) price catalog that refreshes once a day in the background. `--json` gains `cost_usd` and `meta.total_cost_usd`. `conclave models` prints current ids and prices; `conclave models --check` tells you if a compiled default has been retired.
+
+**🗂 Opt-in response cache and a batch budget**
+
+`--cache` reuses an identical provider response instead of paying for it twice; `--budget 5.00` stops a batch run once estimated spend hits the cap and leaves it resumable. Judge synthesis is never cached.
+
+**🛠 gemini, codex and the hang that wasn't**
+
+Google retired gemini-cli's free OAuth tier, so CLI-mode gemini now needs `GEMINI_API_KEY` and falls back to the direct API when the CLI's auth fails. codex is checked with `codex login status` instead of demanding an API key. And Conclave no longer opens an interactive setup prompt when stdin is not a terminal, which used to look like a 110-second hang from a script.
+
+---
 
 ### v1.2.0 — 2026-06-18
 
@@ -89,9 +115,9 @@ Conclave features a rich terminal interface powered by [Bubble Tea](https://gith
 
 ```
 ▸ Querying 3 providers...
-  ├── ⠹ Google Gemini 3 Pro [02.34s]
-  ├── ✓ xAI Grok 4.1 Fast [01.21s / 000168 tokens]
-  └── ⠼ Anthropic Claude Opus 4.5 [03.12s]
+  ├── ⠹ Google Gemini 3.1 Pro [02.34s]
+  ├── ✓ OpenAI GPT-5.6 Sol [01.91s / 000168 tokens]
+  └── ⠼ Anthropic Claude Opus 5 [03.12s]
 
 ▸ Crystallizing... ⠋ [02.45s]
 ```
@@ -100,6 +126,7 @@ Conclave features a rich terminal interface powered by [Bubble Tea](https://gith
 - **Real-time progress** - Token counts and timing as providers complete
 - **Synthesis verbs** - 25 rotating verbs during verdict synthesis
 - **Non-TTY fallback** - Clean output for CI/CD and piped commands
+- **Cost on the line** - In API mode each provider block and the footer carry the real spend
 
 ## One CLI, Every LLM
 
@@ -130,8 +157,8 @@ conclave perplexity "Latest news on Rust 2.0"
 conclave -g claude "Summarize this paper" -f paper.pdf
 
 # Switch models on the fly
-conclave gemini "Explain" -m gemini:gemini-2.5-flash  # Fast
-conclave gemini "Explain" -m gemini:gemini-3-pro-preview  # Thorough
+conclave gemini "Explain" -m gemini:gemini-3.8-flash      # Fast
+conclave gemini "Explain" -m gemini:gemini-3.1-pro-preview # Thorough
 ```
 
 When you query a single provider, Conclave skips the judge phase and returns the response directly - it's just a cleaner interface to the underlying LLM.
@@ -163,9 +190,9 @@ Uses provider-specific CLI tools optimized for coding tasks. Each provider requi
 
 | Provider | CLI Tool | Installation |
 |----------|----------|--------------|
-| **gemini** | `gemini` | `npm install -g @anthropic-ai/gemini-cli` |
-| **claude** | `claude` | `npm install -g @anthropic-ai/claude-code` |
-| **openai** | `codex` | `npm install -g @openai/codex` |
+| **gemini** | `gemini` | `npm install -g @google/gemini-cli`, plus `GEMINI_API_KEY` (Google retired the CLI's free OAuth tier; Conclave falls back to the API if the CLI's auth fails) |
+| **claude** | `claude` | `npm install -g @anthropic-ai/claude-code`, then `claude auth login` (Max subscription, no API key) |
+| **openai** | `codex` | `npm install -g @openai/codex`, then `codex login` (ChatGPT subscription, no API key) |
 | **grok** | `grok` | See [xAI Grok CLI](https://github.com/xai-org/grok-cli) |
 | **perplexity** | `perplexity` | See [Perplexity CLI](https://github.com/perplexity-ai/perplexity-cli) |
 | **glm** | _(none — direct API)_ | Set `GLM_API_KEY` (GLM Coding Plan key from [z.ai](https://z.ai/manage-apikey/apikey-list)) |
@@ -177,7 +204,7 @@ conclave --list-providers      # CLI mode - shows installed CLIs
 conclave --list-providers -g   # API mode - shows configured API keys
 ```
 
-**Tip:** Start with API mode (`-g`) to get running quickly. Add CLI tools later if you want their coding-specific optimizations.
+**Tip:** Start with API mode (`-g`) to get running quickly. Add CLI tools later if you want their coding-specific optimizations, or to run on subscriptions instead of metered keys.
 
 ## Quick Start
 
@@ -193,6 +220,13 @@ conclave --all "Review this architecture" -f design.md --judge claude
 ```
 
 ## Modes
+
+Each provider token is routed by two questions: does it carry a `vendor/model` slug, and is `-g` set?
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/provider-routing-dark.svg">
+  <img alt="Flowchart: a slash token goes to OpenRouter in API mode or is rejected in CLI mode; a plain name goes to the direct API in -g mode or to the wrapped CLI, with the gemini CLI falling back to the API on an auth failure" src="docs/diagrams/provider-routing.svg" width="100%">
+</picture>
 
 ### CLI Mode (Default)
 
@@ -257,7 +291,7 @@ conclave -c claude "Analyze" --batch items.jsonl -o results.jsonl --resume
 {"id": "2", "context": "Username: @jane_dev\nBio: Software engineer, coffee lover\nFollowers: 2K\n\nRecent posts:\n..."}
 ```
 
-**Performance (99 items, 50 workers):**
+**Performance (99 items, 50 workers, measured December 2025 on the cheap models of the time; costs have moved since, see the caveat in [docs/BATCH_BENCHMARKS.md](docs/BATCH_BENCHMARKS.md)):**
 
 | Provider | Time | Cost | Best For |
 |----------|------|------|----------|
@@ -383,15 +417,24 @@ what does it cost" without leaving the terminal:
 ```bash
 conclave models                 # every provider, newest models first
 conclave models claude          # one provider
-conclave models --check         # do the compiled defaults still exist? exit 1 on drift
+conclave models --check         # do the compiled defaults still exist? exit 2 on drift
 conclave models --refresh       # fetch now instead of waiting for the daily refresh
 ```
 
 Prices shown are pay-as-you-go API prices and apply to API mode (`-g`, `-c`, `--batch`).
 CLI mode runs on each provider's subscription and costs nothing per token. Set
 `CONCLAVE_NO_PRICING=1` to disable the catalog entirely, or `CONCLAVE_PRICING_TTL=<hours>`
-to change how often it refreshes. See [docs/MODEL_REGISTRY.md](docs/MODEL_REGISTRY.md)
-for the annotated reference.
+to change how often it refreshes. `--check` exits 2 on drift and 3 when the catalog is
+unreachable, so a release script can tell the two apart. See
+[docs/MODEL_REGISTRY.md](docs/MODEL_REGISTRY.md) for the annotated reference.
+
+The catalog never blocks a query: once a cache exists it is served immediately, stale or
+not, and refreshed in the background.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/pricing-catalog-dark.svg">
+  <img alt="State machine: no cache leads to one synchronous fetch; a fresh cache is served with no network until its TTL expires; a stale cache is served immediately while a background refresh makes it fresh; a failed first fetch leaves the catalog absent and queries proceed without prices" src="docs/diagrams/pricing-catalog.svg" width="100%">
+</picture>
 
 ## Usage Examples
 
@@ -509,9 +552,9 @@ conclave -g gemini,openai "Classify" --raw -f items.txt | my-extractor
 
 Format:
 ```
-===PROVIDER:openai MODEL:gpt-5.2 STATUS:success===
+===PROVIDER:openai MODEL:gpt-5.6-sol STATUS:success===
 <response body>
-===PROVIDER:claude MODEL:claude-opus-4-5 STATUS:error===
+===PROVIDER:claude MODEL:claude-opus-5 STATUS:error===
 <error message>
 ===END===
 ```
@@ -607,13 +650,13 @@ timeout_seconds: 60
 
 models:
   gemini: gemini-3.1-pro-preview
-  openai: gpt-5.5
-  claude: claude-opus-4-8
+  openai: gpt-5.6-sol
+  claude: claude-opus-5
 
 # Override cheap mode models (optional)
 cheap_models:
-  gemini: gemini-2.5-flash      # Upgrade from flash-lite
-  claude: claude-sonnet-4-5     # Balance speed/quality
+  gemini: gemini-3.1-flash-lite # Cheaper than the default cheap model
+  claude: claude-sonnet-5       # Balance speed/quality
 ```
 
 ### Environment Variables
@@ -629,36 +672,28 @@ CONCLAVE_NO_PRICING=1             # Disable the catalog (no network, no drift wa
 
 ## How It Works
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         CONCLAVE                            │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
-│  │ Gemini  │  │ OpenAI  │  │ Claude  │  │  Grok   │  ...   │
-│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘        │
-│       │            │            │            │              │
-│       └────────────┴─────┬──────┴────────────┘              │
-│                          │                                  │
-│                          ▼                                  │
-│                    ┌───────────┐                            │
-│                    │   Judge   │                            │
-│                    │  (Claude) │                            │
-│                    └─────┬─────┘                            │
-│                          │                                  │
-│                          ▼                                  │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │ Verdict: SAFE (high confidence)                      │  │
-│  │ Agreements: [...]                                    │  │
-│  │ Disagreements: [...]                                 │  │
-│  │ Recommendations: [...]                               │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/how-it-works-dark.svg">
+  <img alt="Architecture: a prompt with context goes to the orchestrator, which fans out in parallel to Gemini, OpenAI and Claude; their responses go to a judge that synthesizes one verdict" src="docs/diagrams/how-it-works.svg" width="100%">
+</picture>
 
-1. **Query Phase** - Prompt sent to all providers in parallel
-2. **Judge Phase** - Designated LLM synthesizes responses
-3. **Output Phase** - Formatted result with confidence and reasoning
+1. **Query Phase** - Prompt sent to all providers in parallel, each under its own timeout
+2. **Judge Phase** - Designated LLM synthesizes the responses (skipped for a single provider)
+3. **Output Phase** - Formatted result with confidence and reasoning, priced in API mode
+
+### Multi-model judging
+
+The judge does not average the panel. It sorts what the models said into what they agree
+on and what they contest, turns the consensus into a reasoned verdict, and surfaces the
+contested material as disagreements and blind spots rather than discarding it. `--blind`
+hides which model said what so the sorting cannot favour a brand.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/judging-flow-dark.svg">
+  <img alt="Sankey: token shares from Gemini, OpenAI and Claude flow into consensus and contested pools; consensus becomes the verdict, contested content is surfaced as disagreements and blind spots, and a small remainder is dropped" src="docs/diagrams/judging-flow.svg" width="100%">
+</picture>
+
+Diagram sources live in [`docs/diagrams/src/`](docs/diagrams/src/); `python docs/diagrams/export.py` regenerates the light and dark SVGs.
 
 ## Use Cases
 
@@ -676,19 +711,20 @@ CONCLAVE_NO_PRICING=1             # Disable the catalog (no network, no drift wa
 - **Research Synthesis** - Combine knowledge from multiple sources
 - **Risk Assessment** - Identify blind spots in analysis
 
-## Claude Code Integration
+## Using Conclave from agents and scripts
 
-A skill is available for Claude Code users at `~/.claude/skills/conclave/SKILL.md` with:
-- Usage patterns and examples
-- Integration guidance for spawning LLMs from Claude Code sessions
-- Batch processing workflows
-- Prompt + context passing patterns
+`--json` is the contract for callers: additive fields only, `status` is always `"success"` or
+`"error"` per provider (a cache hit stays `"success"` and adds `cached: true`), and
+`execution.timeout_seconds` reports the real `-t`. Pair `--no-judge` with your own
+aggregation when you want a majority vote across runs, and `--raw` when you want the
+bodies with no parsing at all. Nothing is ever prompted for when stdin is not a terminal.
 
 ## Architecture Decisions
 
 Key design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/) — dual provider
 modes, the LLM-as-judge synthesis, parallel/per-provider timeouts, the shared HTTP
-client, credential precedence + OS-keyring fallback, and the GLM Coding Plan transport.
+client, credential precedence + OS-keyring fallback, the GLM Coding Plan transport, the
+runtime pricing catalog, OpenRouter slash routing, and the opt-in response cache.
 
 ## License
 
