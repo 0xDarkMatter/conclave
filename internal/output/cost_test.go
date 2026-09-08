@@ -1,6 +1,9 @@
 package output
 
 import (
+	"bytes"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/judge"
@@ -172,5 +175,63 @@ func TestMixedCachedAndLivePanelTotalsOnlyTheLiveWork(t *testing.T) {
 	}
 	if c.partial {
 		t.Fatal("nothing was unpriceable; partial must be false")
+	}
+}
+
+// renderStyledTo captures the styled human output.
+func renderStyledTo(t *testing.T, f *Formatter, r Result) string {
+	t.Helper()
+	old := os.Stdout
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = pw
+	renderErr := f.Render(r)
+	pw.Close()
+	os.Stdout = old
+	if renderErr != nil {
+		t.Fatalf("Render: %v", renderErr)
+	}
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(pr); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+// TestHeaderPanelAndFooterBothCarryTheTotal pins the two places the total is
+// meant to appear. This exists because a rebase silently dropped the header
+// row: renderHeaderPanel still accepted the costs and simply stopped using
+// them, which compiles cleanly and which go vet does not flag.
+func TestHeaderPanelAndFooterBothCarryTheTotal(t *testing.T) {
+	r := Result{
+		Query:     "q",
+		Providers: []string{"openai"},
+		JudgeName: "claude",
+		Responses: []providers.Response{resp("openai", "gpt-test", 1_000_000, 0)},
+	}
+	out := renderStyledTo(t, New(Options{APIMode: true, Pricing: testCatalog()}), r)
+
+	if n := strings.Count(out, "Cost:"); n < 2 {
+		t.Fatalf("output carries %d Cost: labels, want the header panel and the footer:\n%s", n, out)
+	}
+	if !strings.Contains(out, "$1.0000") {
+		t.Fatalf("total is missing from the output:\n%s", out)
+	}
+}
+
+// TestCLIModeRendersNoCostAnywhere is the same check inverted: a
+// subscription-billed run must not show a dollar figure in any position.
+func TestCLIModeRendersNoCostAnywhere(t *testing.T) {
+	r := Result{
+		Query:     "q",
+		Providers: []string{"openai"},
+		Responses: []providers.Response{resp("openai", "gpt-test", 1_000_000, 0)},
+	}
+	out := renderStyledTo(t, New(Options{APIMode: false, Pricing: testCatalog()}), r)
+
+	if strings.Contains(out, "Cost:") || strings.Contains(out, "$") {
+		t.Fatalf("CLI mode leaked a dollar figure:\n%s", out)
 	}
 }

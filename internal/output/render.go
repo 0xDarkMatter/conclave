@@ -196,7 +196,15 @@ func renderHeaderPanel(r Result, c costs) string {
 	}
 	queryRow := infoLabelStyle.Render("Query:") + " " + lipgloss.NewStyle().Italic(true).Foreground(colorSubtle).Render(query)
 
-	content := strings.Join([]string{titleRow, "", providersRow, judgeRow, queryRow}, "\n")
+	rows := []string{titleRow, "", providersRow, judgeRow, queryRow}
+
+	// Cost row: API mode only, and only when at least one figure is known.
+	// CLI mode is subscription-billed, so it never shows dollars.
+	if c.enabled() {
+		rows = append(rows, infoLabelStyle.Render("Cost:")+" "+infoValueStyle.Render(c.formatTotal()+" (providers + judge)"))
+	}
+
+	content := strings.Join(rows, "\n")
 
 	return infoPanelStyle.Width(72).Render(content)
 }
