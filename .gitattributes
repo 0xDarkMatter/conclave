@@ -1,0 +1,8 @@
+# Line endings are pinned so a Windows checkout and a Linux CI runner agree.
+# Without this, gofmt -l flags every .go file on Windows (CRLF is a diff to
+# gofmt) and `make check` can never pass locally. eol=lf beats core.autocrlf,
+# so these files are LF in the working tree on every platform.
+*.go       text eol=lf
+*.md       text eol=lf
+Makefile   text eol=lf
+*.yml      text eol=lf
