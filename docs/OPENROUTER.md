@@ -142,6 +142,8 @@ spends no tokens and turns two conditions into a clear stop:
   warnings and the judge refusal are skipped, and batch estimates use the offline fallback table
   (which does not price OpenRouter slugs, so they estimate as $0).
 - `CONCLAVE_EXCLUDE` is irrelevant: OpenRouter models are never auto-included.
+- `--cache` treats a slug like any provider: the key includes the slug and the full prompt, a hit
+  costs nothing and never counts toward `--budget`. `--no-cache` overrides an env-enabled cache.
 
 ## 8. Not supported (by design)
 

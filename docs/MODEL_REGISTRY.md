@@ -19,7 +19,7 @@ carry (Perplexity request fees, Gemini long-context multipliers, GLM Coding Plan
 
 > **Live data beats this file.** `conclave models [provider]` prints the same feed, fetched
 > within the last 24 hours, and `conclave models --check` verifies the compiled defaults
-> against it (exit 1 on drift). This document is the annotated, human-readable layer on top;
+> against it (exit 2 on drift, 3 if the catalog is unreachable). This document is the annotated, human-readable layer on top;
 > when the two disagree, the command is right. See ADR-009.
 
 > **Maintenance:** the "Conclave Defaults" and "Cheap Mode" tables MUST match the maps in
@@ -98,11 +98,11 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 
 | Model ID | Description | Context | Input $/M | Output $/M | Released |
 |----------|-------------|---------|-----------|------------|----------|
-| `gpt-5.6-sol` | Flagship of the GPT-5.6 series; complex reasoning, CLI and multi-step coding | 1M | $2.00 | $10.00 | 2026-07 |
+| `gpt-5.6-sol` | **Conclave default** - Flagship of the GPT-5.6 series; complex reasoning, CLI and multi-step coding | 1M | $2.00 | $10.00 | 2026-07 |
 | `gpt-5.6-terra` | Mid tier of GPT-5.6; everyday coding and agentic work | 1M | $2.00 | $12.00 | 2026-07 |
 | `gpt-5.6-luna` | Cost tier of GPT-5.6; chat, classification, light agents | 1M | $0.20 | $1.20 | 2026-07 |
 | `gpt-5.6-{sol,terra,luna}-pro` | Pro variants, same price as the base tier on OpenRouter | 1M | as base | as base | 2026-07 |
-| `gpt-5.5` | **Conclave default** - Previous frontier, unified Codex+GPT line | 1M | $5.00 | $30.00 | 2026-04 |
+| `gpt-5.5` | Previous frontier, unified Codex+GPT line (default until v1.2.0) | 1M | $5.00 | $30.00 | 2026-04 |
 | `gpt-5.5-pro` | Heavy-compute variant | 1M | $30.00 | $180.00 | 2026-04 |
 | `gpt-5.4` | Previous frontier | 1M | $2.50 | $15.00 | 2026-03 |
 | `gpt-5.4-mini` | Compact 5.4 | 400K | $0.75 | $4.50 | 2026-03 |
@@ -119,7 +119,7 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 - Reasoning tokens are billed as output tokens
 - `gpt-5*`, `o1*`, `o3*` require `max_completion_tokens` instead of `max_tokens`; Conclave handles this in `api_openai.go` (`isReasoningModel`). The GPT-5.6 IDs start with `gpt-5` so they are covered.
 - Batch API: 50% discount, 24hr turnaround
-- The GPT-5.6 Sol tier is cheaper than GPT-5.5 on both input and output; consider it when next bumping the default
+- GPT-5.6 Sol is cheaper than GPT-5.5 on both input and output, which is why it became the default in v1.3.0
 - `o1` is still listed at $15/$60 but there is no reason to use it
 
 ---
@@ -134,9 +134,9 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 |----------|-------------|---------|-----------|------------|----------|
 | `claude-fable-5-1` | Mythos-class tier above Opus; strongest agentic coding and long-running workflows | 1M | $10.00 | $50.00 | 2026-09 |
 | `claude-fable-5` | First Fable release | 1M | $10.00 | $50.00 | 2026-06 |
-| `claude-opus-5` | Flagship Opus; demanding reasoning, code review, bug finding, long-horizon agents | 1M | $5.00 | $25.00 | 2026-07 |
+| `claude-opus-5` | **Conclave default** - Flagship Opus; demanding reasoning, code review, bug finding, long-horizon agents | 1M | $5.00 | $25.00 | 2026-07 |
 | `claude-sonnet-5` | Most capable Sonnet; adaptive thinking with selectable effort. Cheaper than Sonnet 4.x | 1M | $2.00 | $10.00 | 2026-06 |
-| `claude-opus-4-8` | **Conclave default** - Last Opus 4.x, 1M context, reasoning | 1M | $5.00 | $25.00 | 2026-05 |
+| `claude-opus-4-8` | Last Opus 4.x, 1M context, reasoning (default until v1.2.0) | 1M | $5.00 | $25.00 | 2026-05 |
 | `claude-opus-4-7` | Previous Opus 4.x | 1M | $5.00 | $25.00 | 2026-04 |
 | `claude-opus-4-6` | Previous Opus 4.x | 1M | $5.00 | $25.00 | 2026-02 |
 | `claude-sonnet-4-6` | Previous Sonnet | 1M | $3.00 | $15.00 | 2026-02 |
@@ -150,7 +150,7 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 - Prompt caching: writes 1.25x, hits 0.1x
 - Batch API: 50% discount (OpenRouter exposes this as `:batch` slugs)
 - No Haiku 5 has shipped yet; Haiku 4.5 remains the cheap tier. Sonnet 5 at $2/$10 is now only 2x Haiku on input and worth considering as the cheap model when quality matters.
-- Opus 5 and Opus 4.8 are priced identically, so a default bump to `claude-opus-5` is cost-neutral
+- Opus 5 and Opus 4.8 are priced identically, so the v1.3.0 default bump to `claude-opus-5` was cost-neutral
 
 ---
 
@@ -184,20 +184,20 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 
 | Model ID | Description | Context | Input $/M | Output $/M | Released |
 |----------|-------------|---------|-----------|------------|----------|
-| `grok-4.6` | Current flagship; frontier coding, knowledge work, STEM | 500K | $2.00 | $6.00 | 2026-08 |
+| `grok-4.6` | **Conclave default** - Current flagship; frontier coding, knowledge work, STEM. The only id the grok CLI offers | 500K | $2.00 | $6.00 | 2026-08 |
 | `grok-4.5` | Previous flagship | 500K | $2.00 | $6.00 | 2026-07 |
 | `grok-4.3` | Reasoning, agentic, high factuality; batch available | 1M | $1.25 | $2.50 | 2026-04 |
 | `grok-4.20` | Fast reasoning with agentic tool calling, low hallucination, 2M context | 2M | $1.25 | $2.50 | 2026-03 |
 | `grok-4.20-multi-agent` | Multi-agent variant of 4.20 | 2M | $1.25 | $2.50 | 2026-03 |
-| `grok-build-0.1` | Fast coding model for agentic SWE; natural CLI-mode candidate | 256K | $1.00 | $2.00 | 2026-05 |
-| `grok-4-1-fast-reasoning` | **Conclave default** - See Drift Watch; no longer listed on OpenRouter | 2M | $0.20 | $0.50 | 2025-11 |
-| `grok-4-1-fast-non-reasoning` | **Conclave cheap** - See Drift Watch; no longer listed on OpenRouter | 2M | $0.20 | $0.50 | 2025-11 |
+| `grok-build-0.1` | **Conclave cheap** - Fast coding model for agentic SWE | 256K | $1.00 | $2.00 | 2026-05 |
+| `grok-4-1-fast-reasoning` | Default until v1.2.0. Unlisted on OpenRouter but still served by xAI's API (verified 2026-09-08) | 2M | $0.20 | $0.50 | 2025-11 |
+| `grok-4-1-fast-non-reasoning` | Cheap until v1.2.0. Unlisted on OpenRouter, still served by xAI; 5x cheaper than `grok-build-0.1`, set `CONCLAVE_CHEAP_GROK_MODEL` to keep it | 2M | $0.20 | $0.50 | 2025-11 |
 
 **Retired since last refresh:** `grok-code-fast-1` (retired 2026-08-15 as scheduled), `grok-4`, `grok-3`, `grok-4-fast-reasoning`. None appear on OpenRouter any more.
 
 **Notes:**
 - xAI now brands as SpaceXAI in model descriptions
-- The sub-dollar "fast" tier has vanished from OpenRouter; the cheapest current listing is `grok-build-0.1` at $1/$2. If the direct API has also dropped `grok-4-1-fast-*`, both Conclave grok defaults are broken and `grok-4.20` (reasoning, 2M context) is the closest replacement, with `grok-build-0.1` for cheap mode.
+- The sub-dollar "fast" tier has vanished from OpenRouter but xAI's API still serves `grok-4-1-fast-*` (probed 2026-09-08). Conclave moved to listed ids (`grok-4.6`, `grok-build-0.1`) so the drift check stays quiet; the old ids remain valid overrides.
 - Server-side tools: $5/1K calls (Web Search, X Search, Code Exec)
 
 ---
@@ -210,9 +210,9 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 
 | Model ID | Description | Context | Input $/M | Output $/M | Released |
 |----------|-------------|---------|-----------|------------|----------|
-| `glm-5.3` | Latest flagship; complex SWE and long-horizon agents, 1.3M context | 1.3M | $1.40 | $4.40 | 2026-08 |
-| `glm-5.3-flash` | Native multimodal, hybrid sparse/linear attention; very cheap | 1.3M | $0.075 | $0.25 | 2026-08 |
-| `glm-5.2` | **Conclave default** - Previous flagship, 1M context | 1M | $0.97 | $3.04 | 2026-06 |
+| `glm-5.3` | **Conclave default** - Latest flagship; complex SWE and long-horizon agents, 1.3M context | 1.3M | $1.40 | $4.40 | 2026-08 |
+| `glm-5.3-flash` | **Conclave cheap** - Native multimodal, hybrid sparse/linear attention; very cheap | 1.3M | $0.075 | $0.25 | 2026-08 |
+| `glm-5.2` | Previous flagship, 1M context (default until v1.2.0) | 1M | $0.97 | $3.04 | 2026-06 |
 | `glm-5.1` | Older 5.x | 200K | $0.97 | $3.04 | 2026-04 |
 | `glm-5` | First 5.x | 200K | $0.60 | $1.92 | 2026-02 |
 | `glm-5-turbo` | Speed-tuned 5 | 200K | $1.20 | $4.00 | 2026-03 |
@@ -221,14 +221,14 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 | `glm-4.7-flash` | Cheap 4.7 | 200K | $0.06 | $0.40 | 2026-01 |
 | `glm-4.6v` | Vision-language | 128K | $0.30 | $0.90 | 2025-12 |
 | `glm-4.5-air` | Lightweight | 128K | $0.13 | $0.85 | 2025-07 |
-| `glm-4.6v-flashx` | **Conclave cheap** - See Drift Watch; not listed on OpenRouter | 128K | Free (vendor) | Free (vendor) | 2025-12 |
+| `glm-4.6v-flashx` | Cheap until v1.2.0; not listed on OpenRouter | 128K | Free (vendor) | Free (vendor) | 2025-12 |
 
 **Retired since last refresh:** `glm-4.5-flash`, `glm-4.6v-flash` (free-tier IDs no longer listed on OpenRouter; may persist on the vendor endpoint).
 
 **Notes:**
 - Prices above are pay-as-you-go pass-through. Under the Coding Plan (CLI mode, the way Conclave runs GLM) the per-token cost is $0; the subscription is the cost.
 - GLM 5.2 pricing rose from the $0.60/$2.20 recorded in December 2025 to $0.97/$3.04
-- `glm-5.3-flash` at $0.075/$0.25 is the obvious paid cheap-mode replacement if `glm-4.6v-flashx` disappears from the vendor API
+- `glm-5.3-flash` at $0.075/$0.25 replaced `glm-4.6v-flashx` as the cheap model in v1.3.0; moot in practice while `-g glm` is disabled (ADR-006)
 - Context caching: reduced input rate on cached prefixes (vendor docs)
 
 ---
@@ -298,17 +298,17 @@ Resolved on 2026-09-08 (kept for the record):
 
 ## Cost Estimation
 
-Rough cost per 1K-token query (500 in, 500 out) in API mode, current Conclave defaults:
+Rough cost per 1K-token query (500 in, 500 out) in API mode. Conclave now prints the real figure per response in API mode (`cost_usd`, `meta.total_cost_usd`), so treat this as orientation, not accounting:
 
-| Provider | Model | Est. Cost |
-|----------|-------|-----------|
-| Perplexity | sonar | $0.001 + request fee |
-| Gemini | gemini-3-flash-preview | $0.00175 |
-| GLM | glm-5.3 | $0.003 pay-as-you-go; $0 on Coding Plan |
-| Grok | grok-4.6 | $0.004 |
-| OpenAI | gpt-5.6-sol | $0.006 |
-| Gemini | gemini-3.1-pro-preview | $0.007 |
-| Claude | claude-opus-5 | $0.015 |
+| Provider | Model | Role | Est. Cost |
+|----------|-------|------|-----------|
+| Perplexity | sonar | cheap | $0.001 + request fee |
+| Gemini | gemini-3-flash-preview | cheap | $0.00175 |
+| GLM | glm-5.3 | default | $0.003 pay-as-you-go; $0 on Coding Plan |
+| Grok | grok-4.6 | default | $0.004 |
+| OpenAI | gpt-5.6-sol | default | $0.006 |
+| Gemini | gemini-3.1-pro-preview | default | $0.007 |
+| Claude | claude-opus-5 | default | $0.015 |
 
 **Full Conclave query (5 providers + judge):** ~$0.03-0.05 with default models in API mode. In CLI mode the marginal cost is $0.
 
@@ -316,6 +316,7 @@ Rough cost per 1K-token query (500 in, 500 out) in API mode, current Conclave de
 
 ## Version History
 
+- **2026-09-08 (v1.3.0):** Defaults bumped to the ids the per-provider tables now badge (gpt-5.6-sol, claude-opus-5, grok-4.6, glm-5.3; cheap grok-build-0.1, glm-5.3-flash). `conclave models --check` exit codes are 0 ok / 2 drift / 3 catalog unreachable. Cost figures now print live per response in API mode.
 - **2026-09-08:** Full refresh against the OpenRouter models feed. Added GPT-5.6 Sol/Terra/Luna, Claude Fable 5 / 5.1, Opus 5, Sonnet 5, Gemini 3.5 to 3.8 Flash, Grok 4.20 to 4.6 and Build 0.1, GLM 5.3 and 5.3 Flash. Marked retired IDs. Added the API-mode-only pricing note, Drift Watch, and the maintenance rule tying the defaults tables to `config.go`.
 - **2026-06-18:** Defaults tables updated for v1.2.0 (gpt-5.5, gemini-3.1-pro-preview, claude-opus-4-8, glm-5.2, grok-4-1-fast-reasoning). Per-provider tables were not refreshed.
 - **2025-12-25:** Initial registry with all provider pricing

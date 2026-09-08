@@ -1,9 +1,9 @@
 # Plan: reliability and judge-quality features
 
 > Six decided features, planned not built. Branch `lane/plan-reliability-judging`,
-> 2026-09-08, rebased on `main` at `774ecfe`, which already contains the OpenRouter
-> slash-routing work (ADR-010, commits `ae4dd7e`..`774ecfe`). File and line references
-> below are to that `main`. Revised after an adversarial review and live probes.
+> 2026-09-08, written against `main` at `774ecfe` (OpenRouter slash routing, ADR-010).
+> The cost/cache/gate lane (ADR-011, `cmd/exit.go`, section markers in `cmd/root.go`)
+> landed afterwards, so line numbers below are approximate; symbols are still right. Revised after an adversarial review and live probes.
 
 ## Goals
 
@@ -39,9 +39,9 @@ panel member lives outside Conclave's process.
 
 Small seams every feature below assumes. None changes behaviour on its own.
 
-- **Typed exit codes.** `Execute` does `os.Exit(1)` on any error (`cmd/root.go:161`).
-  Add `ExitError{Code int}` mapped with `errors.As`, and `SilenceUsage` so a degraded
-  run does not print cobra usage to stderr.
+- **Typed exit codes.** LANDED 2026-09-08 in `cmd/exit.go` (`withExitCode`,
+  `exitCoder`) with `SilenceUsage` on the root command; `conclave models --check`
+  already uses codes 2 and 3. Feature 1 reuses it rather than adding a second mechanism.
 - **Deterministic goldens.** JSON carries `time.Now()` and every format carries
   durations, so "byte-identical" tests need `output.Options.Now func() time.Time` plus
   duration normalisation in the harness. The goldens promised below use that seam.
@@ -458,14 +458,18 @@ Roughly 70 h, 74 h with the optional TUI preview.
 
 ## Proposed ADRs (not written here)
 
-- ADR-011 Partial-panel quorum: a run proceeds at `min_providers` successes,
+> Numbering note: ADR-011 was taken by the response cache (accepted 2026-09-08) after this
+> plan was drafted, so the proposals start at ADR-012. Take the next free number at
+> writing time; `ls docs/adr/` is the index.
+
+- ADR-012 Partial-panel quorum: a run proceeds at `min_providers` successes,
   `degraded` means any failure, and exit 3 is opt-in.
-- ADR-012 Judge panels aggregate by verdict-string majority (ties are `SPLIT`), not by
+- ADR-013 Judge panels aggregate by verdict-string majority (ties are `SPLIT`), not by
   self-reported confidence.
-- ADR-013 Rubric contract: YAML-front-matter markdown in, fixed `scores` schema out;
+- ADR-014 Rubric contract: YAML-front-matter markdown in, fixed `scores` schema out;
   parse failures keep raw output; ties resolve per criterion type and a red-flag tie
   can never be `triggered`.
-- ADR-014 Request options are best-effort per provider: unsupported `system`,
+- ADR-015 Request options are best-effort per provider: unsupported `system`,
   `temperature`, or `max_tokens` warn once and never fail the run.
 
 ## Open questions for the operator
@@ -493,4 +497,4 @@ Roughly 70 h, 74 h with the optional TUI preview.
 | F6 | `_CONCLAVE_QUERY` instruction string (moves to `--system`); temperature pinning for determinism, which Praxis cannot do today | none |
 
 Maintenance rule: update the phasing when a feature lands, and delete this plan once
-ADR-011 to ADR-014 exist and the features ship.
+ADR-012 to ADR-015 exist and the features ship.

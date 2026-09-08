@@ -39,6 +39,7 @@ cat results.jsonl
 | `--no-rate-limit` | false | Disable rate limiting (for high-tier accounts) |
 | `--budget USD` | 0 (uncapped) | Stop dispatching new items once estimated spend reaches this cap (also `CONCLAVE_BATCH_BUDGET`) |
 | `--cache[=TTL]` | off | Reuse identical provider responses across items and runs; a hit costs nothing and does not count against `--budget` |
+| `--no-cache` | - | Ignore the cache even when `CONCLAVE_CACHE_TTL` enables it. `conclave cache stats` / `conclave cache clear` inspect and empty the store |
 
 Batch mode automatically implies:
 - `-c` (cheap mode) - uses fast, cost-effective models
@@ -244,10 +245,13 @@ Batch mode uses cheap models by default:
 | Provider | Model | Input $/M | Output $/M |
 |----------|-------|-----------|------------|
 | gemini | gemini-3-flash-preview | $0.50 | $3.00 |
-| openai | gpt-5-nano | $0.10 | $0.40 |
-| claude | claude-haiku-4-5 | $1.00 | $5.00 |
+| openai | gpt-5-nano | $0.05 | $0.40 |
+| claude | claude-haiku-4-5-20251001 | $1.00 | $5.00 |
 | perplexity | sonar | $1.00 | $1.00 |
 | grok | grok-build-0.1 | $1.00 | $2.00 |
+| glm | glm-5.3-flash | $0.075 | $0.25 (moot: `-g glm` is disabled, ADR-006) |
+
+Prices come from the live OpenRouter catalog at run time (`conclave models`); the table is a snapshot from 2026-09-08. Each output line carries its real `cost_usd`.
 
 **Estimated cost per item (5 providers + judge):** ~$0.002-0.005
 

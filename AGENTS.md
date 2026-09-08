@@ -57,7 +57,7 @@ type Provider interface {
 
 ### Slash Routing (OpenRouter)
 
-In API mode (`-g`) any provider token containing `/` (`deepseek/deepseek-v4-pro`, `anthropic/claude-opus-5`) is an OpenRouter model: `registry.GetProvider` builds an `OpenRouterAPIProvider` on the fly with name = model = the token. The token is the provider name everywhere (progress, judge label, `--json`) and the exact id the pricing catalog indexes (`pricing.Lookup` matches it verbatim). There is no plain `openrouter` provider, `AllAPIProviders` does not include it (so `--all` never does), and CLI mode rejects slash tokens. Key: `OPENROUTER_API_KEY` via `NewKeyRotator`. ADR-010.
+In API mode any `vendor/model` token is built on the fly as an `OpenRouterAPIProvider` (name = model = token). No plain `openrouter` provider, never in `AllAPIProviders`, rejected in CLI mode. Contract and rationale: `docs/OPENROUTER.md`, ADR-010; the trap list is Gotcha 9.
 
 ### Adding a New Provider
 
@@ -71,7 +71,7 @@ In API mode (`-g`) any provider token containing `/` (`deepseek/deepseek-v4-pro`
 
 ### Changing a Default Model
 
-Defaults live in `internal/config/config.go` (`Models`, `CheapModels`) and each provider's `defaultModel`. After changing one, run `conclave models --check` (exit 1 on drift) and update the Defaults / Cheap Mode tables in `docs/MODEL_REGISTRY.md` in the same commit.
+Defaults live in `internal/config/config.go` (`Models`, `CheapModels`) and each provider's `defaultModel`. After changing one, run `conclave models --check` (exit 2 on drift, 3 if the catalog is unreachable) and update the Defaults / Cheap Mode tables in `docs/MODEL_REGISTRY.md` in the same commit.
 
 ### Error Handling
 
@@ -105,32 +105,9 @@ One command gates everything: vet, gofmt, tests, race, and catalog drift. Run it
 before every commit. CI runs the same command. Details and the exit-code
 contract: [docs/CHECK_GATE.md](docs/CHECK_GATE.md).
 
-### Run Tests
+### Build, install, smoke-test
 
-```bash
-go test ./...                    # All tests
-go test ./internal/providers/... # Provider tests only
-go test -v ./internal/config/... # Verbose config tests
-```
-
-### Build
-
-```bash
-go build -o bin/conclave .
-make install  # Builds and installs to ~/.local/bin
-```
-
-### Test a Provider
-
-```bash
-# Check availability
-./bin/conclave --list-providers
-./bin/conclave --list-providers -g
-
-# Quick smoke test
-./bin/conclave gemini "Say hello" --no-judge
-./bin/conclave -g claude "Say hello" --no-judge
-```
+`make install` builds and copies to `~/.local/bin`. `./bin/conclave --list-providers` (add `-g` for API mode) shows what is configured; `./bin/conclave <provider> "Say hello" --no-judge` is the smoke test. Per-package tests: `go test ./internal/providers/...`.
 
 ## Important Files
 
@@ -172,20 +149,7 @@ make install  # Builds and installs to ~/.local/bin
 4. **Blind mode**: Anonymizes provider names for unbiased judging
 5. **Pricing catalog is advisory**: `internal/pricing` may return a nil catalog (offline, `CONCLAVE_NO_PRICING=1`); every caller must tolerate nil. A model missing from OpenRouter is a warning, never an error — the GLM Coding Plan serves ids OpenRouter does not list. Cache: `$XDG_CACHE_HOME/conclave/openrouter-models.json`, TTL `CONCLAVE_PRICING_TTL` hours (default 24). Prices are API-mode only; CLI mode is subscription-billed.
 6. **Batch cost fallback table**: `fallbackCosts` in `internal/batch/processor.go` is only used when the catalog is unavailable. Do not extend it; fix the catalog lookup instead.
-7. **gemini CLI needs a key even in CLI mode**: Google retired gemini-cli's free OAuth tier (2026-09). `gemini.go` passes `-p` and `--skip-trust` (removing either reintroduces an interactive hang or exit 55), and when gemini-cli still fails on auth it falls back to the direct Gemini API with the same key and model (`isGeminiCLIAuthError`). gemini-cli ignores an exported key while `~/.gemini/settings.json` says `"selectedType": "oauth-personal"`; switching that to `"gemini-api-key"` makes the CLI route work again and skips the ~13s failed attempt. codex and claude CLIs, by contrast, run on subscriptions and must NOT be gated on API keys.
+7. **gemini CLI needs a key even in CLI mode** (Google retired its free OAuth tier, 2026-09). `gemini.go` passes `-p` and `--skip-trust`; removing either reintroduces an interactive hang or exit 55. On a CLI auth failure it falls back to the direct API with the same key (`isGeminiCLIAuthError`). codex and claude CLIs run on subscriptions and must NOT be gated on API keys. User-side remedy is in README "Requirements".
 8. **Never prompt without a TTY**: `RunInitIfNeeded` bails when stdin is not a terminal. Subprocess callers (praxis grade) cannot answer a prompt; a prompt there is a hang.
 9. **Slash tokens are API-only**: `vendor/model` provider tokens route through OpenRouter and exist only under `-g` (pay-as-you-go, no subscriptions, ~5% platform fee). CLI mode errors with "add -g". The catalog never rewrites slash tokens, so a slug OpenRouter does not list warns and is still sent through — except as the **judge**, where a catalog miss is refused before the panel spends anything (`--skip-preflight` overrides). The judge is resolved and preflighted before orchestration for the same reason. Do not add a plain `openrouter` provider or put OpenRouter in `AllAPIProviders` — ADR-010 rejected both.
-10. **Response cache key includes the whole prompt**: `internal/cache` keys on
-   `(mode, provider, model, full prompt, system prompt)`, and the full prompt is
-   the assembled text — question plus every `-f` file and piped stdin. Any
-   change to attached context is a cache miss by design, so a low hit rate on a
-   changing file is correct, not a bug. Judge synthesis is never cached (a
-   verdict depends on the whole response set — ADR-011). A cache hit keeps
-   `status: "success"` and signals itself ONLY through the separate `cached`
-   field: downstream consumers read any other status as a panel failure, so
-   giving hits their own status would turn a healthy run into a phantom
-   degradation (pinned by `TestCachedHitKeepsStatusSuccess`). Preflight is never
-   cached: every provider decorator implements `Unwrap() Provider` and
-   `RunPreflight` follows that chain, because embedding the `Provider`
-   interface does NOT promote the optional `Preflighter` — a decorator that
-   forgets `Unwrap` silently disables its provider's auth check.
+10. **Response cache** (ADR-011): key = `(mode, provider, model, full prompt incl. `-f`/stdin, system)`, so a changed file is a miss by design; the judge is never cached. Two traps: a hit keeps `status: "success"` and signals only via `cached` (downstream parsers treat any other status as a failed judge; pinned by `TestCachedHitKeepsStatusSuccess`), and every provider decorator must implement `Unwrap() Provider` or `RunPreflight` silently skips that provider's auth check.

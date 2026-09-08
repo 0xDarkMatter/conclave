@@ -8,7 +8,15 @@ Performance testing of batch mode with various worker counts and providers.
 - Dual API keys for Gemini (round-robin rotation)
 - Single API key for other providers
 
-**Note:** Cost figures in this document are precise estimates. README uses rounded values for readability.
+> **Historical (measured December 2025).** These runs used `gemini-2.0-flash` and
+> `grok-4-1-fast-non-reasoning`, which are no longer Conclave's cheap models, and prices
+> have moved since. Timings and relative throughput are still a fair guide; the dollar
+> figures and the "Grok is cheapest" conclusions are **not**: the current cheap Grok
+> (`grok-build-0.1`) costs 5x more per token, which puts Gemini ahead on cost. For live
+> prices run `conclave models`; for the real spend of a run, API mode now prints it
+> (`meta.total_cost_usd`). Re-benchmark before quoting any number below.
+
+**Note:** Cost figures below were estimates at the time of measurement. README uses rounded values for readability.
 
 ---
 
