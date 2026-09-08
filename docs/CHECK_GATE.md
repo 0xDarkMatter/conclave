@@ -86,3 +86,26 @@ checkout brings it straight back.
 
 This bit three separate sessions during the change that introduced
 `.gitattributes`, which is why it is written down here.
+
+### `gofmt` lists files under `.claude/worktrees/` that are not yours
+
+**Symptom.** `make check` fails at the gofmt step in the MAIN checkout, and
+every listed path lives under `.claude/worktrees/<name>/`. Your own files are
+clean; `gofmt -l cmd internal` prints nothing.
+
+**Cause.** `gofmt -l <dir>` recurses into every subdirectory, dot-directories
+included, and the root package's directory is the repository root. Any gate
+that hands gofmt `.` (or the root package dir from `go list -f '{{.Dir}}'`)
+therefore sweeps every nested worktree other sessions have checked out, and
+those trees are often CRLF for the reason in the landmine above.
+
+**Fix.** Already in the Makefile since 44a53e2: `fmt-check` enumerates
+`GoFiles`, `TestGoFiles` and `XTestGoFiles` via `go list` and hands gofmt
+files, never directories. If you touch that target, keep it file-based and
+re-prove both directions: a planted unformatted file must fail the gate, and a
+clean tree must pass. `go vet ./...` and `go test ./...` are unaffected
+because the `./...` pattern skips dot-directories on its own.
+
+**Do not** work around it by deleting or reformatting another session's
+worktree. Those trees are that session's private state; see
+`~/.claude/rules/worktree-boundaries.md`.
