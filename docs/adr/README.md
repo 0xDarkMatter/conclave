@@ -14,3 +14,4 @@
 | ADR-008 | accepted | 2026-06-18 | API keys resolve from environment then OS keyring |
 | ADR-009 | accepted | 2026-09-08 | Runtime pricing catalog from OpenRouter, cached daily |
 | ADR-010 | accepted | 2026-09-08 | OpenRouter as a slash-routed API backend |
+| ADR-011 | accepted | 2026-09-08 | Opt-in response cache keyed on the full prompt, never on the judge |

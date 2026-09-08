@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/0xDarkMatter/conclave-cli/internal/cache"
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
 	"github.com/0xDarkMatter/conclave-cli/internal/judge"
 	"github.com/0xDarkMatter/conclave-cli/internal/orchestrator"
@@ -137,23 +138,44 @@ type Options struct {
 	// Budget stops dispatch once estimated spend reaches this many USD.
 	// 0 means uncapped.
 	Budget float64
+	// Cache is the opt-in response cache; nil disables it. Wrapping happens
+	// here rather than in the caller so every item in the batch shares it.
+	Cache *cache.Cache
+	// Providers and Judge bypass the registry when set. This is the injection
+	// seam the package's own tests use to run a batch against fake providers
+	// with no credentials, no network, and no CLI binaries installed.
+	Providers []providers.Provider
+	Judge     providers.Provider
 	// Pricing is optional; nil means "use the compiled fallback table".
 	Pricing *pricing.Catalog
 }
 
 // NewProcessor creates a new batch processor
 func NewProcessor(opts Options) (*Processor, error) {
-	// Get provider instances
-	providerList, err := opts.Registry.GetProviders(opts.ProviderNames, opts.ModelOverrides)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get providers: %w", err)
+	// Get provider instances (explicit injection wins; see Options.Providers)
+	providerList := opts.Providers
+	if providerList == nil {
+		var err error
+		providerList, err = opts.Registry.GetProviders(opts.ProviderNames, opts.ModelOverrides)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get providers: %w", err)
+		}
 	}
 
 	// Get judge provider
-	judgeProvider, err := opts.Registry.GetProvider(opts.JudgeName, opts.ModelOverrides)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get judge provider: %w", err)
+	judgeProvider := opts.Judge
+	if judgeProvider == nil {
+		var err error
+		judgeProvider, err = opts.Registry.GetProvider(opts.JudgeName, opts.ModelOverrides)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get judge provider: %w", err)
+		}
 	}
+
+	// The judge is deliberately NOT wrapped: a verdict depends on the SET of
+	// responses it saw, which is not part of any single provider's cache key.
+	// Caching it would serve a synthesis of a different panel. See ADR-011.
+	providerList = cache.WrapAll(providerList, opts.Cache, cache.ModeAPI)
 
 	// Create checkpoint if resume is enabled
 	var checkpoint *Checkpoint
@@ -584,6 +606,11 @@ func (p *Processor) priceFor(provider, model string) (in, out float64) {
 func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.Verdict) float64 {
 	var totalCost float64
 	for _, r := range responses {
+		// A cache hit was not billed by anyone; counting it would inflate the
+		// running total the budget cap reads.
+		if r.Cached {
+			continue
+		}
 		if r.Metrics != nil {
 			in, out := p.priceFor(r.Provider, r.Model)
 			totalCost += float64(r.Metrics.InputTokens) * in / 1_000_000

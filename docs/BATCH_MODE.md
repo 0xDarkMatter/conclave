@@ -38,6 +38,7 @@ cat results.jsonl
 | `--retries N` | 0 | Retry failed items N times with exponential backoff (batch only — single-call queries auto-retry 429/5xx internally) |
 | `--no-rate-limit` | false | Disable rate limiting (for high-tier accounts) |
 | `--budget USD` | 0 (uncapped) | Stop dispatching new items once estimated spend reaches this cap (also `CONCLAVE_BATCH_BUDGET`) |
+| `--cache[=TTL]` | off | Reuse identical provider responses across items and runs; a hit costs nothing and does not count against `--budget` |
 
 Batch mode automatically implies:
 - `-c` (cheap mode) - uses fast, cost-effective models

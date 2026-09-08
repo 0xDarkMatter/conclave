@@ -36,6 +36,7 @@ type ProviderState struct {
 	StartTime time.Time
 	Duration  time.Duration
 	Tokens    int
+	Cached    bool
 	Error     error
 }
 
@@ -51,6 +52,7 @@ type ProviderDoneMsg struct {
 	Provider string
 	Duration time.Duration
 	Tokens   int
+	Cached   bool
 	Error    error
 }
 

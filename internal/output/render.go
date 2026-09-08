@@ -139,6 +139,9 @@ func renderProviderResponse(resp providers.Response, cost *float64) string {
 	}
 
 	header := fmt.Sprintf("%s %s%s", statusBadge, provName, modelName)
+	if resp.Cached {
+		header += "  " + providerModelStyle.Render("(cached)")
+	}
 	if cost != nil {
 		header += "  " + providerModelStyle.Render(formatUSD(*cost))
 	}

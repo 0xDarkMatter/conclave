@@ -89,6 +89,9 @@ func computeCosts(cat *pricing.Catalog, r Result, apiMode bool) costs {
 
 // responseCost prices one provider response. ok=false means "no idea".
 func responseCost(cat *pricing.Catalog, resp providers.Response) (float64, bool) {
+	if resp.Cached {
+		return 0, true // served from conclave's response store; nobody was billed
+	}
 	if resp.Metrics == nil {
 		return 0, false // provider reported no token usage (most CLI wrappers)
 	}

@@ -47,8 +47,8 @@ type TemplateData struct {
 	Verdict *VerdictData
 
 	// Timing
-	Timings      []TimingData
-	TotalTime    string // total wall clock time
+	Timings   []TimingData
+	TotalTime string // total wall clock time
 
 	// Aggregate metrics
 	TotalTokens       int

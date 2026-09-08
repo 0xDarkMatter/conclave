@@ -9,9 +9,11 @@ import (
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
 
-// ProgressCallback is called when a provider starts or completes
-// tokens is the total token count (input + output) when completed, 0 otherwise
-type ProgressCallback func(provider string, started bool, duration time.Duration, tokens int, err error)
+// ProgressCallback is called when a provider starts or completes.
+// tokens is the total token count (input + output) when completed, 0 otherwise;
+// cached reports that the answer came from conclave's response store rather
+// than the provider.
+type ProgressCallback func(provider string, started bool, duration time.Duration, tokens int, cached bool, err error)
 
 // Orchestrator manages parallel provider execution
 type Orchestrator struct {
@@ -48,7 +50,7 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 
 			// Notify start
 			if o.onProgress != nil {
-				o.onProgress(provider.Name(), true, 0, 0, nil)
+				o.onProgress(provider.Name(), true, 0, 0, false, nil)
 			}
 
 			// Create timeout context for this provider
@@ -63,13 +65,15 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 
 			// Calculate total tokens
 			var totalTokens int
+			var cached bool
 			if metrics != nil {
 				totalTokens = metrics.InputTokens + metrics.OutputTokens
+				cached = metrics.Cached
 			}
 
 			// Notify completion
 			if o.onProgress != nil {
-				o.onProgress(provider.Name(), false, duration, totalTokens, err)
+				o.onProgress(provider.Name(), false, duration, totalTokens, cached, err)
 			}
 
 			if err != nil {
@@ -91,6 +95,7 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 					Response: response,
 					Duration: duration,
 					Metrics:  metrics,
+					Cached:   cached,
 				}
 			}
 		}(i, p)

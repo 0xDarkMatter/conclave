@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/batch"
+	"github.com/0xDarkMatter/conclave-cli/internal/cache"
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
 	"github.com/0xDarkMatter/conclave-cli/internal/context"
 	"github.com/0xDarkMatter/conclave-cli/internal/judge"
@@ -50,6 +51,11 @@ var (
 	flagRetries       int
 	flagSkipPreflight bool
 	flagBudget        float64
+
+	// Response cache (opt-in). flagCache holds the TTL string; cobra's
+	// NoOptDefVal makes a bare --cache mean the default TTL.
+	flagCache   string
+	flagNoCache bool
 )
 
 func SetVersion(v string) {
@@ -152,6 +158,11 @@ func init() {
 	rootCmd.Flags().BoolVar(&flagNoRateLimit, "no-rate-limit", false, "Disable rate limiting (for high-tier API accounts)")
 	rootCmd.Flags().IntVar(&flagRetries, "retries", 0, "Retry failed batch items N times with exponential backoff (batch mode only; single-call automatically retries 429/5xx)")
 	rootCmd.Flags().BoolVar(&flagSkipPreflight, "skip-preflight", false, "Skip auth preflight checks")
+	rootCmd.Flags().StringVar(&flagCache, "cache", "", "Reuse identical provider responses for this TTL, e.g. --cache or --cache=6h (default 24h; also CONCLAVE_CACHE_TTL=<hours>)")
+	// A bare --cache takes the default TTL. Consequence of NoOptDefVal: an
+	// explicit value must use --cache=6h, not --cache 6h.
+	rootCmd.Flags().Lookup("cache").NoOptDefVal = "24h"
+	rootCmd.Flags().BoolVar(&flagNoCache, "no-cache", false, "Never read or write the response cache, overriding CONCLAVE_CACHE_TTL")
 	rootCmd.Flags().Float64Var(&flagBudget, "budget", 0, "Stop dispatching batch items once estimated spend reaches this many USD (batch mode only; also CONCLAVE_BATCH_BUDGET)")
 
 	rootCmd.Version = version
@@ -273,9 +284,12 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// catalog simply leaves the raw slug.
 	providers.SetOpenRouterNamer(catalog.NameOf)
 
+	// Response cache (nil = disabled, which is the default).
+	responseCache := resolveCache()
+
 	// Handle batch mode
 	if flagBatch != "" {
-		return runBatchMode(cmd, cfg, providerNames, prompt, modelOverrides, catalog)
+		return runBatchMode(cmd, cfg, providerNames, prompt, modelOverrides, catalog, responseCache)
 	}
 
 	// Build context from stdin and files
@@ -331,6 +345,13 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Wrap for the response cache AFTER preflight: the wrapper deliberately
+	// does not forward the Preflighter interface, so wrapping earlier would
+	// silently skip every auth check. See internal/cache/provider.go.
+	if responseCache != nil {
+		providerList = cache.WrapAll(providerList, responseCache, cacheMode())
+	}
+
 	// Initialize progress display (quiet if JSON output)
 	prog := tui.New(flagJSON || flagQuiet)
 
@@ -346,11 +367,11 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	prog.Start()
 
 	// Set up progress callback
-	progressCallback := func(provider string, started bool, duration time.Duration, tokens int, err error) {
+	progressCallback := func(provider string, started bool, duration time.Duration, tokens int, cached bool, err error) {
 		if started {
 			prog.ProviderStart(provider)
 		} else {
-			prog.ProviderDone(provider, duration, tokens, err)
+			prog.ProviderDone(provider, duration, tokens, cached, err)
 		}
 	}
 
@@ -556,7 +577,7 @@ func warnModelDrift(catalog *pricing.Catalog, providerList []providers.Provider)
 	}
 }
 
-func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string, defaultPrompt string, modelOverrides map[string]string, catalog *pricing.Catalog) error {
+func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string, defaultPrompt string, modelOverrides map[string]string, catalog *pricing.Catalog, responseCache *cache.Cache) error {
 	// Open input file
 	var input *os.File
 	var err error
@@ -617,6 +638,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		Retries:        flagRetries,
 		Budget:         resolveBatchBudget(),
 		Pricing:        catalog,
+		Cache:          responseCache,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create batch processor: %w", err)
@@ -656,6 +678,58 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 	}
 
 	return nil
+}
+
+// cacheMode is the mode component of the response-cache key. CLI and API paths
+// send materially different requests for the same provider name, so their
+// answers must never be interchangeable.
+func cacheMode() string {
+	if flagGeneral {
+		return cache.ModeAPI
+	}
+	return cache.ModeCLI
+}
+
+// resolveCache decides whether the opt-in response cache is on for this run:
+// --no-cache wins, then --cache[=TTL], then CONCLAVE_CACHE_TTL in hours.
+// Returning nil means "no cache", and every call site treats nil as a no-op.
+func resolveCache() *cache.Cache {
+	if flagNoCache {
+		return nil
+	}
+	if flagCache != "" {
+		ttl, err := parseCacheTTL(flagCache)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: ignoring --cache=%q (%v)\n", flagCache, err)
+			return nil
+		}
+		return cache.New("", ttl)
+	}
+	if raw := strings.TrimSpace(os.Getenv("CONCLAVE_CACHE_TTL")); raw != "" {
+		h, err := strconv.ParseFloat(raw, 64)
+		if err != nil || h <= 0 {
+			fmt.Fprintf(os.Stderr, "  warning: ignoring CONCLAVE_CACHE_TTL=%q (want a positive number of hours)\n", raw)
+			return nil
+		}
+		return cache.New("", time.Duration(h*float64(time.Hour)))
+	}
+	return nil
+}
+
+// parseCacheTTL accepts a Go duration ("6h", "90m") or a bare number of hours.
+func parseCacheTTL(v string) (time.Duration, error) {
+	v = strings.TrimSpace(v)
+	if d, err := time.ParseDuration(v); err == nil {
+		if d <= 0 {
+			return 0, fmt.Errorf("TTL must be positive")
+		}
+		return d, nil
+	}
+	h, err := strconv.ParseFloat(v, 64)
+	if err != nil || h <= 0 {
+		return 0, fmt.Errorf("want a duration like 6h or a positive number of hours")
+	}
+	return time.Duration(h * float64(time.Hour)), nil
 }
 
 // resolveBatchBudget reads the spend cap: --budget wins, then

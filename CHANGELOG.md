@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cap, the completed count and the skipped count. Undispatched items stay out
   of the checkpoint so `--resume` continues the run. Because cost is measured
   post-hoc, overshoot by up to `--workers` items is expected.
+- Opt-in response cache: `--cache[=TTL]` (24h by default) or
+  `CONCLAVE_CACHE_TTL=<hours>` reuses an identical provider response instead of
+  paying for it twice; `--no-cache` overrides an env-enabled cache. The key is
+  a sha256 of the mode, provider, model and the full prompt including file and
+  stdin context, so any context change is a miss. A hit is tagged `(cached)` in
+  the progress line and provider block, carries `cached: true` in `--json`, and
+  costs nothing. Judge synthesis is never cached. Works in CLI and API mode;
+  batch mode honours it per item. `conclave cache stats` and
+  `conclave cache clear` manage the store. ADR-011.
 
 - Runtime pricing catalog (`internal/pricing`): conclave caches OpenRouter's
   public models feed under the user cache directory, refreshes it in the

@@ -370,6 +370,8 @@ type ResponseJSON struct {
 	Response   string `json:"response,omitempty"`
 	Error      string `json:"error,omitempty"`
 	DurationMs int64  `json:"duration_ms"`
+	// Cached marks an answer served from conclave's response store (--cache).
+	Cached bool `json:"cached,omitempty"`
 	// CostUSD is a POINTER on purpose: nil means "price unknown" (no catalog
 	// entry, no token metrics, or CLI mode) while 0 means a genuine zero.
 	// A plain float64 with omitempty could not tell those apart.
@@ -409,6 +411,7 @@ func (f *Formatter) renderJSON(r Result, c costs) error {
 			Response:   resp.Response,
 			Error:      resp.Error,
 			DurationMs: resp.Duration.Milliseconds(),
+			Cached:     resp.Cached,
 		}
 		if i < len(c.byIndex) {
 			rj.CostUSD = c.byIndex[i]

@@ -459,6 +459,38 @@ Three rules govern the numbers:
 
 `--raw` and `--brief` are unchanged: both are fixed-shape contracts.
 
+### Response cache (`--cache`)
+
+Off by default. `--cache` reuses an identical provider response instead of
+paying for it twice, which makes iterating on a prompt, a judge choice, or an
+output format free.
+
+```bash
+conclave -g gemini,openai "Review this" -f auth.go --cache        # 24h TTL
+conclave -g gemini,openai "Review this" -f auth.go --cache=6h     # explicit TTL
+CONCLAVE_CACHE_TTL=6 conclave -g gemini,openai "Review this"      # via env, in hours
+conclave -g gemini,openai "Review this" --no-cache                # override the env
+```
+
+An explicit TTL must use `--cache=6h`, not `--cache 6h`.
+
+An entry is addressed by the mode, provider, model and the **full prompt
+including any file or stdin context**, so changing one byte of an attached file
+is a miss. A hit is marked `(cached)` on the progress line and the provider
+block, carries `cached: true` in `--json`, and costs nothing. Failures are never
+cached, and **judge synthesis is never cached** because a verdict depends on the
+whole set of responses it saw. See ADR-011.
+
+Works in both CLI and API mode, and batch mode honours it per item.
+
+```bash
+conclave cache stats   # directory, entry count, size, age range
+conclave cache clear   # delete every cached response
+```
+
+Entries are plain JSON under `$XDG_CACHE_HOME/conclave/responses/`. Leave the
+cache off for anything sensitive.
+
 ### Brief (`--brief`)
 
 One-line summary: verdict, confidence, and key recommendation.
@@ -511,12 +543,21 @@ Batch Mode:
       --no-rate-limit    Disable rate limiting (high-tier API accounts)
       --budget <usd>     Stop dispatching once estimated spend hits this cap (also CONCLAVE_BATCH_BUDGET)
 
+Cache Flags:
+      --cache[=TTL]      Reuse identical provider responses (default 24h; also CONCLAVE_CACHE_TTL=<hours>)
+      --no-cache         Never read or write the response cache
+
 Output Flags:
       --json             Structured JSON output
       --verbose          Include full provider responses
       --brief            Short verdict only
   -q, --quiet            Minimal output (verdict only)
       --raw              Sentinel-separated provider blocks only (implies --no-judge)
+
+Subcommands:
+      conclave models    Inspect the model/price catalog
+      conclave keyring   Manage API keys in the OS keyring
+      conclave cache     Inspect or empty the response cache
 
 Other:
       --list-providers   List available providers and exit

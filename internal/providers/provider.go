@@ -39,6 +39,11 @@ type Metrics struct {
 	OutputTokens int     `json:"output_tokens,omitempty"`
 	CacheTokens  int     `json:"cache_tokens,omitempty"`
 	CostUSD      float64 `json:"cost_usd,omitempty"`
+	// Cached marks a response served from conclave's own on-disk response
+	// store (internal/cache), not from the provider. It is the signal every
+	// cost path uses to charge nothing, and it is distinct from CacheTokens,
+	// which counts a VENDOR-side prompt-cache hit on a real billed call.
+	Cached bool `json:"cached,omitempty"`
 }
 
 // Response holds a provider's query result
@@ -50,6 +55,8 @@ type Response struct {
 	Error    string        `json:"error,omitempty"`
 	Duration time.Duration `json:"duration_ms"`
 	Metrics  *Metrics      `json:"metrics,omitempty"`
+	// Cached mirrors Metrics.Cached so renderers do not have to nil-check.
+	Cached bool `json:"cached,omitempty"`
 }
 
 // baseProvider provides common functionality

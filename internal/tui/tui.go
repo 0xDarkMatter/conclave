@@ -103,7 +103,7 @@ func (p *Progress) ProviderStart(name string) {
 }
 
 // ProviderDone marks a provider as complete
-func (p *Progress) ProviderDone(name string, duration time.Duration, tokens int, err error) {
+func (p *Progress) ProviderDone(name string, duration time.Duration, tokens int, cached bool, err error) {
 	if p.quiet || !p.started {
 		return
 	}
@@ -117,6 +117,7 @@ func (p *Progress) ProviderDone(name string, duration time.Duration, tokens int,
 			Provider: name,
 			Duration: duration,
 			Tokens:   tokens,
+			Cached:   cached,
 			Error:    err,
 		})
 	} else {
@@ -144,8 +145,8 @@ func (p *Progress) ProviderDone(name string, duration time.Duration, tokens int,
 			fmt.Fprintf(p.out, "%s%s %s %s: %s\n",
 				TreeIndent, prefix, IconError, displayName, errStr)
 		} else {
-			fmt.Fprintf(p.out, "%s%s %s %s %s\n",
-				TreeIndent, prefix, IconSuccess, displayName, formatStats(duration, tokens))
+			fmt.Fprintf(p.out, "%s%s %s %s %s%s\n",
+				TreeIndent, prefix, IconSuccess, displayName, formatStats(duration, tokens), cachedTag(cached))
 		}
 	}
 }

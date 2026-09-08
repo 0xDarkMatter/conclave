@@ -150,6 +150,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.providers[idx].Duration = msg.Duration
 			m.providers[idx].Tokens = msg.Tokens
+			m.providers[idx].Cached = msg.Cached
 			m.totalTokens += msg.Tokens
 		}
 		return m, nil
@@ -292,11 +293,12 @@ func (m Model) renderProviderLine(p ProviderState, prefix string) string {
 			StatsStyle.Render(formatElapsed(elapsed)),
 		)
 	case StatusSuccess:
-		return fmt.Sprintf("%s%s %s %s %s",
+		return fmt.Sprintf("%s%s %s %s %s%s",
 			TreeIndent, prefix,
 			SuccessStyle.Render(IconSuccess),
 			p.Info.DisplayName,
 			StatsStyle.Render(formatStats(p.Duration, p.Tokens)),
+			StatsStyle.Render(cachedTag(p.Cached)),
 		)
 	case StatusError:
 		errStr := truncate(p.Error.Error(), 40)
@@ -306,6 +308,15 @@ func (m Model) renderProviderLine(p ProviderState, prefix string) string {
 			p.Info.DisplayName,
 			ErrorStyle.Render(errStr),
 		)
+	}
+	return ""
+}
+
+// cachedTag marks a line whose answer came from conclave's response store
+// instead of the provider. Empty for a live call so normal output is unchanged.
+func cachedTag(cached bool) string {
+	if cached {
+		return " (cached)"
 	}
 	return ""
 }
