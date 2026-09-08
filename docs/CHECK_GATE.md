@@ -55,3 +55,34 @@ failure, verify against the vendor before changing anything: the catalog is a
 proxy for the vendor's list, not the list itself (ADR-009). If the model is
 genuinely gone, update `internal/config/config.go` and the tables in
 `docs/MODEL_REGISTRY.md` in the same commit.
+
+## Landmines
+
+### `gofmt` fails in a fresh worktree, and every file looks dirty
+
+**Symptom.** `make check` fails at the gofmt step immediately after
+`git worktree add`, `git clone`, or a rebase, listing nearly every `.go` file.
+The diff for any of them looks empty.
+
+**Cause.** `core.autocrlf=true` writes CRLF into a new checkout, and git can
+populate the working tree before it honours the `.gitattributes` that pins
+`eol=lf`. Every committed blob is already LF; only the working tree is wrong.
+gofmt treats a CR as a formatting difference, so it flags the file while
+`git status` reports nothing to commit.
+
+**Fix.** Force a re-checkout so the attributes apply:
+
+```bash
+git rm --cached -r . && git reset --hard && git checkout-index -a -f
+```
+
+Nothing is lost: this rewrites tracked files from the index, which already
+holds the correct LF content. Commit your work first if the tree is dirty, and
+note that `git reset --hard` discards uncommitted changes.
+
+**Do not** "fix" it by running `gofmt -w` over the tree. That rewrites the
+files with the same content and hides the real cause, and the next fresh
+checkout brings it straight back.
+
+This bit three separate sessions during the change that introduced
+`.gitattributes`, which is why it is written down here.
