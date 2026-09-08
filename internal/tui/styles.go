@@ -6,11 +6,11 @@ import (
 
 // Colors matching the original progress display
 var (
-	ColorCyan   = lipgloss.Color("6")  // ANSI cyan
-	ColorYellow = lipgloss.Color("3")  // ANSI yellow
-	ColorGreen  = lipgloss.Color("2")  // ANSI green
-	ColorRed    = lipgloss.Color("1")  // ANSI red
-	ColorGray   = lipgloss.Color("8")  // ANSI bright black (gray)
+	ColorCyan   = lipgloss.Color("6") // ANSI cyan
+	ColorYellow = lipgloss.Color("3") // ANSI yellow
+	ColorGreen  = lipgloss.Color("2") // ANSI green
+	ColorRed    = lipgloss.Color("1") // ANSI red
+	ColorGray   = lipgloss.Color("8") // ANSI bright black (gray)
 )
 
 // Styles for various UI elements

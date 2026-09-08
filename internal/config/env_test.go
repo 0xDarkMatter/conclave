@@ -115,9 +115,9 @@ func TestSaveEnvFile(t *testing.T) {
 
 	// Save some keys
 	keys := map[string]string{
-		"GEMINI_API_KEY":  "gemini-test",
-		"OPENAI_API_KEY":  "openai-test",
-		"XAI_API_KEY":     "xai-test",
+		"GEMINI_API_KEY": "gemini-test",
+		"OPENAI_API_KEY": "openai-test",
+		"XAI_API_KEY":    "xai-test",
 	}
 
 	if err := SaveEnvFile(keys); err != nil {

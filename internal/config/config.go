@@ -46,9 +46,9 @@ func DefaultConfig() *Config {
 			"grok":       "grok-build-0.1", // cheapest grok still listed; grok-4-1-fast-* work on xAI's API but are unlisted
 			"glm":        "glm-5.3-flash",
 		},
-		MaxFileSize:    102400,  // 100KB
-		MaxContextSize: 512000,  // 500KB
-		WarnFileSize:   51200,   // 50KB
+		MaxFileSize:    102400, // 100KB
+		MaxContextSize: 512000, // 500KB
+		WarnFileSize:   51200,  // 50KB
 	}
 }
 

@@ -17,8 +17,8 @@ type ProgressCallback func(provider string, started bool, duration time.Duration
 
 // Orchestrator manages parallel provider execution
 type Orchestrator struct {
-	providers []providers.Provider
-	timeout   time.Duration
+	providers  []providers.Provider
+	timeout    time.Duration
 	onProgress ProgressCallback
 }
 
