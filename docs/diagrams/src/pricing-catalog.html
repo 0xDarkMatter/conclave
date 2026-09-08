@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conclave · Pricing catalog lifecycle</title>
+  <!-- Diagram Design source (minimal variant, page header deliberately omitted). Regenerate with
+       python docs/diagrams/export.py -->
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f5f5f5; padding: 2rem; }
+    svg { width: 100%; max-width: 1000px; display: block; }
+  </style>
+</head>
+<body>
+<svg viewBox="0 0 1000 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pricing-catalog-title pricing-catalog-desc">
+  <title id="pricing-catalog-title">Pricing catalog cache lifecycle</title>
+  <desc id="pricing-catalog-desc">State machine: with no cache the first run fetches the OpenRouter catalog once; a fresh cache is served with no network until its TTL expires; a stale cache is still served immediately while a background refresh makes it fresh again; a failed first fetch leaves the catalog absent and every query proceeds without prices or drift warnings.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+    <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+  </defs>
+
+  <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+  <!-- Transitions first -->
+  <!-- start dot -> No cache -->
+  <line x1="56" y1="140" x2="96" y2="140" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <!-- No cache -> Fetching -->
+  <line x1="240" y1="140" x2="304" y2="140" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <!-- Fetching -> Fresh -->
+  <line x1="448" y1="140" x2="512" y2="140" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <!-- Fresh -> Stale -->
+  <line x1="656" y1="140" x2="720" y2="140" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+  <!-- Stale -> Fresh: background refresh (accent: the guarantee that nothing waits) -->
+  <path d="M 792,168 V 200 Q 792,208 784,208 H 592 Q 584,208 584,200 V 168" fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+  <!-- Stale self-loop: refresh failed, keep serving -->
+  <path d="M 760,112 V 96 Q 760,88 768,88 H 816 Q 824,88 824,96 V 112" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <!-- Fetching -> Absent (first fetch failed) -->
+  <line x1="376" y1="168" x2="376" y2="248" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+
+  <!-- Transition labels -->
+  <rect x="244" y="120" width="56" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="272" y="129" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">FIRST RUN</text>
+  <rect x="452" y="120" width="56" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="480" y="129" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">200 OK</text>
+  <rect x="664" y="120" width="48" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="688" y="129" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">EXPIRED</text>
+  <rect x="648" y="188" width="80" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="688" y="197" fill="#eb6c36" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">BG REFRESH</text>
+  <rect x="740" y="68" width="104" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="792" y="77" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">REFRESH FAILED</text>
+  <rect x="388" y="200" width="72" height="12" rx="2" fill="#f5f5f5"/>
+  <text x="424" y="209" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle" letter-spacing="0.08em">FAIL / 6S CAP</text>
+
+  <!-- Start dot -->
+  <circle cx="48" cy="140" r="6" fill="#2d3142"/>
+
+  <!-- State: No cache -->
+  <rect x="96" y="112" width="144" height="56" rx="8" fill="#f5f5f5"/>
+  <rect x="96" y="112" width="144" height="56" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="168" y="136" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="middle">No cache</text>
+  <text x="168" y="152" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle">or --refresh</text>
+
+  <!-- State: Fetching -->
+  <rect x="304" y="112" width="144" height="56" rx="8" fill="#f5f5f5"/>
+  <rect x="304" y="112" width="144" height="56" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="376" y="136" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="middle">Fetching</text>
+  <text x="376" y="152" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle">the one sync fetch</text>
+
+  <!-- State: Fresh -->
+  <rect x="512" y="112" width="144" height="56" rx="8" fill="#f5f5f5"/>
+  <rect x="512" y="112" width="144" height="56" rx="8" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="584" y="136" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="middle">Fresh</text>
+  <text x="584" y="152" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle">served · no network</text>
+
+  <!-- State: Stale (focal) -->
+  <rect x="720" y="112" width="144" height="56" rx="8" fill="#f5f5f5"/>
+  <rect x="720" y="112" width="144" height="56" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+  <text x="792" y="136" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="middle">Stale</text>
+  <text x="792" y="152" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle">served now · refreshed later</text>
+
+  <!-- State: Absent (advisory nil) -->
+  <rect x="304" y="248" width="144" height="56" rx="8" fill="#f5f5f5"/>
+  <rect x="304" y="248" width="144" height="56" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="376" y="272" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="middle">Absent</text>
+  <text x="376" y="288" fill="#4f5d75" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle">no prices · no warnings</text>
+
+  <!-- Note: the invariant, as a sublabel line under the states -->
+  <text x="512" y="288" fill="#7a8399" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace">every state lets the query proceed · CONCLAVE_NO_PRICING=1 skips the machine · TTL = CONCLAVE_PRICING_TTL hours (24)</text>
+
+  <!-- Legend strip -->
+  <line x1="40" y1="340" x2="960" y2="340" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+  <text x="40" y="356" fill="#4f5d75" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" letter-spacing="0.18em">LEGEND</text>
+  <rect x="40" y="372" width="16" height="12" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+  <text x="64" y="382" fill="#4f5d75" font-size="8" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif">Served while refreshing: a query never waits on the network once a cache exists</text>
+  <rect x="520" y="372" width="16" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+  <text x="544" y="382" fill="#4f5d75" font-size="8" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif">State</text>
+  <line x1="600" y1="378" x2="632" y2="378" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+  <text x="640" y="382" fill="#4f5d75" font-size="8" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif">Failure path (never fatal)</text>
+</svg>
+</body>
+</html>

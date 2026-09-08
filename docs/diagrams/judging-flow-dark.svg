@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1000 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="judging-flow-dark-title judging-flow-dark-desc">
+  <title id="judging-flow-dark-title">How multi-model judging sorts the panel's content</title>
+  <desc id="judging-flow-dark-desc">Sankey diagram: responses from Gemini, OpenAI and Claude flow into the judge, which sorts their content into consensus and contested claims; consensus becomes the verdict, contested content is surfaced as disagreements and blind spots rather than dropped, and only a small remainder is discarded.</desc>
+  <defs>
+    <style>@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style></defs>
+
+  <rect width="100%" height="100%" fill="#2d3142"/>
+
+  <!-- Column headers -->
+  <text x="206" y="44" fill="#bfc0c0" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle" letter-spacing="0.18em">PANEL RESPONSES</text>
+  <text x="506" y="44" fill="#bfc0c0" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle" letter-spacing="0.18em">JUDGE SORTS INTO</text>
+  <text x="806" y="44" fill="#bfc0c0" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle" letter-spacing="0.18em">VERDICT</text>
+
+  <!-- Ribbons, column 1 -> 2 (source x=212, target x=500, mid=356). Ordinary flows: muted @ 0.18 -->
+  <!-- Gemini -> Consensus 700 -->
+  <path d="M 212,72 C 356,72 356,76 500,76 L 500,104 C 356,104 356,100 212,100 Z" fill="rgba(191,192,192,0.18)"/>
+  <!-- Gemini -> Contested 500 -->
+  <path d="M 212,100 C 356,100 356,196 500,196 L 500,216 C 356,216 356,120 212,120 Z" fill="rgba(191,192,192,0.18)"/>
+  <!-- OpenAI -> Consensus 500 -->
+  <path d="M 212,144 C 356,144 356,104 500,104 L 500,124 C 356,124 356,164 212,164 Z" fill="rgba(191,192,192,0.18)"/>
+  <!-- OpenAI -> Contested 300 -->
+  <path d="M 212,164 C 356,164 356,216 500,216 L 500,228 C 356,228 356,176 212,176 Z" fill="rgba(191,192,192,0.18)"/>
+  <!-- Claude -> Consensus 800 -->
+  <path d="M 212,200 C 356,200 356,124 500,124 L 500,156 C 356,156 356,232 212,232 Z" fill="rgba(191,192,192,0.18)"/>
+  <!-- Claude -> Contested 800 -->
+  <path d="M 212,232 C 356,232 356,228 500,228 L 500,260 C 356,260 356,264 212,264 Z" fill="rgba(191,192,192,0.18)"/>
+
+  <!-- Ribbons, column 2 -> 3 (source x=512, target x=800, mid=656) -->
+  <!-- Consensus -> Verdict 1,800 -->
+  <path d="M 512,76 C 656,76 656,72 800,72 L 800,144 C 656,144 656,148 512,148 Z" fill="rgba(191,192,192,0.18)"/>
+  <!-- Consensus -> Dropped 200 -->
+  <path d="M 512,148 C 656,148 656,244 800,244 L 800,252 C 656,252 656,156 512,156 Z" fill="rgba(191,192,192,0.18)"/>
+  <!-- Contested -> Dropped 300 -->
+  <path d="M 512,248 C 656,248 656,252 800,252 L 800,264 C 656,264 656,260 512,260 Z" fill="rgba(191,192,192,0.18)"/>
+  <!-- Contested -> Flagged 1,300: the focal path, painted last among ribbons -->
+  <path d="M 512,196 C 656,196 656,168 800,168 L 800,220 C 656,220 656,248 512,248 Z" fill="rgba(240,138,89,0.28)"/>
+
+  <!-- Node bars: width 12, solid ink -->
+  <rect x="200" y="72" width="12" height="48" fill="#f5f5f5"/>
+  <rect x="200" y="144" width="12" height="32" fill="#f5f5f5"/>
+  <rect x="200" y="200" width="12" height="64" fill="#f5f5f5"/>
+  <rect x="500" y="76" width="12" height="80" fill="#f5f5f5"/>
+  <rect x="500" y="196" width="12" height="64" fill="#f5f5f5"/>
+  <rect x="800" y="72" width="12" height="72" fill="#f5f5f5"/>
+  <rect x="800" y="168" width="12" height="52" fill="#f5f5f5"/>
+  <rect x="800" y="244" width="12" height="20" fill="#f5f5f5"/>
+
+  <!-- Column 1 labels: outside the bar, anchor end -->
+  <text x="188" y="96" fill="#f5f5f5" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="end">Gemini</text>
+  <text x="188" y="108" fill="#bfc0c0" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="end">1,200 tok</text>
+  <text x="188" y="160" fill="#f5f5f5" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="end">OpenAI</text>
+  <text x="188" y="172" fill="#bfc0c0" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="end">800 tok</text>
+  <text x="188" y="232" fill="#f5f5f5" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="end">Claude</text>
+  <text x="188" y="244" fill="#bfc0c0" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="end">1,600 tok</text>
+
+  <!-- Column 2 labels: centred in the gutter above each bar, no mask -->
+  <text x="506" y="58" fill="#f5f5f5" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="middle">Consensus</text>
+  <text x="506" y="68" fill="#bfc0c0" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle">2,000 tok · all three agree</text>
+  <text x="506" y="174" fill="#f5f5f5" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif" text-anchor="middle">Contested</text>
+  <text x="506" y="186" fill="#bfc0c0" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" text-anchor="middle">1,600 tok · disputed or unique</text>
+
+  <!-- Column 3 labels: outside the bar, anchor start -->
+  <text x="820" y="108" fill="#f5f5f5" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif">Verdict + confidence</text>
+  <text x="820" y="120" fill="#bfc0c0" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace">1,800 tok · consensus, reasoned</text>
+  <text x="820" y="192" fill="#f5f5f5" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif">Surfaced to you</text>
+  <text x="820" y="204" fill="#bfc0c0" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace">1,300 tok · what they disputed</text>
+  <text x="820" y="256" fill="#f5f5f5" font-size="12" font-weight="600" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif">Dropped</text>
+  <text x="820" y="268" fill="#bfc0c0" font-size="9" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace">500 tok · restatement, filler</text>
+
+  <!-- Legend strip -->
+  <line x1="40" y1="300" x2="960" y2="300" stroke="rgba(245,245,245,0.10)" stroke-width="0.8"/>
+  <text x="40" y="316" fill="#bfc0c0" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace" letter-spacing="0.18em">LEGEND</text>
+  <rect x="40" y="332" width="16" height="8" fill="rgba(240,138,89,0.28)"/>
+  <text x="64" y="340" fill="#bfc0c0" font-size="8" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif">Contested content is surfaced, never averaged away</text>
+  <rect x="320" y="332" width="16" height="8" fill="rgba(191,192,192,0.18)"/>
+  <text x="344" y="340" fill="#bfc0c0" font-size="8" font-family="'Geist', 'Inter', 'Segoe UI', 'Helvetica Neue', system-ui, sans-serif">Token share</text>
+  <text x="440" y="340" fill="#8e98ac" font-size="8" font-family="'Geist Mono', 'Cascadia Code', Consolas, ui-monospace, monospace">illustrative shares for a 3-provider code review · width = tokens · each column sums to 3,600</text>
+</svg>
