@@ -375,6 +375,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	checked := withJudge(providerList, judgeProvider)
 
 	warnModelDrift(catalog, checked)
+	warnSubscriptionIdle(cmd, checked)
 
 	// Preflight auth checks (judge included, deduplicated by name)
 	if !flagSkipPreflight {
@@ -593,6 +594,31 @@ func loadCatalog(cmd *cobra.Command) *pricing.Catalog {
 // Skipped when: no catalog; the model is a CLI alias with no version digits
 // ("sonnet", "opus") which OpenRouter cannot know about; or output is a
 // machine format where a stray line would be noise.
+// warnSubscriptionIdle prints one stderr line per provider that is about to be
+// billed by API key while its CLI holds a subscription login (codex on ChatGPT
+// Pro, claude on Claude Max). API mode only; -q and --raw silence it, --json
+// does not, because the person running a --json pipeline is exactly who needs
+// to see that the metered key is being spent. Advisory: the query proceeds.
+func warnSubscriptionIdle(cmd *cobra.Command, providerList []providers.Provider) {
+	ctx := cmd.Context()
+	if !flagGeneral || flagQuiet || flagRaw {
+		return
+	}
+	seen := map[string]bool{}
+	for _, p := range providerList {
+		name := p.Name()
+		if seen[name] || (name != "openai" && name != "claude") {
+			continue
+		}
+		seen[name] = true
+		if !providers.SubscriptionLoggedIn(ctx, name) {
+			continue
+		}
+		cli := map[string]string{"openai": "codex", "claude": "claude"}[name]
+		fmt.Fprintf(os.Stderr, "  note: %s is running in API mode (metered key) while %s is logged in on a subscription; drop -g for %s to run on the plan.\n", name, cli, name)
+	}
+}
+
 func warnModelDrift(catalog *pricing.Catalog, providerList []providers.Provider) {
 	if catalog == nil || flagQuiet || flagJSON || flagRaw {
 		return
@@ -661,6 +687,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 			return err
 		}
 		warnModelDrift(catalog, tempProviders)
+		warnSubscriptionIdle(cmd, tempProviders)
 		if failures := providers.RunPreflight(cmd.Context(), tempProviders); len(failures) > 0 {
 			printPreflightFailures(failures)
 			return fmt.Errorf("preflight auth check failed for %d provider(s)", len(failures))

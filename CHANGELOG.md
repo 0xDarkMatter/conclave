@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- API-mode warning when a provider is about to be billed by key while its
+  CLI holds a subscription login: `note: openai is running in API mode
+  (metered key) while codex is logged in on a subscription; drop -g for
+  openai to run on the plan.` Same for claude via `claude auth status`.
+  Advisory, stderr, silenced by `-q` and `--raw` but not by `--json`, since
+  the person running a JSON pipeline is the one spending the key. Motivated
+  by Praxis billing OPENAI_API_KEY on every grade while the Pro plan sat idle.
+
 ### Fixed
 
 - `openai` CLI mode dropped every line of the prompt after the first on
