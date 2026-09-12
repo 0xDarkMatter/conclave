@@ -11,11 +11,29 @@ build:
 	go build $(LDFLAGS) -o bin/$(BINARY) .
 
 # Install to ~/.local/bin (or use sudo make install-global for /usr/local/bin)
+#
+# DEST uses forward slashes: on Windows $(HOME) is C:\Users\name, and once a
+# recipe needs a real shell (this one does), sh eats the backslashes.
+#
+# On Windows the installed file is conclave.exe: msys `cp` maps the bare name
+# onto an existing .exe, and PowerShell/CreateProcess only ever find the .exe.
+# A running conclave holds that file locked (Praxis grades run for minutes) so
+# a plain copy fails with "Device or resource busy"; renaming a running exe is
+# allowed, so the old one is moved aside first and removed afterwards.
+DEST := $(subst \,/,$(HOME))/.local/bin
+
 install: build
-	@mkdir -p $(HOME)/.local/bin
-	cp bin/$(BINARY) $(HOME)/.local/bin/
-	@echo "Installed to $(HOME)/.local/bin/$(BINARY)"
-	@echo "Ensure $(HOME)/.local/bin is in your PATH"
+	@mkdir -p "$(DEST)"
+	@if [ "$(OS)" = "Windows_NT" ]; then \
+	  mv -f "$(DEST)/$(BINARY).exe" "$(DEST)/$(BINARY).exe.old" 2>/dev/null || true; \
+	  cp bin/$(BINARY) "$(DEST)/$(BINARY).exe"; \
+	  rm -f "$(DEST)/$(BINARY).exe.old" 2>/dev/null || true; \
+	  echo "Installed to $(DEST)/$(BINARY).exe"; \
+	else \
+	  cp bin/$(BINARY) "$(DEST)/"; \
+	  echo "Installed to $(DEST)/$(BINARY)"; \
+	fi
+	@echo "Ensure $(DEST) is in your PATH"
 
 # Install to /usr/local/bin (requires sudo)
 install-global: build
