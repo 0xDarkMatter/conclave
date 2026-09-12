@@ -48,15 +48,24 @@ func (p *OpenAIProvider) Preflight(ctx context.Context) error {
 }
 
 // Query executes a prompt using Codex CLI
-// Command: codex exec "{prompt}" -m {model} --skip-git-repo-check
+// Command: codex exec -m {model} --skip-git-repo-check   (prompt on STDIN)
+//
+// The prompt goes on stdin, never as a positional argument. On Windows the
+// `codex` on PATH is npm's codex.cmd shim, which Go launches via cmd.exe, and
+// cmd.exe stops reading an argument at the first newline. A multi-line prompt
+// (any -f file, any piped stdin, any judge rubric) reached codex as its first
+// line only; codex then "loaded the context" and asked what to work on
+// (observed 2026-09-12 against a Praxis judge prompt that began "<context>").
+// Stdin also sidesteps the 32K command-line limit. `codex exec` reads the
+// prompt from stdin when no positional prompt is given.
 func (p *OpenAIProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
 	}
 
 	start := time.Now()
-	args := []string{"exec", prompt, "-m", model, "--skip-git-repo-check"}
-	output, err := runCommand(ctx, "codex", args, nil)
+	args := []string{"exec", "-m", model, "--skip-git-repo-check"}
+	output, err := runCommand(ctx, "codex", args, strings.NewReader(prompt))
 	duration := time.Since(start)
 
 	return output, duration, nil, err

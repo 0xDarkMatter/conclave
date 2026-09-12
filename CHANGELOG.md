@@ -5,6 +5,21 @@ All notable changes to Conclave will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `openai` CLI mode dropped every line of the prompt after the first on
+  Windows. `codex` on PATH is npm's `codex.cmd` shim, Go launches it through
+  `cmd.exe`, and `cmd.exe` stops reading a positional argument at the first
+  newline, so any `-f` file, piped stdin or multi-line rubric reached codex as
+  its first line only and codex replied "Context loaded. What would you like
+  me to work on?". The prompt now goes on stdin (`codex exec` reads it there
+  when no positional prompt is given), which also lifts the 32K command-line
+  limit. Regression test: `TestCodexReceivesMultiLinePromptIntact`. The
+  `gemini` CLI is the same kind of shim and still passes `-p <prompt>`; it is
+  unaffected on this machine only because its CLI auth falls back to the API.
+
 ## [1.3.0] - 2026-09-08
 
 ### Added
