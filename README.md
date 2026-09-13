@@ -773,7 +773,8 @@ Diagram sources live in [`docs/diagrams/src/`](docs/diagrams/src/); `python docs
 `--json` is the contract for callers: additive fields only, `status` is always `"success"` or
 `"error"` per provider (a cache hit stays `"success"` and adds `cached: true`),
 `responses.<provider>` is keyed by the bare provider name even when the token carried
-`@cli` / `@api` (the transport is in `responses.<provider>.transport`), and
+`@cli` / `@api`, `responses.<provider>.transport` is present on every leg including CLI ones
+(only `cost_usd` is API-only), so it is the field to read for vendor provenance, and
 `execution.timeout_seconds` reports the real `-t`. Pair `--no-judge` with your own
 aggregation when you want a majority vote across runs, and `--raw` when you want the
 bodies with no parsing at all. Nothing is ever prompted for when stdin is not a terminal.

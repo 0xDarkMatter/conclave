@@ -386,3 +386,35 @@ func TestConfigTransportCannotPutASlugOnTheCli(t *testing.T) {
 		t.Fatalf("got %v, want an API-only error", err)
 	}
 }
+
+// TestEveryRegistryProviderDeclaresATransport pins a contract a downstream
+// consumer reads for provenance: responses.<provider>.transport is present
+// on EVERY leg, CLI ones included, even though cost_usd is not. Praxis uses it
+// to tell a three-vendor panel from three accounts of one vendor, so a leg
+// with no transport would put it back to inferring the vendor from a slot id.
+// Every path out of GetProvider (CLI set, API set, slash token) must return a
+// provider whose transport is not TransportDefault.
+func TestEveryRegistryProviderDeclaresATransport(t *testing.T) {
+	t.Setenv(OpenRouterKeyEnv, "test-key")
+	cases := []struct {
+		r     *Registry
+		token string
+	}{
+		{mixedRegistry(false, false), "openai"},
+		{mixedRegistry(true, false), "openai"},
+		{mixedRegistry(false, false), "openai@api"},
+		{mixedRegistry(true, false), "claude@cli"},
+		{mixedRegistry(true, true), "gemini"},
+		{configRegistry(true, map[string]string{"claude": "cli"}), "claude"},
+		{NewRegistry(config.DefaultConfig(), true, false), "deepseek/deepseek-v4"},
+	}
+	for _, tc := range cases {
+		p, err := tc.r.GetProvider(tc.token, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.token, err)
+		}
+		if TransportOf(p) == TransportDefault {
+			t.Errorf("%s resolved with no transport; the JSON leg would omit the field", tc.token)
+		}
+	}
+}
