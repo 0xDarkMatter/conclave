@@ -458,18 +458,19 @@ Roughly 70 h, 74 h with the optional TUI preview.
 
 ## Proposed ADRs (not written here)
 
-> Numbering note: ADR-011 was taken by the response cache (accepted 2026-09-08) after this
-> plan was drafted, so the proposals start at ADR-012. Take the next free number at
+> Numbering note: ADR-011 was taken by the response cache (accepted 2026-09-08) and
+> ADR-012 by per-provider transport (accepted 2026-09-13, open question 3 below) after this
+> plan was drafted, so the proposals start at ADR-013. Take the next free number at
 > writing time; `ls docs/adr/` is the index.
 
-- ADR-012 Partial-panel quorum: a run proceeds at `min_providers` successes,
+- ADR-013 Partial-panel quorum: a run proceeds at `min_providers` successes,
   `degraded` means any failure, and exit 3 is opt-in.
-- ADR-013 Judge panels aggregate by verdict-string majority (ties are `SPLIT`), not by
+- ADR-014 Judge panels aggregate by verdict-string majority (ties are `SPLIT`), not by
   self-reported confidence.
-- ADR-014 Rubric contract: YAML-front-matter markdown in, fixed `scores` schema out;
+- ADR-015 Rubric contract: YAML-front-matter markdown in, fixed `scores` schema out;
   parse failures keep raw output; ties resolve per criterion type and a red-flag tie
   can never be `triggered`.
-- ADR-015 Request options are best-effort per provider: unsupported `system`,
+- ADR-016 Request options are best-effort per provider: unsupported `system`,
   `temperature`, or `max_tokens` warn once and never fail the run.
 
 ## Open questions for the operator
@@ -478,8 +479,12 @@ Roughly 70 h, 74 h with the optional TUI preview.
    to match Praxis?
 2. `--system` on the claude CLI: `--append-system-prompt` (keeps Claude Code's prompt)
    or `--system-prompt` (replaces it)? Both exist; this is a choice.
-3. Mixed transport in one panel (Max-plan `claude` via CLI beside `-g` API providers,
-   e.g. `claude@cli`) so Praxis can drop its roost routing: schedule as a seventh item?
+3. ~~Mixed transport in one panel (Max-plan `claude` via CLI beside `-g` API providers,
+   e.g. `claude@cli`) so Praxis can drop its roost routing: schedule as a seventh item?~~
+   **Shipped 2026-09-13** as the `<provider>@cli|@api` token suffix (ADR-012):
+   `conclave gemini@api,openai@cli,claude@cli "..." --no-judge --json` runs one panel
+   with mixed billing, keys `--json` by the bare name and adds
+   `responses.<provider>.transport`. Praxis can route claude through Conclave now.
 4. Streaming default: opt-in `--stream`, or `auto` on a TTY from day one?
 5. Rubric v1 scale: pass/fail only, or numeric `1-5` and `0-10` too?
 6. Gemini CLI system prompt: `GEMINI_SYSTEM_MD` replaces the whole CLI prompt. Use it
@@ -489,12 +494,12 @@ Roughly 70 h, 74 h with the optional TUI preview.
 
 | Feature | Praxis code retired | Condition |
 |---|---|---|
-| F1 | The `provider missing from conclave output` fallback in `_gather_panel_verdicts`; per-question `panel` counting for Conclave-routed providers moves to `panel.failed` | Fully only once question 3 brings claude inside Conclave |
+| F1 | The `provider missing from conclave output` fallback in `_gather_panel_verdicts`; per-question `panel` counting for Conclave-routed providers moves to `panel.failed` | Question 3 is shipped (`claude@cli`, ADR-012), so fully once F1 lands |
 | F2 | Nothing directly; the 2026-08-06 location 400 is invisible to preflight. Dead keys fail before the first question instead of thirteen times | none |
 | F3 | Nothing; Praxis is non-interactive | none |
-| F4 | `_majority` at verdict level and its tie bookkeeping | With F5, and question 3 |
-| F5 | `_JUDGE_INSTRUCTION` and `_build_judge_prompt` (become a rubric file), `_extract_json` per provider, per-criterion `_majority` with `INDETERMINATE`, `expected_majority` / `forbidden_majority` assembly | `--no-judge --rubric` mode; question 3 for the claude vote |
+| F4 | `_majority` at verdict level and its tie bookkeeping | With F5 (question 3 is shipped) |
+| F5 | `_JUDGE_INSTRUCTION` and `_build_judge_prompt` (become a rubric file), `_extract_json` per provider, per-criterion `_majority` with `INDETERMINATE`, `expected_majority` / `forbidden_majority` assembly | `--no-judge --rubric` mode; the claude vote already routes via `claude@cli` |
 | F6 | `_CONCLAVE_QUERY` instruction string (moves to `--system`); temperature pinning for determinism, which Praxis cannot do today | none |
 
 Maintenance rule: update the phasing when a feature lands, and delete this plan once
-ADR-012 to ADR-015 exist and the features ship.
+ADR-013 to ADR-016 exist and the features ship.
