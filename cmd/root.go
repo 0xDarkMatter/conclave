@@ -243,7 +243,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// Auto-trigger init if no providers configured. A token pinned with
 	// @api or @cli (ADR-012) may be satisfied by the OTHER transport's setup,
 	// so when any suffix appears both transports count as "configured".
-	pinned := len(args) > 0 && strings.Contains(args[0], "@")
+	pinned := !flagAll && len(args) > 0 && strings.Contains(args[0], "@")
 	if !providers.AnyAvailable(flagGeneral) && !(pinned && providers.AnyAvailable(!flagGeneral)) {
 		if RunInitIfNeeded(flagGeneral) {
 			// Re-check after init
@@ -550,13 +550,16 @@ func printProviderList(heading string, providerList []providers.Provider, notAva
 }
 
 // withJudge appends the judge to the panel for drift/preflight purposes unless
-// it is already a panel member (same name). Nil judge returns the panel as is.
+// it is already a panel member: same name AND same transport (ADR-012). A
+// claude@cli panel member does not stand in for a claude API judge; they hold
+// different credentials, so the judge's preflight must still run. Nil judge
+// returns the panel as is.
 func withJudge(panel []providers.Provider, judge providers.Provider) []providers.Provider {
 	if judge == nil {
 		return panel
 	}
 	for _, p := range panel {
-		if p.Name() == judge.Name() {
+		if p.Name() == judge.Name() && providers.TransportOf(p) == providers.TransportOf(judge) {
 			return panel
 		}
 	}

@@ -298,6 +298,11 @@ Rules:
   is an error that says why; `deepseek/x@api` works without `-g`.
 - **`glm@api` is refused** (API mode is disabled for glm, ADR-006); use `glm` or `glm@cli`.
 - **`--all` is unchanged** and takes its list from the global mode.
+- **One provider, one seat.** `claude@cli,claude@api` is refused: outputs are keyed by the
+  bare name, so the two legs would overwrite each other. Run them as two panels if you need both.
+- **The judge is checked on its own transport.** With `-g gemini,claude@cli --judge claude`
+  the judge is the API claude, a different credential from the panel's CLI claude, and is
+  preflighted separately.
 
 The API-mode warning about an idle subscription now suggests the suffix: `write openai@cli to
 run it on the plan in this panel`. Decision record: [ADR-012](docs/adr/ADR-012-per-provider-transport-suffix.md).

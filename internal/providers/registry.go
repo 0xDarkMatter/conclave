@@ -216,15 +216,24 @@ func noTransportError(name string, transport Transport, explicit bool) error {
 	return fmt.Errorf("provider %s is not available in CLI mode: it has no CLI implementation; add -g or write %s@api", name, name)
 }
 
-// GetProviders returns multiple providers by token
+// GetProviders returns multiple providers by token. The same bare name may
+// appear only once: --json keys responses by provider name and the progress
+// display does too, so "claude@cli,claude@api" would silently drop one leg.
+// Refusing it is the honest answer until provider identity carries the
+// transport, which ADR-012 deliberately decided it does not.
 func (r *Registry) GetProviders(tokens []string, modelOverrides map[string]string) ([]Provider, error) {
 	var result []Provider
+	firstToken := make(map[string]string, len(tokens))
 
 	for _, token := range tokens {
 		p, err := r.GetProvider(token, modelOverrides)
 		if err != nil {
 			return nil, err
 		}
+		if prev, dup := firstToken[p.Name()]; dup {
+			return nil, fmt.Errorf("provider %s is listed twice (%s and %s); outputs are keyed by provider name, so each provider may appear once per panel", p.Name(), prev, strings.TrimSpace(token))
+		}
+		firstToken[p.Name()] = strings.TrimSpace(token)
 		result = append(result, p)
 	}
 

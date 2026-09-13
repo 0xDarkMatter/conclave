@@ -21,7 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   API legs. `deepseek/x@cli` and `glm@api` are errors that say why;
   `deepseek/x@api` no longer needs `-g`. Motivated by Praxis billing
   OPENAI_API_KEY and ANTHROPIC_API_KEY on every grade because gemini alone
-  needed the API. ADR-012.
+  needed the API. ADR-012. The same provider may appear once per panel
+  (`claude@cli,claude@api` is refused, since outputs key on the bare name),
+  and a judge is deduplicated against panel members by name AND transport,
+  so `-g gemini,claude@cli --judge claude` still preflights the API judge.
 - API-mode warning when a provider is about to be billed by key while its
   CLI holds a subscription login: `note: openai is running in API mode
   (metered key) while codex is logged in on a subscription; drop -g for

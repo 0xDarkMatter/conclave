@@ -292,3 +292,26 @@ func TestBareName(t *testing.T) {
 		}
 	}
 }
+
+// TestSameProviderOnBothTransportsIsRefused: "claude@cli,claude@api" would
+// produce two responses under one --json key and one progress row, and the
+// second would silently overwrite the first. Refuse it up front, naming both
+// spellings so the user sees which two collided.
+func TestSameProviderOnBothTransportsIsRefused(t *testing.T) {
+	_, err := mixedRegistry(false, false).GetProviders([]string{"claude@cli", "claude@api"}, nil)
+	if err == nil {
+		t.Fatal("duplicate bare name resolved")
+	}
+	for _, want := range []string{"listed twice", "claude@cli", "claude@api"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q; got: %s", want, err)
+		}
+	}
+	// The plain duplicate is refused too; distinct providers are not.
+	if _, err := mixedRegistry(false, false).GetProviders([]string{"claude", "claude"}, nil); err == nil {
+		t.Error("claude,claude resolved")
+	}
+	if _, err := mixedRegistry(false, false).GetProviders([]string{"claude@cli", "openai@api"}, nil); err != nil {
+		t.Errorf("distinct providers refused: %v", err)
+	}
+}
