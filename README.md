@@ -301,7 +301,10 @@ Rules:
 - **A standing choice goes in the config file.** `transports: {gemini: api, claude: cli}` in
   `config.yaml` (or `CONCLAVE_CLAUDE_TRANSPORT=cli`) pins bare tokens without retyping the
   suffix. Precedence is suffix, then config, then `-g` / `-c`. A value other than `cli` or `api`
-  fails the run naming the key.
+  fails the run naming the key. Because a config pin is the one input that can move billing
+  without appearing in the command line, the run prints a `note:` whenever a pin actually
+  redirected a bare token, and how to override it for that run. Scripts that must be portable
+  across machines should spell the suffix rather than rely on a pin.
 - **Mixed panels say so in the styled view.** When a panel runs on more than one transport,
   each provider block is tagged `via cli` or `via api`. Single-transport runs are unchanged.
 - **One provider, one seat.** `claude@cli,claude@api` is refused: outputs are keyed by the

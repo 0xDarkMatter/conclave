@@ -1,12 +1,36 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/0xDarkMatter/conclave-cli/internal/config"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
+
+// captureStderr runs fn while redirecting os.Stderr and returns what was written.
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	done := make(chan struct{})
+	var buf bytes.Buffer
+	go func() { _, _ = io.Copy(&buf, r); close(done) }()
+	fn()
+	w.Close()
+	os.Stderr = old
+	<-done
+	return buf.String()
+}
 
 // TestModelOverrideKeyDropsTheTransportSuffix: "-m openai@cli:gpt-5.6-sol"
 // and "-m openai:gpt-5.6-sol" must both land on the bare "openai" key the
@@ -80,5 +104,36 @@ func TestJudgeOnOtherTransportIsStillPreflighted(t *testing.T) {
 	cliJudge := transportNamed{"claude", providers.TransportCLI}
 	if got := withJudge(panel, cliJudge); len(got) != 2 {
 		t.Fatalf("same name and transport should deduplicate; got %d entries, want 2", len(got))
+	}
+}
+
+// TestConfigPinIsAnnouncedOnlyWhenItChangedTheOutcome: a config transports pin
+// is the one input that can move billing without appearing in the command
+// line, so the run must say so, and must say so only when the pin actually
+// redirected a bare token. Suffixed tokens and pins that agree with the global
+// mode stay silent, or the note becomes noise nobody reads.
+func TestConfigPinIsAnnouncedOnlyWhenItChangedTheOutcome(t *testing.T) {
+	flagGeneral, flagQuiet, flagRaw = true, false, false
+	t.Cleanup(func() { flagGeneral = false })
+	cfg := config.DefaultConfig()
+	cfg.Transports = map[string]string{"claude": "cli", "gemini": "api"}
+
+	panel := []providers.Provider{
+		transportNamed{"claude", providers.TransportCLI}, // pinned away from -g: announce
+		transportNamed{"gemini", providers.TransportAPI}, // pin agrees with -g: silent
+		transportNamed{"openai", providers.TransportAPI}, // no pin: silent
+	}
+	out := captureStderr(t, func() { warnConfigTransportPins(cfg, []string{"claude", "gemini", "openai"}, panel) })
+	if !strings.Contains(out, "transports.claude") || !strings.Contains(out, "claude@api") {
+		t.Fatalf("pin that changed claude's transport was not announced:\n%s", out)
+	}
+	if strings.Contains(out, "gemini") || strings.Contains(out, "openai") {
+		t.Fatalf("a pin that changed nothing was announced:\n%s", out)
+	}
+
+	// A suffix on the token is the user's own choice; no note.
+	out = captureStderr(t, func() { warnConfigTransportPins(cfg, []string{"claude@cli"}, panel[:1]) })
+	if out != "" {
+		t.Fatalf("suffixed token produced a config-pin note:\n%s", out)
 	}
 }

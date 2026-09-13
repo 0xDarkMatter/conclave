@@ -390,6 +390,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 
 	warnModelDrift(catalog, checked)
 	warnSubscriptionIdle(cmd, checked)
+	warnConfigTransportPins(cfg, append(append([]string{}, providerTokens...), flagJudge), checked)
 
 	// Preflight auth checks (judge included, deduplicated by name)
 	if !flagSkipPreflight {
@@ -633,6 +634,51 @@ func loadCatalog(cmd *cobra.Command) *pricing.Catalog {
 // pipeline is exactly who needs to see that the metered key is being spent.
 // Advisory: the query proceeds. The remedy named is the per-provider suffix,
 // which fixes the one provider without moving the whole panel off the API.
+// warnConfigTransportPins prints one stderr line per provider whose transport
+// was decided by config.yaml's transports map rather than by the invocation.
+// A config pin is the one input that can move billing between a subscription
+// and a metered key without appearing in the command line, which is the exact
+// invisibility the @suffix exists to remove, so the run says when it happened.
+// Only fires when the pin actually changed the outcome (a bare token that the
+// global mode would have sent elsewhere); silent for suffixed tokens and for
+// pins that agree with -g/-c. -q and --raw silence it, --json does not.
+func warnConfigTransportPins(cfg *config.Config, tokens []string, providerList []providers.Provider) {
+	if flagQuiet || flagRaw || cfg == nil || len(cfg.Transports) == 0 {
+		return
+	}
+	suffixed := map[string]bool{}
+	for _, tok := range tokens {
+		if name, t, err := providers.ParseProviderToken(tok); err == nil && t != providers.TransportDefault {
+			suffixed[name] = true
+		}
+	}
+	defaultT := providers.TransportCLI
+	if flagGeneral {
+		defaultT = providers.TransportAPI
+	}
+	seen := map[string]bool{}
+	for _, p := range providerList {
+		name := p.Name()
+		if seen[name] || suffixed[name] {
+			continue
+		}
+		seen[name] = true
+		pin := cfg.GetTransport(name)
+		if pin == "" || providers.Transport(pin) == defaultT || providers.TransportOf(p) != providers.Transport(pin) {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "  note: %s runs on the %s because config.yaml transports.%s pins it; pass %s@%s to override for this run.\n",
+			name, pin, name, name, otherTransport(pin))
+	}
+}
+
+func otherTransport(t string) string {
+	if t == string(providers.TransportCLI) {
+		return string(providers.TransportAPI)
+	}
+	return string(providers.TransportCLI)
+}
+
 func warnSubscriptionIdle(cmd *cobra.Command, providerList []providers.Provider) {
 	ctx := cmd.Context()
 	if flagQuiet || flagRaw {
@@ -725,6 +771,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		}
 		warnModelDrift(catalog, tempProviders)
 		warnSubscriptionIdle(cmd, tempProviders)
+		warnConfigTransportPins(cfg, providerNames, tempProviders)
 		if failures := providers.RunPreflight(cmd.Context(), tempProviders); len(failures) > 0 {
 			printPreflightFailures(failures)
 			return fmt.Errorf("preflight auth check failed for %d provider(s)", len(failures))

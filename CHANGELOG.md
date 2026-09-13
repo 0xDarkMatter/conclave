@@ -28,7 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `transports:` map in `config.yaml` (and `CONCLAVE_<PROVIDER>_TRANSPORT`)
   pins a provider's transport for bare tokens, so a standing choice like
   `gemini: api, claude: cli` need not be retyped. Precedence: suffix, then
-  config, then `-g`/`-c`. An invalid value fails the run naming the key.
+  config, then `-g`/`-c`. An invalid value fails the run naming the key,
+  and a pin that actually redirected a bare token is announced on stderr
+  (`note: openai runs on the cli because config.yaml transports.openai
+  pins it; pass openai@api to override for this run.`), since a config
+  pin is the one input that can move billing without showing in the
+  command line.
 - Styled output tags each provider block `via cli` / `via api` when, and
   only when, the panel ran on more than one transport.
 - The provider-routing diagram in the README now draws the third question
