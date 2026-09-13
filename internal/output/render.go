@@ -44,12 +44,13 @@ func (f *Formatter) renderStyledOutput(r Result, c costs) error {
 	// providers actually returned instead of losing their work to a
 	// synthesis failure.
 	if f.opts.Verbose || r.Verdict == nil || r.Verdict.Result == "PARSE_ERROR" {
+		mixed := panelIsMixed(r.Responses)
 		for i, resp := range r.Responses {
 			var cost *float64
 			if i < len(c.byIndex) {
 				cost = c.byIndex[i]
 			}
-			sections = append(sections, renderProviderResponse(resp, cost))
+			sections = append(sections, renderProviderResponse(resp, cost, mixed))
 		}
 	}
 
@@ -117,10 +118,30 @@ func renderNumberedList(title string, items []string) string {
 	return header + "\n" + strings.Join(listItems, "\n")
 }
 
+// panelIsMixed reports whether the responses ran on more than one transport
+// (ADR-012). Only then does the styled view tag each block with its transport:
+// in a single-transport run the tag would be the same word on every block, and
+// the run's mode is already obvious from the command line.
+func panelIsMixed(responses []providers.Response) bool {
+	seen := ""
+	for _, r := range responses {
+		if r.Transport == "" {
+			continue
+		}
+		if seen == "" {
+			seen = r.Transport
+		} else if r.Transport != seen {
+			return true
+		}
+	}
+	return false
+}
+
 // renderProviderResponse creates a provider response box. cost is nil when the
-// dollar figure is unknown or CLI mode is in play — an unknown price is shown
-// as nothing, never as $0.00.
-func renderProviderResponse(resp providers.Response, cost *float64) string {
+// dollar figure is unknown or the leg ran on a subscription CLI — an unknown
+// price is shown as nothing, never as $0.00. showTransport adds a "via cli" /
+// "via api" tag to the header; callers pass it only for mixed panels.
+func renderProviderResponse(resp providers.Response, cost *float64, showTransport bool) string {
 	provider, model, status := resp.Provider, resp.Model, resp.Status
 	response, errMsg := resp.Response, resp.Error
 
@@ -140,6 +161,9 @@ func renderProviderResponse(resp providers.Response, cost *float64) string {
 	}
 
 	header := fmt.Sprintf("%s %s%s", statusBadge, provName, modelName)
+	if showTransport && resp.Transport != "" {
+		header += "  " + providerModelStyle.Render("via "+resp.Transport)
+	}
 	if resp.Cached {
 		header += "  " + providerModelStyle.Render("(cached)")
 	}

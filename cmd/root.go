@@ -240,10 +240,18 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		flagGeneral = true
 	}
 
+	// Load config first: the availability check below needs to know whether
+	// any provider is pinned to the other transport by config (ADR-012).
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("config error: %w", err)
+	}
+
 	// Auto-trigger init if no providers configured. A token pinned with
-	// @api or @cli (ADR-012) may be satisfied by the OTHER transport's setup,
-	// so when any suffix appears both transports count as "configured".
-	pinned := !flagAll && len(args) > 0 && strings.Contains(args[0], "@")
+	// @api or @cli, or a provider pinned in config.yaml's transports map, may
+	// be satisfied by the OTHER transport's setup, so in that case both
+	// transports count as "configured".
+	pinned := (!flagAll && len(args) > 0 && strings.Contains(args[0], "@")) || len(cfg.Transports) > 0
 	if !providers.AnyAvailable(flagGeneral) && !(pinned && providers.AnyAvailable(!flagGeneral)) {
 		if RunInitIfNeeded(flagGeneral) {
 			// Re-check after init
@@ -251,12 +259,6 @@ func runConclave(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("no providers configured - run 'conclave init' to set up API keys")
 			}
 		}
-	}
-
-	// Load config
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("config error: %w", err)
 	}
 
 	// Parse providers and prompt based on --all flag. providerTokens keeps any

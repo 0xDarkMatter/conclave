@@ -1,6 +1,7 @@
 package output
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/pricing"
@@ -55,4 +56,48 @@ func keysOf(m map[string]ResponseJSON) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestMixedPanelTagsEachBlockWithItsTransport: a person reading the styled
+// view of a mixed panel must be able to see which leg ran where without
+// inferring it from the presence of a dollar figure.
+func TestMixedPanelTagsEachBlockWithItsTransport(t *testing.T) {
+	r := Result{
+		Query:     "q",
+		Providers: []string{"gemini", "openai"},
+		Responses: []providers.Response{
+			resp("gemini", "gemini-test", 10, 0),
+			cliResp("openai", "gpt-test", 10, 0),
+		},
+	}
+	out := renderStyledTo(t, New(Options{}), r)
+	for _, want := range []string{"via api", "via cli"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("mixed panel output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestSingleTransportPanelShowsNoTag pins the other half: an all-CLI or
+// all-API run keeps today's header exactly, so nobody's terminal output
+// changes for a command line that has not changed.
+func TestSingleTransportPanelShowsNoTag(t *testing.T) {
+	r := Result{
+		Query:     "q",
+		Providers: []string{"gemini", "openai"},
+		Responses: []providers.Response{
+			cliResp("gemini", "gemini-test", 10, 0),
+			cliResp("openai", "gpt-test", 10, 0),
+		},
+	}
+	out := renderStyledTo(t, New(Options{}), r)
+	if strings.Contains(out, "via cli") || strings.Contains(out, "via api") {
+		t.Fatalf("single-transport panel was tagged:\n%s", out)
+	}
+	if !panelIsMixed([]providers.Response{{Transport: "cli"}, {Transport: ""}, {Transport: "api"}}) {
+		t.Error("cli + api (with an unknown in between) should count as mixed")
+	}
+	if panelIsMixed([]providers.Response{{Transport: ""}, {Transport: "api"}}) {
+		t.Error("an unknown transport must not make a panel look mixed")
+	}
 }

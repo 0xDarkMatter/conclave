@@ -141,3 +141,24 @@ func TestLoadWithoutConfig(t *testing.T) {
 		t.Errorf("expected default judge 'claude', got %s", cfg.DefaultJudge)
 	}
 }
+
+// TestTransportEnvOverridesConfig: CONCLAVE_<PROVIDER>_TRANSPORT lands in
+// Transports like the model overrides do, and GetTransport trims it.
+func TestTransportEnvOverridesConfig(t *testing.T) {
+	t.Setenv("CONCLAVE_CLAUDE_TRANSPORT", " cli ")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no config file: defaults + env only
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.GetTransport("claude"); got != "cli" {
+		t.Fatalf("GetTransport(claude) = %q, want cli", got)
+	}
+	if got := cfg.GetTransport("gemini"); got != "" {
+		t.Fatalf("GetTransport(gemini) = %q, want empty", got)
+	}
+	var nilCfg *Config
+	if nilCfg.GetTransport("claude") != "" {
+		t.Fatal("nil config must report no transport")
+	}
+}

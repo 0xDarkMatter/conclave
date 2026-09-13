@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`claude@cli,claude@api` is refused, since outputs key on the bare name),
   and a judge is deduplicated against panel members by name AND transport,
   so `-g gemini,claude@cli --judge claude` still preflights the API judge.
+- `transports:` map in `config.yaml` (and `CONCLAVE_<PROVIDER>_TRANSPORT`)
+  pins a provider's transport for bare tokens, so a standing choice like
+  `gemini: api, claude: cli` need not be retyped. Precedence: suffix, then
+  config, then `-g`/`-c`. An invalid value fails the run naming the key.
+- Styled output tags each provider block `via cli` / `via api` when, and
+  only when, the panel ran on more than one transport.
+- The provider-routing diagram in the README now draws the third question
+  (`transport pinned?`) between the slash check and the global mode.
 - API-mode warning when a provider is about to be billed by key while its
   CLI holds a subscription login: `note: openai is running in API mode
   (metered key) while codex is logged in on a subscription; drop -g for

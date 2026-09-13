@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -14,9 +15,15 @@ type Config struct {
 	TimeoutSeconds   int               `mapstructure:"timeout_seconds"`
 	Models           map[string]string `mapstructure:"models"`
 	CheapModels      map[string]string `mapstructure:"cheap_models"`
-	MaxFileSize      int64             `mapstructure:"max_file_size"`
-	MaxContextSize   int64             `mapstructure:"max_context_size"`
-	WarnFileSize     int64             `mapstructure:"warn_file_size"`
+	// Transports pins a provider to "cli" or "api" for bare tokens (ADR-012).
+	// Precedence: a token's own @cli/@api suffix > this map > -g/-c. It exists
+	// so a caller that always wants gemini metered and claude on the Max plan
+	// need not spell the suffix on every invocation. Values are validated by
+	// the registry, not here, so a typo fails the run with the provider named.
+	Transports     map[string]string `mapstructure:"transports"`
+	MaxFileSize    int64             `mapstructure:"max_file_size"`
+	MaxContextSize int64             `mapstructure:"max_context_size"`
+	WarnFileSize   int64             `mapstructure:"warn_file_size"`
 }
 
 // DefaultConfig returns the default configuration
@@ -46,6 +53,7 @@ func DefaultConfig() *Config {
 			"grok":       "grok-build-0.1", // cheapest grok still listed; grok-4-1-fast-* work on xAI's API but are unlisted
 			"glm":        "glm-5.3-flash",
 		},
+		Transports:     map[string]string{},
 		MaxFileSize:    102400, // 100KB
 		MaxContextSize: 512000, // 500KB
 		WarnFileSize:   51200,  // 50KB
@@ -103,6 +111,17 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Override transports from environment (CONCLAVE_<PROVIDER>_TRANSPORT=cli|api)
+	if cfg.Transports == nil {
+		cfg.Transports = map[string]string{}
+	}
+	for _, provider := range []string{"gemini", "openai", "claude", "perplexity", "grok", "glm"} {
+		env := "CONCLAVE_" + strings.ToUpper(provider) + "_TRANSPORT"
+		if val := os.Getenv(env); val != "" {
+			cfg.Transports[provider] = val
+		}
+	}
+
 	// Override cheap models from environment
 	envCheapModels := map[string]string{
 		"CONCLAVE_CHEAP_GEMINI_MODEL":     "gemini",
@@ -129,6 +148,15 @@ func (c *Config) GetModel(provider string, override string) string {
 		return model
 	}
 	return ""
+}
+
+// GetTransport returns the configured transport for a provider ("cli", "api",
+// or "" when unset). Not validated here; see Registry.GetProvider.
+func (c *Config) GetTransport(provider string) string {
+	if c == nil || c.Transports == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Transports[provider])
 }
 
 // GetCheapModel returns the cheap model for a provider

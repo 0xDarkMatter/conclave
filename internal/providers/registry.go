@@ -127,7 +127,22 @@ func (r *Registry) GetProvider(token string, modelOverrides map[string]string) (
 	if err != nil {
 		return nil, err
 	}
+	// Precedence: suffix > config transports > global mode. The config layer
+	// is a per-provider default, so it sits above the panel-wide -g/-c and
+	// below anything typed on this invocation.
 	explicit := transport != TransportDefault
+	if !explicit {
+		switch cfgT := r.config.GetTransport(name); cfgT {
+		case "":
+		case string(TransportCLI), string(TransportAPI):
+			transport, explicit = Transport(cfgT), true
+			if transport == TransportCLI && IsOpenRouterModel(name) {
+				return nil, fmt.Errorf("config transports.%s is %q, but %q is an OpenRouter model and OpenRouter is API-only (ADR-010)", name, cfgT, name)
+			}
+		default:
+			return nil, fmt.Errorf("config transports.%s is %q; want \"cli\" or \"api\" (config.yaml or CONCLAVE_%s_TRANSPORT)", name, cfgT, strings.ToUpper(name))
+		}
+	}
 	if !explicit {
 		transport = r.DefaultTransport()
 	}

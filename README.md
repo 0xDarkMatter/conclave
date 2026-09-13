@@ -298,6 +298,12 @@ Rules:
   is an error that says why; `deepseek/x@api` works without `-g`.
 - **`glm@api` is refused** (API mode is disabled for glm, ADR-006); use `glm` or `glm@cli`.
 - **`--all` is unchanged** and takes its list from the global mode.
+- **A standing choice goes in the config file.** `transports: {gemini: api, claude: cli}` in
+  `config.yaml` (or `CONCLAVE_CLAUDE_TRANSPORT=cli`) pins bare tokens without retyping the
+  suffix. Precedence is suffix, then config, then `-g` / `-c`. A value other than `cli` or `api`
+  fails the run naming the key.
+- **Mixed panels say so in the styled view.** When a panel runs on more than one transport,
+  each provider block is tagged `via cli` or `via api`. Single-transport runs are unchanged.
 - **One provider, one seat.** `claude@cli,claude@api` is refused: outputs are keyed by the
   bare name, so the two legs would overwrite each other. Run them as two panels if you need both.
 - **The judge is checked on its own transport.** With `-g gemini,claude@cli --judge claude`
@@ -697,6 +703,12 @@ models:
   gemini: gemini-3.1-pro-preview
   openai: gpt-5.6-sol
   claude: claude-opus-5
+
+# Pin a provider's transport for bare tokens (optional; ADR-012).
+# A token's own @cli/@api suffix still wins; -g/-c applies to the rest.
+transports:
+  gemini: api
+  claude: cli
 
 # Override cheap mode models (optional)
 cheap_models:

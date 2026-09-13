@@ -59,7 +59,10 @@ The constraint that shaped the design is identity. Provider names key everything
 - Does not change ADR-002's two registries or any provider implementation; it changes which of the two a token selects.
 - Does not add a transport to `--all`, which keeps taking its list from the global mode.
 - Does not make the CLI transport priceable. Subscriptions have no per-token cost (ADR-009); a `@cli` leg simply carries no dollar figure and does not mark the total as a floor.
-- Does not persist a transport preference anywhere; it is per invocation by design.
+
+## Addendum (2026-09-13): a config-file default
+
+The first cut deliberately persisted nothing. The same day, a `transports:` map was added to `config.yaml` (with `CONCLAVE_<PROVIDER>_TRANSPORT` as the environment form) so a standing choice such as `gemini: api, claude: cli` does not have to be retyped on every call. This is not the per-provider environment variable rejected above: it lives in the same visible, per-user file as the model defaults, follows the same precedence rules the README already documents, and is validated by the registry so a typo fails the run naming the key. Precedence is suffix, then config, then `-g` / `-c`: what is typed on this invocation always wins, and the panel-wide flag only reaches providers nobody has said anything about.
 
 ## See also
 

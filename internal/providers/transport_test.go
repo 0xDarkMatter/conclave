@@ -315,3 +315,74 @@ func TestSameProviderOnBothTransportsIsRefused(t *testing.T) {
 		t.Errorf("distinct providers refused: %v", err)
 	}
 }
+
+// configRegistry is mixedRegistry with a transports map in the config.
+func configRegistry(general bool, transports map[string]string) *Registry {
+	r := mixedRegistry(general, false)
+	cfg := config.DefaultConfig()
+	cfg.Transports = transports
+	r.config = cfg
+	return r
+}
+
+// TestConfigTransportBeatsGlobalMode: `transports: {claude: cli}` makes a bare
+// "claude" run on the CLI even under -g. That is the point of the config
+// layer: a standing per-provider choice the caller does not retype.
+func TestConfigTransportBeatsGlobalMode(t *testing.T) {
+	r := configRegistry(true, map[string]string{"claude": "cli", "gemini": "api"})
+	c, err := r.GetProvider("claude", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if TransportOf(c) != TransportCLI {
+		t.Fatalf("claude transport = %q, want cli from config", TransportOf(c))
+	}
+	// Unconfigured providers still follow -g.
+	o, err := r.GetProvider("openai", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if TransportOf(o) != TransportAPI {
+		t.Fatalf("openai transport = %q, want api from -g", TransportOf(o))
+	}
+}
+
+// TestSuffixBeatsConfigTransport: what is typed on this invocation wins over
+// the standing config.
+func TestSuffixBeatsConfigTransport(t *testing.T) {
+	r := configRegistry(false, map[string]string{"claude": "cli"})
+	p, err := r.GetProvider("claude@api", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if TransportOf(p) != TransportAPI {
+		t.Fatalf("claude@api transport = %q; the suffix must beat config", TransportOf(p))
+	}
+}
+
+// TestInvalidConfigTransportNamesTheKey: a typo in config.yaml must fail the
+// run with the provider and the accepted values, not silently fall through
+// to the global mode and bill the wrong thing.
+func TestInvalidConfigTransportNamesTheKey(t *testing.T) {
+	r := configRegistry(false, map[string]string{"openai": "subscription"})
+	_, err := r.GetProvider("openai", nil)
+	if err == nil {
+		t.Fatal("invalid config transport resolved")
+	}
+	for _, want := range []string{"transports.openai", "subscription", "CONCLAVE_OPENAI_TRANSPORT"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q; got: %s", want, err)
+		}
+	}
+}
+
+// TestConfigTransportCannotPutASlugOnTheCli mirrors the suffix rule.
+func TestConfigTransportCannotPutASlugOnTheCli(t *testing.T) {
+	t.Setenv(OpenRouterKeyEnv, "test-key")
+	cfg := config.DefaultConfig()
+	cfg.Transports = map[string]string{"deepseek/deepseek-v4": "cli"}
+	_, err := NewRegistry(cfg, true, false).GetProvider("deepseek/deepseek-v4", nil)
+	if err == nil || !strings.Contains(err.Error(), "API-only") {
+		t.Fatalf("got %v, want an API-only error", err)
+	}
+}

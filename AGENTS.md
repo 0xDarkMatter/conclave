@@ -93,6 +93,8 @@ Priority (highest to lowest):
 3. Config file (`~/.config/conclave/config.yaml`)
 4. Provider defaults
 
+Transport for a bare token (ADR-012): `@cli`/`@api` suffix > `transports:` map in config (or `CONCLAVE_<PROVIDER>_TRANSPORT`) > `-g`/`-c`. The registry validates the value; anything but `cli`/`api` is an error naming the key.
+
 API keys loaded from (highest to lowest):
 1. Environment variables (`GEMINI_API_KEY`, etc.)
 2. `~/.config/conclave/.env`
