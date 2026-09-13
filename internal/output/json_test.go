@@ -87,14 +87,16 @@ func TestJSONMarksAnUnderstatedTotal(t *testing.T) {
 	})
 	cached := providers.Response{
 		Provider: "openai", Model: "gpt-test", Status: "success", Cached: true,
-		Metrics: &providers.Metrics{InputTokens: 1_000_000},
+		Transport: "api",
+		Metrics:   &providers.Metrics{InputTokens: 1_000_000},
 	}
 	unpriceable := providers.Response{
 		Provider: "claude", Model: "not-in-catalog", Status: "success",
-		Metrics: &providers.Metrics{InputTokens: 1_000_000},
+		Transport: "api",
+		Metrics:   &providers.Metrics{InputTokens: 1_000_000},
 	}
 
-	out := renderJSONTo(t, New(Options{JSON: true, APIMode: true, Pricing: cat}),
+	out := renderJSONTo(t, New(Options{JSON: true, Pricing: cat}),
 		Result{Query: "q", Providers: []string{"openai", "claude"},
 			Responses: []providers.Response{cached, unpriceable}})
 
@@ -116,11 +118,12 @@ func TestJSONMarksAnUnderstatedTotal(t *testing.T) {
 // would make the flag meaningless.
 func TestJSONCompleteTotalIsNotMarkedPartial(t *testing.T) {
 	cat := pricing.NewCatalog([]pricing.Model{{ID: "openai/gpt-test", InputPerM: 1, OutputPerM: 0}})
-	out := renderJSONTo(t, New(Options{JSON: true, APIMode: true, Pricing: cat}),
+	out := renderJSONTo(t, New(Options{JSON: true, Pricing: cat}),
 		Result{Query: "q", Providers: []string{"openai"},
 			Responses: []providers.Response{{
 				Provider: "openai", Model: "gpt-test", Status: "success",
-				Metrics: &providers.Metrics{InputTokens: 1_000_000},
+				Transport: "api",
+				Metrics:   &providers.Metrics{InputTokens: 1_000_000},
 			}}})
 
 	if out.Meta.TotalCostPartial {
@@ -142,7 +145,7 @@ func TestCachedHitKeepsStatusSuccessInJSON(t *testing.T) {
 		Response: "an answer",
 		Metrics:  &providers.Metrics{InputTokens: 5, OutputTokens: 7},
 	}
-	out := renderJSONTo(t, New(Options{JSON: true, APIMode: true, Pricing: nil}),
+	out := renderJSONTo(t, New(Options{JSON: true, Pricing: nil}),
 		Result{Query: "q", Providers: []string{"openai"},
 			Responses: []providers.Response{cached}})
 

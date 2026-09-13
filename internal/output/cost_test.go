@@ -20,19 +20,88 @@ func testCatalog() *pricing.Catalog {
 	})
 }
 
+// resp builds a successful API-transport response; cliResp the CLI-transport
+// twin. Since ADR-012 the transport travels on the response, not on the run.
 func resp(provider, model string, in, out int) providers.Response {
 	return providers.Response{
 		Provider: provider, Model: model, Status: "success",
-		Metrics: &providers.Metrics{InputTokens: in, OutputTokens: out},
+		Transport: string(providers.TransportAPI),
+		Metrics:   &providers.Metrics{InputTokens: in, OutputTokens: out},
 	}
+}
+
+func cliResp(provider, model string, in, out int) providers.Response {
+	r := resp(provider, model, in, out)
+	r.Transport = string(providers.TransportCLI)
+	return r
 }
 
 // TestCLIModeNeverShowsDollars defends against the subscription-billing lie:
 // CLI mode pays nothing per token, so a price there would be fiction.
 func TestCLIModeNeverShowsDollars(t *testing.T) {
-	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{resp("openai", "gpt-test", 1000, 1000)}}, false)
+	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{cliResp("openai", "gpt-test", 1000, 1000)}})
 	if c.enabled() {
 		t.Fatalf("CLI mode produced a cost: %v", c.formatTotal())
+	}
+}
+
+// TestUnknownTransportIsNotPriced: a response that does not say how it ran
+// (a provider built outside the registry) must not be billed on a guess.
+func TestUnknownTransportIsNotPriced(t *testing.T) {
+	r := resp("openai", "gpt-test", 1000, 1000)
+	r.Transport = ""
+	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{r}})
+	if c.enabled() {
+		t.Fatalf("unknown transport was priced: %v", c.formatTotal())
+	}
+}
+
+// TestMixedPanelPricesOnlyTheApiLeg is the Praxis shape (ADR-012): gemini on
+// the metered API beside openai and claude on subscriptions. Only gemini may
+// carry a figure, and the subscription legs must not mark the total partial.
+func TestMixedPanelPricesOnlyTheApiLeg(t *testing.T) {
+	cat := pricing.NewCatalog([]pricing.Model{
+		{ID: "google/gemini-test", InputPerM: 1, OutputPerM: 0},
+	})
+	r := Result{Responses: []providers.Response{
+		resp("gemini", "gemini-test", 1_000_000, 0),
+		cliResp("openai", "gpt-test", 1_000_000, 0),
+		cliResp("claude", "claude-unlisted", 1_000_000, 0),
+	}}
+	c := computeCosts(cat, r)
+	if c.byIndex[0] == nil || *c.byIndex[0] != 1 {
+		t.Fatalf("API leg cost = %v, want 1.00", c.byIndex[0])
+	}
+	if c.byIndex[1] != nil || c.byIndex[2] != nil {
+		t.Fatal("a CLI-transport response was priced")
+	}
+	if c.partial {
+		t.Fatal("subscription legs are not unpriceable; the total must not be a floor")
+	}
+	if got := c.formatTotal(); got != "$1.0000" {
+		t.Fatalf("formatTotal = %q, want $1.0000", got)
+	}
+}
+
+// TestCliJudgeIsNotPriced: a judge on the CLI transport (claude on Max beside
+// -g panel members) is subscription-billed like any other CLI leg.
+func TestCliJudgeIsNotPriced(t *testing.T) {
+	r := Result{
+		Responses: []providers.Response{resp("openai", "gpt-test", 1_000_000, 0)},
+		Verdict: &judge.Verdict{
+			JudgeProvider: "claude", JudgeModel: "claude-judge", JudgeTokens: 1_000_000,
+			JudgeTransport: string(providers.TransportCLI),
+		},
+	}
+	c := computeCosts(testCatalog(), r)
+	if c.judge != nil {
+		t.Fatalf("CLI judge was priced: %v", *c.judge)
+	}
+	if c.partial {
+		t.Fatal("a CLI judge is not unpriceable")
+	}
+	if c.total == nil || *c.total != 1 {
+		t.Fatalf("total = %v, want 1.00 (panel only)", c.total)
 	}
 }
 
@@ -40,7 +109,7 @@ func TestCLIModeNeverShowsDollars(t *testing.T) {
 // the catalog has never heard of, which reads as "this was free".
 func TestUnknownPriceIsOmittedNotZero(t *testing.T) {
 	r := Result{Responses: []providers.Response{resp("claude", "claude-unlisted", 1000, 1000)}}
-	c := computeCosts(testCatalog(), r, true)
+	c := computeCosts(testCatalog(), r)
 	if c.byIndex[0] != nil {
 		t.Fatalf("unlisted model was priced: %v", *c.byIndex[0])
 	}
@@ -51,7 +120,7 @@ func TestUnknownPriceIsOmittedNotZero(t *testing.T) {
 
 // TestNilCatalogIsTolerated: the catalog is advisory and may be nil offline.
 func TestNilCatalogIsTolerated(t *testing.T) {
-	c := computeCosts(nil, Result{Responses: []providers.Response{resp("openai", "gpt-test", 10, 10)}}, true)
+	c := computeCosts(nil, Result{Responses: []providers.Response{resp("openai", "gpt-test", 10, 10)}})
 	if c.enabled() {
 		t.Fatal("nil catalog must produce no cost figures")
 	}
@@ -62,9 +131,10 @@ func TestPerResponseAndTotalCost(t *testing.T) {
 		Responses: []providers.Response{resp("openai", "gpt-test", 1_000_000, 100_000)},
 		Verdict: &judge.Verdict{
 			JudgeProvider: "claude", JudgeModel: "claude-judge", JudgeTokens: 1_000_000,
+			JudgeTransport: string(providers.TransportAPI),
 		},
 	}
-	c := computeCosts(testCatalog(), r, true)
+	c := computeCosts(testCatalog(), r)
 	if c.byIndex[0] == nil {
 		t.Fatal("expected a priced response")
 	}
@@ -91,7 +161,7 @@ func TestPartialTotalIsMarked(t *testing.T) {
 		resp("openai", "gpt-test", 1_000_000, 0),
 		resp("claude", "claude-unlisted", 1_000_000, 0),
 	}}
-	c := computeCosts(testCatalog(), r, true)
+	c := computeCosts(testCatalog(), r)
 	if !c.partial {
 		t.Fatal("expected partial=true")
 	}
@@ -114,7 +184,7 @@ func TestFormatUSDSubCentIsNotRoundedToFree(t *testing.T) {
 func TestFailedResponseIsNotBilled(t *testing.T) {
 	bad := resp("openai", "gpt-test", 1_000_000, 1_000_000)
 	bad.Status = "error"
-	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{bad}}, true)
+	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{bad}})
 	if c.enabled() {
 		t.Fatalf("errored response was billed: %v", c.formatTotal())
 	}
@@ -131,7 +201,7 @@ func TestSlashRoutedModelIsPriced(t *testing.T) {
 	r := Result{Responses: []providers.Response{
 		resp("deepseek/deepseek-v4", "deepseek/deepseek-v4", 1_000_000, 1_000_000),
 	}}
-	c := computeCosts(cat, r, true)
+	c := computeCosts(cat, r)
 	if c.byIndex[0] == nil {
 		t.Fatal("an OpenRouter slug the catalog lists was not priced")
 	}
@@ -146,7 +216,7 @@ func TestSlashRoutedModelIsPriced(t *testing.T) {
 func TestCachedResponseIsAKnownZeroNotAnUnknown(t *testing.T) {
 	hit := resp("claude", "claude-unlisted", 1_000_000, 1_000_000)
 	hit.Cached = true
-	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{hit}}, true)
+	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{hit}})
 
 	if c.byIndex[0] == nil {
 		t.Fatal("cached response was treated as unpriceable")
@@ -169,7 +239,7 @@ func TestMixedCachedAndLivePanelTotalsOnlyTheLiveWork(t *testing.T) {
 	cached.Cached = true
 	live := resp("openai", "gpt-test", 1_000_000, 0)
 
-	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{cached, live}}, true)
+	c := computeCosts(testCatalog(), Result{Responses: []providers.Response{cached, live}})
 	if c.total == nil || *c.total < 0.999 || *c.total > 1.001 {
 		t.Fatalf("total = %v, want 1.00 (only the live call)", c.total)
 	}
@@ -211,7 +281,7 @@ func TestHeaderPanelAndFooterBothCarryTheTotal(t *testing.T) {
 		JudgeName: "claude",
 		Responses: []providers.Response{resp("openai", "gpt-test", 1_000_000, 0)},
 	}
-	out := renderStyledTo(t, New(Options{APIMode: true, Pricing: testCatalog()}), r)
+	out := renderStyledTo(t, New(Options{Pricing: testCatalog()}), r)
 
 	if n := strings.Count(out, "Cost:"); n < 2 {
 		t.Fatalf("output carries %d Cost: labels, want the header panel and the footer:\n%s", n, out)
@@ -227,9 +297,9 @@ func TestCLIModeRendersNoCostAnywhere(t *testing.T) {
 	r := Result{
 		Query:     "q",
 		Providers: []string{"openai"},
-		Responses: []providers.Response{resp("openai", "gpt-test", 1_000_000, 0)},
+		Responses: []providers.Response{cliResp("openai", "gpt-test", 1_000_000, 0)},
 	}
-	out := renderStyledTo(t, New(Options{APIMode: false, Pricing: testCatalog()}), r)
+	out := renderStyledTo(t, New(Options{Pricing: testCatalog()}), r)
 
 	if strings.Contains(out, "Cost:") || strings.Contains(out, "$") {
 		t.Fatalf("CLI mode leaked a dollar figure:\n%s", out)

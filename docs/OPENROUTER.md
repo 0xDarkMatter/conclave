@@ -144,6 +144,11 @@ spends no tokens and turns two conditions into a clear stop:
 - `CONCLAVE_EXCLUDE` is irrelevant: OpenRouter models are never auto-included.
 - `--cache` treats a slug like any provider: the key includes the slug and the full prompt, a hit
   costs nothing and never counts toward `--budget`. `--no-cache` overrides an env-enabled cache.
+- `@cli` / `@api` transport suffixes (ADR-012): a slug is API-only, so `deepseek/deepseek-v4@cli`
+  is an error that says so. `deepseek/deepseek-v4@api` is accepted and makes `-g` unnecessary for
+  that token. This is what lets a slug sit beside a subscription CLI in one panel:
+  `conclave deepseek/deepseek-v4@api,claude@cli "..." --judge claude@cli`. The slug stays the
+  provider name in every output; only `responses.<slug>.transport` says `"api"`.
 
 ## 8. Not supported (by design)
 

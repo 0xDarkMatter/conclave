@@ -11,9 +11,12 @@ import (
 // the key because the two paths send materially different requests for the
 // same provider name: a CLI wrapper's coding-tuned system behaviour is not the
 // same product as the raw API, so their answers must never be interchangeable.
+// They are pinned to the providers.Transport strings because, since ADR-012,
+// the mode is read off the provider itself (TransportOf) rather than off a
+// global flag: a mixed panel has no single mode.
 const (
-	ModeCLI = "cli"
-	ModeAPI = "api"
+	ModeCLI = string(providers.TransportCLI)
+	ModeAPI = string(providers.TransportAPI)
 )
 
 // cachedProvider decorates a Provider with a read-through response cache.
@@ -32,9 +35,18 @@ type cachedProvider struct {
 
 // Wrap returns p backed by c. A nil cache returns p untouched, which is what
 // makes the feature opt-in without a branch at every call site.
-func Wrap(p providers.Provider, c *Cache, mode string) providers.Provider {
+//
+// The key's mode component is the provider's OWN transport when it declares
+// one (every registry-built provider does); fallbackMode covers providers
+// built outside the registry (tests, batch injection) and must never win over
+// a declared transport, or a claude@cli answer could be served to claude@api.
+func Wrap(p providers.Provider, c *Cache, fallbackMode string) providers.Provider {
 	if c == nil {
 		return p
+	}
+	mode := fallbackMode
+	if t := providers.TransportOf(p); t != providers.TransportDefault {
+		mode = string(t)
 	}
 	return &cachedProvider{Provider: p, cache: c, mode: mode}
 }
@@ -45,13 +57,13 @@ func Wrap(p providers.Provider, c *Cache, mode string) providers.Provider {
 func (p *cachedProvider) Unwrap() providers.Provider { return p.Provider }
 
 // WrapAll is Wrap over a slice, preserving order.
-func WrapAll(list []providers.Provider, c *Cache, mode string) []providers.Provider {
+func WrapAll(list []providers.Provider, c *Cache, fallbackMode string) []providers.Provider {
 	if c == nil {
 		return list
 	}
 	out := make([]providers.Provider, len(list))
 	for i, p := range list {
-		out[i] = Wrap(p, c, mode)
+		out[i] = Wrap(p, c, fallbackMode)
 	}
 	return out
 }

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-provider transport: a token may carry `@cli` or `@api`
+  (`gemini@api,openai@cli,claude@cli`) to pin that provider to its CLI or its
+  direct API regardless of `-g` / `-c`. Bare tokens are unchanged. Works in the
+  provider list, `--judge` and `-m` (`-m openai@cli:gpt-5.6-sol` and
+  `-m openai:gpt-5.6-sol` both apply). The provider name stays bare in the
+  progress line, the judge label and `--json` keys; `--json` gains
+  `responses.<provider>.transport: "cli" | "api"`. Cost fields, the cache
+  key's mode, the subscription-idle warning and availability errors now
+  follow each provider's actual transport, so a mixed panel prices only its
+  API legs. `deepseek/x@cli` and `glm@api` are errors that say why;
+  `deepseek/x@api` no longer needs `-g`. Motivated by Praxis billing
+  OPENAI_API_KEY and ANTHROPIC_API_KEY on every grade because gemini alone
+  needed the API. ADR-012.
 - API-mode warning when a provider is about to be billed by key while its
   CLI holds a subscription login: `note: openai is running in API mode
   (metered key) while codex is logged in on a subscription; drop -g for
@@ -16,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Advisory, stderr, silenced by `-q` and `--raw` but not by `--json`, since
   the person running a JSON pipeline is the one spending the key. Motivated
   by Praxis billing OPENAI_API_KEY on every grade while the Pro plan sat idle.
+  With per-provider transport the hint is now `write openai@cli to run it on
+  the plan in this panel, or drop -g`, and the warning is decided per
+  provider, so a `claude@cli` beside `-g` panel members is never warned about.
+
+### Changed
+
+- `output.Options.APIMode` is gone (internal). Pricing is decided per
+  response from `Response.Transport`; a response that does not say how it ran
+  is not priced. `cache.Wrap`'s mode argument is now a fallback that a
+  provider's declared transport overrides.
 
 ### Fixed
 

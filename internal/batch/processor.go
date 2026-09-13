@@ -676,8 +676,9 @@ func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.
 	var totalCost float64
 	for _, r := range responses {
 		// A cache hit was not billed by anyone; counting it would inflate the
-		// running total the budget cap reads.
-		if r.Cached || r.Metrics == nil {
+		// running total the budget cap reads. A CLI-transport response (a
+		// "@cli" token in a batch, ADR-012) is subscription-billed: same rule.
+		if r.Cached || r.Metrics == nil || r.Transport == string(providers.TransportCLI) {
 			continue
 		}
 		if cost, ok := p.pricing.CostOf(r.Provider, r.Model, r.Metrics.InputTokens, r.Metrics.OutputTokens); ok {
@@ -690,7 +691,7 @@ func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.
 		}
 	}
 
-	if verdict != nil && verdict.JudgeTokens > 0 {
+	if verdict != nil && verdict.JudgeTokens > 0 && verdict.JudgeTransport != string(providers.TransportCLI) {
 		if cost, ok := p.pricing.JudgeCostOf(verdict.JudgeProvider, verdict.JudgeModel, verdict.JudgeTokens); ok {
 			totalCost += cost
 		} else if c, ok := fallbackCosts[verdict.JudgeProvider]; ok {

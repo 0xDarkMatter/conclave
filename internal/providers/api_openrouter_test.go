@@ -182,7 +182,7 @@ func TestRegistry_SlashRouting(t *testing.T) {
 		if _, err := r.GetProvider(orTestModel, nil); err != nil {
 			t.Errorf("second lookup: %v", err)
 		}
-		if _, cached := r.providers[orTestModel]; !cached {
+		if _, cached := r.api[orTestModel]; !cached {
 			t.Error("slash-routed provider should be cached in the registry")
 		}
 	})

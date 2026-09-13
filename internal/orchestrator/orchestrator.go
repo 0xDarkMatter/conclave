@@ -58,6 +58,9 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 			defer cancel()
 
 			model := provider.DefaultModel()
+			// Recorded per response so pricing can tell a metered API call from
+			// a subscription-billed CLI in the same panel (ADR-012).
+			transport := string(providers.TransportOf(provider))
 			response, duration, metrics, err := provider.Query(providerCtx, prompt, model)
 
 			mu.Lock()
@@ -78,24 +81,26 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 
 			if err != nil {
 				results[idx] = providers.Response{
-					Provider: provider.Name(),
-					Model:    model,
-					Status:   "error",
-					Error:    err.Error(),
-					Duration: duration,
+					Provider:  provider.Name(),
+					Model:     model,
+					Status:    "error",
+					Error:     err.Error(),
+					Duration:  duration,
+					Transport: transport,
 				}
 				if firstError == nil {
 					firstError = fmt.Errorf("%s: %w", provider.Name(), err)
 				}
 			} else {
 				results[idx] = providers.Response{
-					Provider: provider.Name(),
-					Model:    model,
-					Status:   "success",
-					Response: response,
-					Duration: duration,
-					Metrics:  metrics,
-					Cached:   cached,
+					Provider:  provider.Name(),
+					Model:     model,
+					Status:    "success",
+					Response:  response,
+					Duration:  duration,
+					Metrics:   metrics,
+					Cached:    cached,
+					Transport: transport,
 				}
 			}
 		}(i, p)

@@ -8,6 +8,7 @@ Conclave is a Go CLI that queries multiple LLM providers in parallel and synthes
 
 - **CLI Mode** (default): Wraps provider CLIs (`gemini`, `claude`, `codex`, etc.). Exception: `glm` calls the Z.ai Coding Plan over HTTP directly (no CLI binary) — see ADR-007.
 - **API Mode** (`-g`): Direct API calls to providers
+- **Per-provider transport** (`<provider>@cli` / `<provider>@api`): pins one token to a transport regardless of `-g`; bare tokens follow the global mode — see ADR-012.
 
 > Architectural decisions are recorded in `docs/adr/` (the directory is the index). Run `python ~/.claude/skills/adr-ops/scripts/adr-touching.py <path>` to find which ADR governs a file before changing it.
 
@@ -29,7 +30,8 @@ internal/
   progress/        # Terminal progress display
   providers/       # Provider implementations
     provider.go    # Provider interface
-    registry.go    # Provider registration and lookup
+    registry.go    # Provider registration and lookup (holds BOTH sets, picks per token)
+    transport.go   # <provider>[@cli|@api] token grammar, TransportOf (ADR-012)
     gemini.go      # CLI provider
     api_gemini.go  # API provider
     api_openrouter.go  # Slash-routed OpenRouter backend: any vendor/model token in -g mode (ADR-010)
@@ -54,6 +56,10 @@ type Provider interface {
 - CLI providers wrap external commands (`gemini.go`, `claude.go`) and embed `baseProvider`
 - API providers make HTTP calls (`api_gemini.go`, `api_anthropic.go`) and embed `apiBaseProvider`
 - Exception: `glm.go` is a CLI-mode provider that embeds `apiBaseProvider` (HTTP to the Coding Plan endpoint, no binary) — ADR-007
+
+### Per-Provider Transport (`@cli` / `@api`)
+
+`ParseProviderToken` in `transport.go` is the ONLY place the suffix is parsed. The registry holds both provider sets and picks one per token; the resolved provider reports the bare name and carries its transport (`TransportOf`, recoverable through the `Unwrap` chain). The orchestrator copies it onto `Response.Transport`, the judge onto `Verdict.JudgeTransport`, and everything that used to branch on a global "API mode" (pricing in `internal/output/cost.go`, the cache key mode in `internal/cache`, `warnSubscriptionIdle`) reads that instead. Contract and rationale: ADR-012; the trap is Gotcha 12.
 
 ### Slash Routing (OpenRouter)
 
@@ -114,7 +120,8 @@ contract: [docs/CHECK_GATE.md](docs/CHECK_GATE.md).
 | File | Purpose |
 |------|---------|
 | `cmd/root.go` | CLI entry point, flag definitions |
-| `internal/providers/registry.go` | Provider lookup, `AnyAvailable()` |
+| `internal/providers/registry.go` | Provider lookup (dual sets, per-token transport), `AnyAvailable()` |
+| `internal/providers/transport.go` | `ParseProviderToken`, `BareName`, `TransportOf` — the `@cli`/`@api` grammar (ADR-012) |
 | `internal/providers/api_base.go` | Shared API logic, retry handling, `KeyRotator` + OS-keyring fallback |
 | `internal/judge/judge.go` | Verdict synthesis prompt and parsing |
 | `internal/config/env.go` | .env file loading/saving |
@@ -153,4 +160,5 @@ contract: [docs/CHECK_GATE.md](docs/CHECK_GATE.md).
 8. **npm-shim CLIs truncate multi-line arguments on Windows**: `codex` and `gemini` resolve to `.cmd` shims, Go runs them via `cmd.exe`, and `cmd.exe` ends an argument at the first newline. Pass prompts on STDIN (`openai.go` does; pinned by `TestCodexReceivesMultiLinePromptIntact`), never as a positional argument. `claude` is a native exe and unaffected.
 9. **Never prompt without a TTY**: `RunInitIfNeeded` bails when stdin is not a terminal. Subprocess callers (praxis grade) cannot answer a prompt; a prompt there is a hang.
 10. **Slash tokens are API-only**: `vendor/model` provider tokens route through OpenRouter and exist only under `-g` (pay-as-you-go, no subscriptions, ~5% platform fee). CLI mode errors with "add -g". The catalog never rewrites slash tokens, so a slug OpenRouter does not list warns and is still sent through — except as the **judge**, where a catalog miss is refused before the panel spends anything (`--skip-preflight` overrides). The judge is resolved and preflighted before orchestration for the same reason. Do not add a plain `openrouter` provider or put OpenRouter in `AllAPIProviders` — ADR-010 rejected both.
-11. **Response cache** (ADR-011): key = `(mode, provider, model, full prompt incl. `-f`/stdin, system)`, so a changed file is a miss by design; the judge is never cached. Two traps: a hit keeps `status: "success"` and signals only via `cached` (downstream parsers treat any other status as a failed judge; pinned by `TestCachedHitKeepsStatusSuccess`), and every provider decorator must implement `Unwrap() Provider` or `RunPreflight` silently skips that provider's auth check.
+11. **Response cache** (ADR-011): key = `(mode, provider, model, full prompt incl. `-f`/stdin, system)`, so a changed file is a miss by design; the judge is never cached. Two traps: a hit keeps `status: "success"` and signals only via `cached` (downstream parsers treat any other status as a failed judge; pinned by `TestCachedHitKeepsStatusSuccess`), and every provider decorator must implement `Unwrap() Provider` or `RunPreflight` silently skips that provider's auth check. The key's mode component is the provider's own transport (ADR-012), so `cache.Wrap`'s mode argument is only a fallback for undeclared providers.
+12. **The transport suffix never reaches the provider name** (ADR-012): `claude@cli` resolves to a provider whose `Name()` is `claude`. `--json` keys, the progress line, the judge label, `-m` override keys and the pricing catalog all use the bare name; the transport travels separately (`Response.Transport`, `TransportOf`). Do not compare tokens to names (`p.Name() == flagJudge` breaks when the judge is `claude@cli`; use `providers.BareName`), and do not read `flagGeneral` to decide whether a response was billed: since one panel can mix transports, `output.Options.APIMode` no longer exists and any `Response` built outside the orchestrator must set `Transport` or it prices as nothing (pinned by `TestUnknownTransportIsNotPriced`). `glm@api` and `deepseek/x@cli` are errors by design.

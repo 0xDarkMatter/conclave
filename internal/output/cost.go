@@ -3,9 +3,12 @@ package output
 // Dollar figures for a single render pass.
 //
 // Contract:
-//   - Costs are ONLY ever shown in API mode (-g / -c). CLI-mode providers ride
-//     subscriptions, so a per-token price there would be a lie. See the preamble
-//     of docs/MODEL_REGISTRY.md and ADR-009.
+//   - A response is priced ONLY when it ran on the API transport
+//     (Response.Transport == "api"). CLI providers ride subscriptions, so a
+//     per-token price there would be a lie. Since ADR-012 one panel can mix the
+//     two, so this is decided per response, never from a run-wide mode flag.
+//     Unknown transport ("") prices as nothing. See docs/MODEL_REGISTRY.md and
+//     ADR-009.
 //   - The pricing catalog is advisory and may be nil (offline, CONCLAVE_NO_PRICING=1).
 //     A price we cannot look up is OMITTED, never rendered as $0.00 — a printed
 //     zero would read as "this was free", which is the opposite of "unknown".
@@ -35,13 +38,13 @@ type costs struct {
 // enabled reports whether anything cost-related should be rendered.
 func (c costs) enabled() bool { return c.total != nil }
 
-// computeCosts prices a result. Returns the zero value (renders nothing) in
-// CLI mode or when the catalog knows none of the models involved.
-func computeCosts(cat *pricing.Catalog, r Result, apiMode bool) costs {
+// computeCosts prices a result. Returns the zero value (renders nothing) when
+// nothing ran on the API transport or the catalog knows none of the models
+// involved. A CLI-transport response is neither priced nor counted as
+// "unpriceable": it is simply not billed, so it must not turn the total into
+// a floor.
+func computeCosts(cat *pricing.Catalog, r Result) costs {
 	var c costs
-	if !apiMode {
-		return c
-	}
 
 	var sum float64
 	var known bool
@@ -50,6 +53,9 @@ func computeCosts(cat *pricing.Catalog, r Result, apiMode bool) costs {
 	for i, resp := range r.Responses {
 		if resp.Status != "success" {
 			continue // a failed call is not billed for output we never got
+		}
+		if resp.Transport != string(providers.TransportAPI) {
+			continue // subscription-billed (or unknown) transport: no dollars
 		}
 		v, ok := responseCost(cat, resp)
 		if !ok {
@@ -61,7 +67,7 @@ func computeCosts(cat *pricing.Catalog, r Result, apiMode bool) costs {
 		known = true
 	}
 
-	if r.Verdict != nil && r.Verdict.JudgeTokens > 0 {
+	if r.Verdict != nil && r.Verdict.JudgeTokens > 0 && r.Verdict.JudgeTransport == string(providers.TransportAPI) {
 		if v, ok := cat.JudgeCostOf(r.Verdict.JudgeProvider, r.Verdict.JudgeModel, r.Verdict.JudgeTokens); ok {
 			c.judge = &v
 			sum += v

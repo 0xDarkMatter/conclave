@@ -12,39 +12,56 @@ import (
 // registered up front. AllAPIProviders deliberately does NOT include OpenRouter
 // so --all never fans out to the whole catalog; OpenRouterListing exists only
 // so --list-providers and AnyAvailable can show the row.
+//
+// Per-provider transport (ADR-012): the registry holds BOTH provider sets and
+// picks one per token. A bare token follows the global mode (general); a
+// "@cli" / "@api" suffix overrides it for that provider alone. The suffix is
+// stripped here and never reaches Name(); see transport.go.
 
 // Registry manages provider instances
 type Registry struct {
-	config    *config.Config
-	providers map[string]Provider
-	general   bool // true = API mode, false = CLI mode
-	cheap     bool // true = use cheaper/faster models
+	config  *config.Config
+	cli     map[string]Provider // CLI transport, keyed by bare name
+	api     map[string]Provider // API transport, keyed by bare name (+ slash tokens built on demand)
+	general bool                // default transport for bare tokens: true = API, false = CLI
+	cheap   bool                // true = use cheaper/faster models (API transport only)
 }
 
-// NewRegistry creates a new provider registry
-// If general is true, uses API-based providers for general-purpose queries
-// If cheap is true, uses cheaper/faster models for all providers
+// NewRegistry creates a new provider registry.
+// general sets the transport bare tokens resolve to (true = API providers for
+// general-purpose queries, false = CLI wrappers); a token's own @cli/@api
+// suffix wins over it. cheap selects the cheaper/faster models, which exist
+// only for the API transport.
 func NewRegistry(cfg *config.Config, general bool, cheap bool) *Registry {
+	return newRegistryWith(cfg, general, cheap, AllCLIProviders(), AllAPIProviders())
+}
+
+// newRegistryWith is NewRegistry over explicit provider sets. It exists so
+// tests can exercise resolution with fakes that are always available; the
+// real sets depend on installed binaries and configured keys.
+func newRegistryWith(cfg *config.Config, general, cheap bool, cli, api []Provider) *Registry {
 	r := &Registry{
-		config:    cfg,
-		providers: make(map[string]Provider),
-		general:   general,
-		cheap:     cheap,
+		config:  cfg,
+		cli:     make(map[string]Provider),
+		api:     make(map[string]Provider),
+		general: general,
+		cheap:   cheap,
 	}
-
-	// Register providers based on mode
-	var providerList []Provider
-	if general {
-		providerList = AllAPIProviders()
-	} else {
-		providerList = AllCLIProviders()
+	for _, p := range cli {
+		r.cli[p.Name()] = p
 	}
-
-	for _, p := range providerList {
-		r.providers[p.Name()] = p
+	for _, p := range api {
+		r.api[p.Name()] = p
 	}
-
 	return r
+}
+
+// DefaultTransport is the transport a bare token resolves to in this registry.
+func (r *Registry) DefaultTransport() Transport {
+	if r.general {
+		return TransportAPI
+	}
+	return TransportCLI
 }
 
 // AllProviders returns all known providers (CLI mode, for backwards compatibility)
@@ -72,7 +89,7 @@ func AllAPIProviders() []Provider {
 		NewAnthropicAPIProvider(),
 		NewPerplexityAPIProvider(),
 		NewGrokAPIProvider(),
-		// NewGLMAPIProvider(), // Disabled: account balance required
+		// NewGLMAPIProvider(), // Disabled: account balance required (ADR-006)
 	}
 }
 
@@ -100,61 +117,111 @@ func AnyAvailable(general bool) bool {
 	return false
 }
 
-// GetProvider returns a single provider by name. A name containing "/" is an
-// OpenRouter model (API mode only) and is built on first use; see the slash
-// routing note at the top of this file.
-func (r *Registry) GetProvider(name string, modelOverrides map[string]string) (Provider, error) {
-	p, ok := r.providers[name]
-	if !ok && name == OpenRouterListingName {
+// GetProvider returns a single provider by token ("<name>[@cli|@api]"). A
+// name containing "/" is an OpenRouter model (API transport only) and is
+// built on first use; see the slash routing note at the top of this file.
+// The returned provider reports the BARE name and carries its transport for
+// TransportOf. Model overrides are keyed by bare name.
+func (r *Registry) GetProvider(token string, modelOverrides map[string]string) (Provider, error) {
+	name, transport, err := ParseProviderToken(token)
+	if err != nil {
+		return nil, err
+	}
+	explicit := transport != TransportDefault
+	if !explicit {
+		transport = r.DefaultTransport()
+	}
+
+	if name == OpenRouterListingName {
 		return nil, fmt.Errorf("%q is not a provider: name an OpenRouter model as vendor/model, e.g. -g deepseek/deepseek-v4-pro", name)
 	}
-	if !ok && !IsOpenRouterModel(name) && strings.Contains(name, "/") {
+	if !IsOpenRouterModel(name) && strings.Contains(name, "/") {
 		return nil, fmt.Errorf("malformed OpenRouter slug %q: expected vendor/model", name)
 	}
-	if !ok && IsOpenRouterModel(name) {
-		if !r.general {
-			return nil, fmt.Errorf("provider %q is an OpenRouter model (vendor/model) and OpenRouter is API-only: add -g", name)
+
+	var p Provider
+	var ok bool
+	if IsOpenRouterModel(name) {
+		// ParseProviderToken already rejected "@cli" on a slug; this is the
+		// bare-token-in-CLI-mode case.
+		if transport != TransportAPI {
+			return nil, fmt.Errorf("provider %q is an OpenRouter model (vendor/model) and OpenRouter is API-only: add -g or write %s@api", name, name)
 		}
-		op := NewOpenRouterAPIProvider(name)
-		if !op.IsAvailable() {
-			return nil, fmt.Errorf("provider %s not available (%s not set)", name, OpenRouterKeyEnv)
+		if p, ok = r.api[name]; !ok {
+			op := NewOpenRouterAPIProvider(name)
+			if !op.IsAvailable() {
+				return nil, fmt.Errorf("provider %s not available (%s not set)", name, OpenRouterKeyEnv)
+			}
+			// Cache so a token used as both panel member and judge shares one
+			// instance (and one keyring lookup).
+			r.api[name] = op
+			p = op
 		}
-		// Cache so a token used as both panel member and judge shares one
-		// instance (and one keyring lookup).
-		r.providers[name] = op
-		p, ok = op, true
-	}
-	if !ok {
-		return nil, fmt.Errorf("unknown provider: %s", name)
+	} else {
+		set, other := r.cli, r.api
+		if transport == TransportAPI {
+			set, other = r.api, r.cli
+		}
+		if p, ok = set[name]; !ok {
+			if _, known := other[name]; known {
+				return nil, noTransportError(name, transport, explicit)
+			}
+			return nil, fmt.Errorf("unknown provider: %s", name)
+		}
 	}
 
 	if !p.IsAvailable() {
-		if r.general {
+		if transport == TransportAPI {
 			return nil, fmt.Errorf("provider %s not available (API key not set)", name)
 		}
 		return nil, fmt.Errorf("provider %s not available (CLI not installed)", name)
 	}
 
-	// Get model - priority: explicit -m flag > cheap mode > config defaults > provider default
+	// Model priority: explicit -m flag > cheap mode (API transport only) >
+	// config defaults (CLI transport) > provider default.
+	//
+	// The cheap map is API-oriented (ids like gpt-5-nano), so a provider pinned
+	// to @cli under -c gets its normal CLI default instead: a cheap API id fed
+	// to a CLI wrapper is at best ignored and at worst rejected.
 	var model string
 	if override, ok := modelOverrides[name]; ok && override != "" {
-		model = override // Explicit override from -m flag (highest priority)
-	} else if r.cheap {
-		model = r.config.GetCheapModel(name) // Cheap mode: use cheap models
-	} else if !r.general {
-		model = r.config.GetModel(name, "") // CLI mode: use config defaults
+		model = override
+	} else if r.cheap && transport == TransportAPI {
+		model = r.config.GetCheapModel(name)
+	} else if transport == TransportCLI {
+		model = r.config.GetModel(name, "")
 	}
-	// For API mode without explicit override or cheap mode: model stays empty, provider uses its default
+	// API transport without override or cheap mode: empty, provider uses its default.
 
-	return &modelOverrideProvider{Provider: p, model: model}, nil
+	return &modelOverrideProvider{Provider: p, model: model, transport: transport}, nil
 }
 
-// GetProviders returns multiple providers by name
-func (r *Registry) GetProviders(names []string, modelOverrides map[string]string) ([]Provider, error) {
+// noTransportError explains a provider that exists but not on the requested
+// transport. Today that is only glm on the API side (ADR-006), but the shape
+// is generic so a future one-sided provider is described correctly.
+func noTransportError(name string, transport Transport, explicit bool) error {
+	if transport == TransportAPI {
+		reason := "it has no API implementation"
+		if name == "glm" {
+			reason = "its API mode is disabled (ADR-006: pay-as-you-go endpoint latency and balance)"
+		}
+		if explicit {
+			return fmt.Errorf("provider %s@api: %s; use %s@cli (the Coding Plan endpoint) instead", name, reason, name)
+		}
+		return fmt.Errorf("provider %s is not available in API mode: %s; drop -g or write %s@cli", name, reason, name)
+	}
+	if explicit {
+		return fmt.Errorf("provider %s@cli: it has no CLI implementation; use %s@api instead", name, name)
+	}
+	return fmt.Errorf("provider %s is not available in CLI mode: it has no CLI implementation; add -g or write %s@api", name, name)
+}
+
+// GetProviders returns multiple providers by token
+func (r *Registry) GetProviders(tokens []string, modelOverrides map[string]string) ([]Provider, error) {
 	var result []Provider
 
-	for _, name := range names {
-		p, err := r.GetProvider(name, modelOverrides)
+	for _, token := range tokens {
+		p, err := r.GetProvider(token, modelOverrides)
 		if err != nil {
 			return nil, err
 		}
@@ -164,15 +231,21 @@ func (r *Registry) GetProviders(names []string, modelOverrides map[string]string
 	return result, nil
 }
 
-// modelOverrideProvider wraps a provider with a custom model
+// modelOverrideProvider wraps a provider with a custom model and records the
+// transport it was resolved with. It is the ONLY place the transport lives
+// after resolution; Name() stays the bare provider name by design (ADR-012).
 type modelOverrideProvider struct {
 	Provider
-	model string
+	model     string
+	transport Transport
 }
 
 // Unwrap exposes the decorated provider so preflight can find an optional
 // Preflighter that embedding does not promote. See unwrapPreflighter.
 func (p *modelOverrideProvider) Unwrap() Provider { return p.Provider }
+
+// Transport reports how this provider was resolved; see TransportOf.
+func (p *modelOverrideProvider) Transport() Transport { return p.transport }
 
 func (p *modelOverrideProvider) DefaultModel() string {
 	if p.model != "" {

@@ -10,7 +10,8 @@ providers below unless noted. Vendor pages remain the authority for anything Ope
 carry (Perplexity request fees, Gemini long-context multipliers, GLM Coding Plan).
 
 > **Which mode pays these prices.** Every price in this file is pay-as-you-go API pricing and
-> applies to **API mode (`-g`) only**. OpenRouter has no notion of subscriptions. In CLI mode
+> applies to the **API transport only** (`-g`, `-c`, or a `<provider>@api` token; ADR-012 lets one
+> panel mix transports, and only the API legs are priced). OpenRouter has no notion of subscriptions. In CLI mode
 > (the default) each provider's CLI authenticates against a subscription (Claude Max, ChatGPT /
 > Codex, Google account for `gemini`, GLM Coding Plan) and the per-token cost is $0; the
 > subscription is the cost, and rate limits rather than dollars are the constraint. This is the

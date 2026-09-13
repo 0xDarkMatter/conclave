@@ -22,7 +22,10 @@ type Verdict struct {
 	JudgeModel      string        `json:"judge_model"`
 	JudgeDuration   time.Duration `json:"judge_duration_ms"`
 	JudgeTokens     int           `json:"judge_tokens"`
-	RawResponse     string        `json:"-"` // For debugging
+	// JudgeTransport is "cli" or "api" (ADR-012): the judge is priced only
+	// when it ran on the API, exactly like a panel member. Empty = unknown.
+	JudgeTransport string `json:"judge_transport,omitempty"`
+	RawResponse    string `json:"-"` // For debugging
 }
 
 // Judge synthesizes verdicts from multiple provider responses
@@ -59,14 +62,15 @@ func (j *Judge) Synthesize(ctx context.Context, query string, responses []provid
 	if err != nil {
 		// Return partial verdict with raw response
 		return &Verdict{
-			Result:        "PARSE_ERROR",
-			Confidence:    "low",
-			Reasoning:     "Failed to parse judge response: " + err.Error(),
-			RawResponse:   response,
-			JudgeProvider: j.provider.Name(),
-			JudgeModel:    model,
-			JudgeDuration: duration,
-			JudgeTokens:   totalTokens,
+			Result:         "PARSE_ERROR",
+			Confidence:     "low",
+			Reasoning:      "Failed to parse judge response: " + err.Error(),
+			RawResponse:    response,
+			JudgeProvider:  j.provider.Name(),
+			JudgeModel:     model,
+			JudgeDuration:  duration,
+			JudgeTokens:    totalTokens,
+			JudgeTransport: string(providers.TransportOf(j.provider)),
 		}, nil
 	}
 
@@ -74,6 +78,7 @@ func (j *Judge) Synthesize(ctx context.Context, query string, responses []provid
 	verdict.JudgeModel = model
 	verdict.JudgeDuration = duration
 	verdict.JudgeTokens = totalTokens
+	verdict.JudgeTransport = string(providers.TransportOf(j.provider))
 	verdict.RawResponse = response
 
 	return verdict, nil

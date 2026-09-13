@@ -57,6 +57,12 @@ type Response struct {
 	Metrics  *Metrics      `json:"metrics,omitempty"`
 	// Cached mirrors Metrics.Cached so renderers do not have to nil-check.
 	Cached bool `json:"cached,omitempty"`
+	// Transport is "cli" or "api": the path this response actually took
+	// (ADR-012). It is what gates per-response pricing now that one panel can
+	// mix subscription-billed CLIs with metered API calls; a global "API mode"
+	// flag can no longer answer "was this one billed?". Empty means unknown
+	// (a provider built outside the registry), which prices as nothing.
+	Transport string `json:"transport,omitempty"`
 }
 
 // baseProvider provides common functionality

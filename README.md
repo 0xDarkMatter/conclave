@@ -204,7 +204,7 @@ conclave --list-providers      # CLI mode - shows installed CLIs
 conclave --list-providers -g   # API mode - shows configured API keys
 ```
 
-**Tip:** Start with API mode (`-g`) to get running quickly. Add CLI tools later if you want their coding-specific optimizations, or to run on subscriptions instead of metered keys.
+**Tip:** Start with API mode (`-g`) to get running quickly. Add CLI tools later if you want their coding-specific optimizations, or to run on subscriptions instead of metered keys. You can mix the two per provider in one call: `gemini@api,openai@cli,claude@cli` (see [Modes](#modes)).
 
 ## Quick Start
 
@@ -221,7 +221,8 @@ conclave --all "Review this architecture" -f design.md --judge claude
 
 ## Modes
 
-Each provider token is routed by two questions: does it carry a `vendor/model` slug, and is `-g` set?
+Each provider token is routed by three questions: does it carry a `vendor/model` slug, does it
+carry a `@cli` / `@api` suffix, and (only if it does not) is `-g` set?
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/provider-routing-dark.svg">
@@ -266,6 +267,40 @@ conclave -c --all "Summarize" -f doc.md --brief
 | perplexity | sonar-pro | sonar |
 | grok | grok-4.6 | grok-build-0.1 |
 | glm | glm-5.3 | glm-5.3-flash |
+
+### Mixed transports (`<provider>@cli` / `<provider>@api`)
+
+A token can pin its own transport. The suffix overrides `-g` / `-c` for that provider only;
+bare tokens keep following the global mode, so every existing command line means what it
+meant. This is how one panel runs gemini on a metered key (its CLI lost its free tier) beside
+openai and claude on their ChatGPT Pro and Claude Max subscriptions:
+
+```bash
+# gemini on the API, openai and claude on their subscription CLIs, one panel, one JSON
+conclave gemini@api,openai@cli,claude@cli "Grade this answer" --no-judge --json
+
+# The judge and -m take the same grammar
+conclave -g gemini,openai --judge claude@cli -m openai@cli:gpt-5.6-sol "Is this secure?"
+```
+
+Rules:
+
+- **The provider's name stays bare everywhere**: progress line, judge label, and `--json`
+  keys (`responses.openai`, never `responses["openai@cli"]`). `--json` gains
+  `responses.<provider>.transport: "cli" | "api"` so a consumer can tell which leg ran where.
+- **Dollars follow the transport, per response.** A `@cli` leg is subscription-billed and shows
+  no cost field; it does not turn the total into a floor. Only API legs are priced.
+- **`-m` applies by provider, not by spelling**: `-m openai:x` and `-m openai@cli:x` both set
+  openai's model whichever transport it runs on.
+- **`-c` implies API for bare tokens**, as before. A `@cli` provider under `-c` uses its
+  normal CLI default model, because the cheap models are API ids the CLI wrappers cannot use.
+- **`vendor/model` slugs are API-only** ([OpenRouter](docs/OPENROUTER.md)): `deepseek/x@cli`
+  is an error that says why; `deepseek/x@api` works without `-g`.
+- **`glm@api` is refused** (API mode is disabled for glm, ADR-006); use `glm` or `glm@cli`.
+- **`--all` is unchanged** and takes its list from the global mode.
+
+The API-mode warning about an idle subscription now suggests the suffix: `write openai@cli to
+run it on the plan in this panel`. Decision record: [ADR-012](docs/adr/ADR-012-per-provider-transport-suffix.md).
 
 ### Batch Mode (`--batch`)
 
@@ -482,18 +517,21 @@ conclave gemini,claude "Analyze" --judge claude --json | jq '.verdict'
 
 Structured output for scripting and CI/CD integration.
 
-### Cost Fields (API mode only)
+### Cost Fields (API transport only)
 
-In API mode (`-g` / `-c`) conclave prices each response from the cached
-OpenRouter catalog and shows the dollar figure on the provider block, in the
-header panel, and in the `Completed in` footer. `--json` carries the same
-numbers as `responses.<provider>.cost_usd` and `meta.total_cost_usd` (providers
-plus judge).
+Conclave prices each response that ran on the API (`-g` / `-c`, or a
+`<provider>@api` token) from the cached OpenRouter catalog and shows the dollar
+figure on the provider block, in the header panel, and in the `Completed in`
+footer. `--json` carries the same numbers as `responses.<provider>.cost_usd`
+and `meta.total_cost_usd` (providers plus judge), and says which leg ran where
+in `responses.<provider>.transport`.
 
 Three rules govern the numbers:
 
-- **CLI mode shows nothing about dollars.** Those providers ride subscriptions
+- **A CLI leg shows nothing about dollars.** Those providers ride subscriptions
   (Claude Max, Codex, the GLM Coding Plan), so a per-token price would be fiction.
+  In a mixed panel (`gemini@api,claude@cli`) only the API leg carries a figure,
+  and the CLI leg does not mark the total as understated.
 - **An unknown price is omitted, never printed as `$0.00`.** If the catalog is
   offline, disabled with `CONCLAVE_NO_PRICING=1`, or simply does not list the
   model, the field is absent. A displayed zero always means a real zero.
@@ -569,11 +607,13 @@ Query Flags:
   -j, --judge <provider> LLM that synthesizes verdict (default: claude)
       --no-judge         Skip synthesis, return raw responses
   -t, --timeout <secs>   Per-provider timeout (default: 60)
-  -m, --model <p:model>  Override model for provider
+  -m, --model <p:model>  Override model for provider (p@cli:model / p@api:model also accepted)
 
 Mode Flags:
   -g, --general          Use API mode (no coding restrictions)
   -c, --cheap            Cheap mode: smaller/faster models, implies -g
+  <provider>@cli|@api    Per-token transport, overrides -g/-c for that provider only
+                         (works in the provider list, --judge and -m; see Modes)
   -a, --all              Query all available providers
       --blind            Anonymize providers for unbiased judging
 
@@ -714,7 +754,9 @@ Diagram sources live in [`docs/diagrams/src/`](docs/diagrams/src/); `python docs
 ## Using Conclave from agents and scripts
 
 `--json` is the contract for callers: additive fields only, `status` is always `"success"` or
-`"error"` per provider (a cache hit stays `"success"` and adds `cached: true`), and
+`"error"` per provider (a cache hit stays `"success"` and adds `cached: true`),
+`responses.<provider>` is keyed by the bare provider name even when the token carried
+`@cli` / `@api` (the transport is in `responses.<provider>.transport`), and
 `execution.timeout_seconds` reports the real `-t`. Pair `--no-judge` with your own
 aggregation when you want a majority vote across runs, and `--raw` when you want the
 bodies with no parsing at all. Nothing is ever prompted for when stdin is not a terminal.
@@ -724,7 +766,8 @@ bodies with no parsing at all. Nothing is ever prompted for when stdin is not a 
 Key design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/) — dual provider
 modes, the LLM-as-judge synthesis, parallel/per-provider timeouts, the shared HTTP
 client, credential precedence + OS-keyring fallback, the GLM Coding Plan transport, the
-runtime pricing catalog, OpenRouter slash routing, and the opt-in response cache.
+runtime pricing catalog, OpenRouter slash routing, the opt-in response cache, and the
+per-provider `@cli` / `@api` transport suffix.
 
 ## License
 

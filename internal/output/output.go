@@ -26,10 +26,10 @@ type Options struct {
 	Timeout  int
 
 	// Pricing is the advisory OpenRouter catalog; nil is normal and means no
-	// dollar figures are shown. APIMode gates dollars entirely: CLI mode is
-	// subscription-billed, so it must never display a per-token price.
+	// dollar figures are shown. Which responses get a figure is decided per
+	// response by Response.Transport (ADR-012): CLI transport is
+	// subscription-billed and never shows a per-token price.
 	Pricing *pricing.Catalog
-	APIMode bool
 }
 
 // Result holds all data for output
@@ -83,10 +83,10 @@ func (f *Formatter) Render(r Result) error {
 // output and the template data model already read.
 //
 // Two CLI-mode providers (claude.go, perplexity.go) report a cost of their own
-// there. They are never overwritten, because this only runs in API mode where
-// those providers are not used.
+// there. They are never overwritten, because computeCosts prices only
+// API-transport responses and leaves every other entry nil.
 func (f *Formatter) priceResult(r Result) costs {
-	c := computeCosts(f.opts.Pricing, r, f.opts.APIMode)
+	c := computeCosts(f.opts.Pricing, r)
 	for i, v := range c.byIndex {
 		if v != nil && r.Responses[i].Metrics != nil {
 			r.Responses[i].Metrics.CostUSD = *v
@@ -380,6 +380,9 @@ type ResponseJSON struct {
 	DurationMs int64  `json:"duration_ms"`
 	// Cached marks an answer served from conclave's response store (--cache).
 	Cached bool `json:"cached,omitempty"`
+	// Transport is "cli" or "api": which path this provider ran on (ADR-012).
+	// Additive; the map key stays the bare provider name.
+	Transport string `json:"transport,omitempty"`
 	// CostUSD is a POINTER on purpose: nil means "price unknown" (no catalog
 	// entry, no token metrics, or CLI mode) while 0 means a genuine zero.
 	// A plain float64 with omitempty could not tell those apart.
@@ -427,6 +430,7 @@ func (f *Formatter) renderJSON(r Result, c costs) error {
 			Error:      resp.Error,
 			DurationMs: resp.Duration.Milliseconds(),
 			Cached:     resp.Cached,
+			Transport:  resp.Transport,
 		}
 		if i < len(c.byIndex) {
 			rj.CostUSD = c.byIndex[i]

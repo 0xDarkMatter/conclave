@@ -107,7 +107,10 @@ Examples:
   conclave --all --general "Explain the trolley problem" --judge claude
 
   # Any OpenRouter model: a vendor/model token routes through OpenRouter (API mode only)
-  conclave -g deepseek/deepseek-v4-pro,anthropic/claude-opus-5 "Compare these" --judge openai/gpt-5.6-sol`,
+  conclave -g deepseek/deepseek-v4-pro,anthropic/claude-opus-5 "Compare these" --judge openai/gpt-5.6-sol
+
+  # Mixed transports: pin a provider to its CLI (subscription) or API (metered key) per token
+  conclave gemini@api,openai@cli,claude@cli "Grade this answer" --no-judge --json`,
 	Args: func(cmd *cobra.Command, args []string) error {
 		// Allow no args if --list-providers is set
 		listProviders, _ := cmd.Flags().GetBool("list-providers")
@@ -151,7 +154,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&flagJudge, "judge", "j", "claude", "LLM that synthesizes verdict")
 	rootCmd.Flags().BoolVar(&flagNoJudge, "no-judge", false, "Return raw results, skip synthesis")
 	rootCmd.Flags().IntVarP(&flagTimeout, "timeout", "t", 60, "Per-provider timeout in seconds")
-	rootCmd.Flags().StringSliceVarP(&flagModel, "model", "m", nil, "Override model for provider (format: provider:model)")
+	rootCmd.Flags().StringSliceVarP(&flagModel, "model", "m", nil, "Override model for provider (format: provider:model; provider@cli:model also accepted, the override applies on either transport)")
 	rootCmd.Flags().BoolVar(&flagJSON, "json", false, "Output structured JSON")
 	rootCmd.Flags().BoolVar(&flagVerbose, "verbose", false, "Include full provider responses")
 	rootCmd.Flags().BoolVar(&flagBrief, "brief", false, "Short verdict only")
@@ -237,8 +240,11 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		flagGeneral = true
 	}
 
-	// Auto-trigger init if no providers configured
-	if !providers.AnyAvailable(flagGeneral) {
+	// Auto-trigger init if no providers configured. A token pinned with
+	// @api or @cli (ADR-012) may be satisfied by the OTHER transport's setup,
+	// so when any suffix appears both transports count as "configured".
+	pinned := len(args) > 0 && strings.Contains(args[0], "@")
+	if !providers.AnyAvailable(flagGeneral) && !(pinned && providers.AnyAvailable(!flagGeneral)) {
 		if RunInitIfNeeded(flagGeneral) {
 			// Re-check after init
 			if !providers.AnyAvailable(flagGeneral) {
@@ -253,8 +259,10 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("config error: %w", err)
 	}
 
-	// Parse providers and prompt based on --all flag
-	var providerNames []string
+	// Parse providers and prompt based on --all flag. providerTokens keeps any
+	// @cli/@api suffix for the registry; output surfaces use the BARE names
+	// the resolved providers report (see providerNamesOf).
+	var providerTokens []string
 	var prompt string
 
 	if flagAll {
@@ -276,10 +284,10 @@ func runConclave(cmd *cobra.Command, args []string) error {
 
 		for _, p := range allProviders {
 			if p.IsAvailable() && !excluded[p.Name()] {
-				providerNames = append(providerNames, p.Name())
+				providerTokens = append(providerTokens, p.Name())
 			}
 		}
-		if len(providerNames) == 0 {
+		if len(providerTokens) == 0 {
 			if flagGeneral {
 				return fmt.Errorf("no providers available (check API keys; --all never includes OpenRouter vendor/model tokens, name them explicitly)")
 			}
@@ -293,10 +301,10 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		// otherwise be sent to OpenRouter verbatim and rejected.
 		for _, n := range strings.Split(args[0], ",") {
 			if n = strings.TrimSpace(n); n != "" {
-				providerNames = append(providerNames, n)
+				providerTokens = append(providerTokens, n)
 			}
 		}
-		if len(providerNames) == 0 {
+		if len(providerTokens) == 0 {
 			return fmt.Errorf("no providers given")
 		}
 		if len(args) > 1 {
@@ -328,7 +336,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 
 	// Handle batch mode
 	if flagBatch != "" {
-		return runBatchMode(cmd, cfg, providerNames, prompt, modelOverrides, catalog, responseCache)
+		return runBatchMode(cmd, cfg, providerTokens, prompt, modelOverrides, catalog, responseCache)
 	}
 
 	// Build context from stdin and files
@@ -349,10 +357,14 @@ func runConclave(cmd *cobra.Command, args []string) error {
 
 	// Get provider instances
 	registry := providers.NewRegistry(cfg, flagGeneral, flagCheap)
-	providerList, err := registry.GetProviders(providerNames, modelOverrides)
+	providerList, err := registry.GetProviders(providerTokens, modelOverrides)
 	if err != nil {
 		return err
 	}
+	// Bare names for every output surface: a transport suffix must never
+	// leak into --json keys, the judge label or execution.providers (ADR-012).
+	providerNames := providerNamesOf(providerList)
+	judgeName := providers.BareName(flagJudge)
 
 	// Resolve the judge BEFORE the panel runs. A judge that cannot be built
 	// (mode, missing key, malformed slug) must fail before any provider is
@@ -434,13 +446,12 @@ func runConclave(cmd *cobra.Command, args []string) error {
 			Blind:   flagBlind,
 			Timeout: flagTimeout,
 			Pricing: catalog,
-			APIMode: flagGeneral,
 		})
 		_ = out.Render(output.Result{
 			Query:     prompt,
 			Context:   ctx,
 			Providers: providerNames,
-			JudgeName: flagJudge,
+			JudgeName: judgeName,
 			Responses: results,
 			Blind:     flagBlind,
 			Timeout:   flagTimeout,
@@ -472,16 +483,15 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		Raw:     flagRaw,
 		Blind:   flagBlind,
 		Timeout: flagTimeout,
-		// Dollars are API-mode only; flagCheap already implies flagGeneral.
+		// Dollars are decided per response from Response.Transport (ADR-012).
 		Pricing: catalog,
-		APIMode: flagGeneral,
 	})
 
 	return out.Render(output.Result{
 		Query:     prompt,
 		Context:   ctx,
 		Providers: providerNames,
-		JudgeName: flagJudge,
+		JudgeName: judgeName,
 		Responses: results,
 		Verdict:   verdict,
 		Blind:     flagBlind,
@@ -512,6 +522,7 @@ func listProviders() {
 	printOpenRouterNote()
 	fmt.Println()
 	fmt.Println("Use -g to query in API mode; default is CLI mode.")
+	fmt.Println("Pin one provider to a transport with <name>@cli or <name>@api, e.g. gemini@api,openai@cli,claude@cli.")
 }
 
 // apiProviderListing is AllAPIProviders plus the non-routable "openrouter"
@@ -554,12 +565,27 @@ func withJudge(panel []providers.Provider, judge providers.Provider) []providers
 	return append(out, judge)
 }
 
+// providerNamesOf lists the bare names the resolved providers report, in
+// panel order. This is what output surfaces get instead of the raw tokens.
+func providerNamesOf(list []providers.Provider) []string {
+	names := make([]string, 0, len(list))
+	for _, p := range list {
+		names = append(names, p.Name())
+	}
+	return names
+}
+
+// parseModelOverrides maps "provider:model" pairs by BARE provider name. A
+// transport suffix on the key ("openai@cli:gpt-5.6-sol") is accepted and
+// dropped: the override applies to that provider whichever transport it runs
+// on, because the registry keys overrides by name (ADR-012). A malformed
+// suffix keeps the raw key so it simply matches nothing rather than aborting.
 func parseModelOverrides(overrides []string) map[string]string {
 	result := make(map[string]string)
 	for _, o := range overrides {
 		parts := strings.SplitN(o, ":", 2)
 		if len(parts) == 2 {
-			result[parts[0]] = parts[1]
+			result[providers.BareName(parts[0])] = parts[1]
 		}
 	}
 	return result
@@ -596,12 +622,15 @@ func loadCatalog(cmd *cobra.Command) *pricing.Catalog {
 // machine format where a stray line would be noise.
 // warnSubscriptionIdle prints one stderr line per provider that is about to be
 // billed by API key while its CLI holds a subscription login (codex on ChatGPT
-// Pro, claude on Claude Max). API mode only; -q and --raw silence it, --json
-// does not, because the person running a --json pipeline is exactly who needs
-// to see that the metered key is being spent. Advisory: the query proceeds.
+// Pro, claude on Claude Max). Decided per provider from its actual transport
+// (ADR-012), so a claude@cli beside a -g panel is never warned about. -q and
+// --raw silence it, --json does not, because the person running a --json
+// pipeline is exactly who needs to see that the metered key is being spent.
+// Advisory: the query proceeds. The remedy named is the per-provider suffix,
+// which fixes the one provider without moving the whole panel off the API.
 func warnSubscriptionIdle(cmd *cobra.Command, providerList []providers.Provider) {
 	ctx := cmd.Context()
-	if !flagGeneral || flagQuiet || flagRaw {
+	if flagQuiet || flagRaw {
 		return
 	}
 	seen := map[string]bool{}
@@ -610,12 +639,15 @@ func warnSubscriptionIdle(cmd *cobra.Command, providerList []providers.Provider)
 		if seen[name] || (name != "openai" && name != "claude") {
 			continue
 		}
+		if providers.TransportOf(p) != providers.TransportAPI {
+			continue
+		}
 		seen[name] = true
 		if !providers.SubscriptionLoggedIn(ctx, name) {
 			continue
 		}
 		cli := map[string]string{"openai": "codex", "claude": "claude"}[name]
-		fmt.Fprintf(os.Stderr, "  note: %s is running in API mode (metered key) while %s is logged in on a subscription; drop -g for %s to run on the plan.\n", name, cli, name)
+		fmt.Fprintf(os.Stderr, "  note: %s is running on the API (metered key) while %s is logged in on a subscription; write %s@cli to run it on the plan in this panel, or drop -g.\n", name, cli, name)
 	}
 }
 
@@ -775,10 +807,14 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 	return nil
 }
 
-// cacheMode is the mode component of the response-cache key. CLI and API paths
-// send materially different requests for the same provider name, so their
-// answers must never be interchangeable.
 // === Response cache resolution ===
+
+// cacheMode is the FALLBACK mode component of the response-cache key, used
+// only for a provider that does not declare its own transport. Every
+// registry-built provider does (ADR-012), and cache.Wrap reads that first, so
+// a claude@cli answer is keyed "cli" even under -g. CLI and API paths send
+// materially different requests for the same provider name, so their answers
+// must never be interchangeable.
 
 func cacheMode() string {
 	if flagGeneral {
