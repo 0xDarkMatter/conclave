@@ -13,7 +13,6 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 )
@@ -39,13 +38,10 @@ func SubscriptionLoggedIn(ctx context.Context, provider string) bool {
 		if err != nil {
 			return false
 		}
-		var status struct {
-			LoggedIn bool `json:"loggedIn"`
-		}
-		if json.Unmarshal([]byte(out), &status) != nil {
-			return false
-		}
-		return status.LoggedIn
+		// Shared with Preflight: locates the object rather than trusting the
+		// whole buffer to be JSON (stray CLI diagnostics land on stdout).
+		loggedIn, err := parseClaudeAuthStatus(out)
+		return err == nil && loggedIn
 	}
 	return false
 }

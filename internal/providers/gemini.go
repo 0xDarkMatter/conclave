@@ -114,10 +114,21 @@ func (p *GeminiProvider) Query(ctx context.Context, prompt string, model string)
 		return output, duration, nil, err
 	}
 
-	// Parse JSON to extract response and metrics
+	// Parse JSON to extract response and metrics. Located, not assumed: like
+	// claude (Gotcha 13), a CLI that promises JSON can still print a
+	// diagnostic line on stdout, and a strict Unmarshal of the whole buffer
+	// would then hand the noise plus the raw envelope back as the answer.
+	// Pinned by TestGeminiCLIIgnoresStdoutNoiseAroundJSON.
 	var result geminiJSONOutput
-	if jsonErr := json.Unmarshal([]byte(output), &result); jsonErr != nil {
-		// If JSON parsing fails, return raw output
+	_, ok := findJSONObject(output, func(raw json.RawMessage, fields map[string]json.RawMessage) bool {
+		if _, has := fields["response"]; !has {
+			return false
+		}
+		result = geminiJSONOutput{}
+		return json.Unmarshal(raw, &result) == nil
+	})
+	if !ok {
+		// No envelope anywhere: return raw output
 		return output, duration, nil, nil
 	}
 
