@@ -64,7 +64,12 @@ func (p *ClaudeProvider) Preflight(ctx context.Context) error {
 // stdout noise that broke JSON parsing in the first place. For a judge panel
 // that is answer contamination. Each flag is load-bearing (ADR-013):
 //   - --strict-mcp-config with no --mcp-config: zero MCP servers.
-//   - --setting-sources user: no project/local settings, hence no hooks.
+//   - --setting-sources "" (empty list): no user, project or local settings,
+//     hence no hooks, output styles or user-level instruction files. Measured
+//     2026-09-13: "user" alone injected ~52k prompt tokens per query (56,855
+//     vs 4,752 cache-creation tokens for "hi") and answered in the user's
+//     configured persona. OAuth subscription auth survives the empty list;
+//     it is only --bare that drops it.
 //   - --no-session-persistence: a panel query is not a resumable session.
 //
 // Deliberately NOT --bare: it does all of the above but also disables OAuth,
@@ -72,7 +77,7 @@ func (p *ClaudeProvider) Preflight(ctx context.Context) error {
 // The caller's CLAUDE.md is skipped by running in claudeWorkDir instead.
 var claudeIsolationArgs = []string{
 	"--strict-mcp-config",
-	"--setting-sources", "user",
+	"--setting-sources", "",
 	"--no-session-persistence",
 }
 

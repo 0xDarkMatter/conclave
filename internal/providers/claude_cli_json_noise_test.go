@@ -172,9 +172,19 @@ func TestClaudeCLIRunsIsolatedFromCallerContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fake claude failed: %v (%q)", err, out)
 	}
-	for _, want := range []string{"--strict-mcp-config", "--setting-sources", "user", "--no-session-persistence", "--output-format", "json"} {
+	for _, want := range []string{"--strict-mcp-config", "--setting-sources", "--no-session-persistence", "--output-format", "json"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("argv missing %q:\n%s", want, out)
+		}
+	}
+	// The setting-sources value must be the EMPTY list. "user" alone costs
+	// ~52k prompt tokens per query and applies the user's persona (ADR-013).
+	// The empty argument itself is not legible in the echoed argv (cmd.exe
+	// prints "ECHO is off." for it), so assert the absence of every named
+	// source instead.
+	for _, src := range []string{"user", "project", "local"} {
+		if strings.Contains(out, "\n"+src+"\n") || strings.Contains(out, "\n"+src+"\r\n") {
+			t.Errorf("--setting-sources must be empty, saw %q:\n%s", src, out)
 		}
 	}
 	if strings.Contains(out, "--bare") {
