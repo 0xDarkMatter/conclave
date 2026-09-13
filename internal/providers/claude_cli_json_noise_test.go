@@ -156,6 +156,38 @@ func TestClaudePreflightToleratesStdoutNoise(t *testing.T) {
 	}
 }
 
+// TestClaudeCLIRunsIsolatedFromCallerContext pins ADR-013: every panel query
+// passes the isolation flags and runs in conclave's neutral directory, not
+// the caller's. The fake prints its argv and cwd as plain text (no envelope),
+// which Query hands back verbatim, so the assertion reads the real command
+// line the CLI would have seen. A regression that drops a flag, or "tidies"
+// the cwd away, fails here.
+func TestClaudeCLIRunsIsolatedFromCallerContext(t *testing.T) {
+	dir := t.TempDir()
+	writeExec(t, filepath.Join(dir, "claude"), "#!/bin/sh\nprintf '%s\n' \"$@\"\npwd\n")
+	writeExec(t, filepath.Join(dir, "claude.cmd"), "@echo off\r\nfor %%a in (%*) do echo %%~a\r\necho %CD%\r\n")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	out, _, _, err := NewClaudeProvider().Query(context.Background(), "hi", "m")
+	if err != nil {
+		t.Fatalf("fake claude failed: %v (%q)", err, out)
+	}
+	for _, want := range []string{"--strict-mcp-config", "--setting-sources", "user", "--no-session-persistence", "--output-format", "json"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("argv missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "--bare") {
+		t.Error("--bare disables OAuth and breaks subscription auth; never pass it (Gotcha 7)")
+	}
+	if !strings.Contains(out, "conclave-claude-cwd") {
+		t.Errorf("claude did not run in the neutral cwd:\n%s", out)
+	}
+	if wd, _ := os.Getwd(); wd != "" && strings.Contains(out, wd) {
+		t.Errorf("claude ran in the caller's cwd %s, which leaks project context:\n%s", wd, out)
+	}
+}
+
 // TestParseClaudeJSONOutputLocatesEnvelope covers the shapes the locator must
 // survive beyond the live incident: clean output, noise on both sides,
 // structured (JSON-shaped) noise including a decoy with a "result" key, a

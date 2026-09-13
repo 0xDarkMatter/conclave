@@ -99,41 +99,47 @@ func runCommandCombined(ctx context.Context, name string, args ...string) (strin
 	return strings.TrimSpace(string(out)), err
 }
 
-// runCommandStdout is runCommand, except stdout is returned even when the
-// command fails. For CLIs that write a structured error envelope to stdout
-// and exit non-zero (claude --output-format json does), where the envelope
-// carries the message the user needs. The error still includes stderr.
-func runCommandStdout(ctx context.Context, name string, args []string, stdin io.Reader) (string, error) {
-	return runCommandCore(ctx, name, args, stdin, nil, true)
+// cmdOptions tunes runCommandWith. The zero value is runCommand's behaviour.
+type cmdOptions struct {
+	stdin    io.Reader
+	extraEnv []string // KEY=VALUE pairs appended to the inherited environment; later wins
+	dir      string   // working directory; "" inherits the parent's
+	// keepStdoutOnErr returns a failing command's stdout instead of "". For
+	// CLIs that write a structured error envelope to stdout and exit non-zero
+	// (claude --output-format json does), where the envelope carries the
+	// message the user needs. The error still includes stderr either way.
+	keepStdoutOnErr bool
 }
 
 // runCommandEnv is runCommand with extra KEY=VALUE pairs appended to the
 // child's environment (the parent environment is inherited; later entries win).
 func runCommandEnv(ctx context.Context, name string, args []string, stdin io.Reader, extraEnv []string) (string, error) {
-	return runCommandCore(ctx, name, args, stdin, extraEnv, false)
+	return runCommandWith(ctx, name, args, cmdOptions{stdin: stdin, extraEnv: extraEnv})
 }
 
-// runCommandCore runs the command; keepStdoutOnErr decides whether a failing
-// command's stdout is returned ("" otherwise, the contract every other caller
-// relies on: an error means no usable output).
-func runCommandCore(ctx context.Context, name string, args []string, stdin io.Reader, extraEnv []string, keepStdoutOnErr bool) (string, error) {
+// runCommandWith runs the command with the given options. Every other
+// runCommand* is a wrapper over this; keep the exec logic here only.
+func runCommandWith(ctx context.Context, name string, args []string, o cmdOptions) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
-	if len(extraEnv) > 0 {
-		cmd.Env = append(os.Environ(), extraEnv...)
+	if len(o.extraEnv) > 0 {
+		cmd.Env = append(os.Environ(), o.extraEnv...)
+	}
+	if o.dir != "" {
+		cmd.Dir = o.dir
 	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	if stdin != nil {
-		cmd.Stdin = stdin
+	if o.stdin != nil {
+		cmd.Stdin = o.stdin
 	}
 
 	err := cmd.Run()
 	if err != nil {
 		out := ""
-		if keepStdoutOnErr {
+		if o.keepStdoutOnErr {
 			out = strings.TrimSpace(stdout.String())
 		}
 		// Include stderr in error message for debugging

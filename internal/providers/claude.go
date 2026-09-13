@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -53,24 +55,58 @@ func (p *ClaudeProvider) Preflight(ctx context.Context) error {
 	return nil
 }
 
+// claudeIsolationArgs keep a panel query independent of wherever conclave
+// happens to be invoked. Without them `claude --print` behaves like an
+// interactive session started in the caller's directory: it loads that
+// project's settings and hooks, and every configured MCP server. Observed
+// 2026-09-13: a bare "hi" answered with a description of the caller's git
+// worktree, citing a startup hook, and MCP handshakes added seconds plus the
+// stdout noise that broke JSON parsing in the first place. For a judge panel
+// that is answer contamination. Each flag is load-bearing (ADR-013):
+//   - --strict-mcp-config with no --mcp-config: zero MCP servers.
+//   - --setting-sources user: no project/local settings, hence no hooks.
+//   - --no-session-persistence: a panel query is not a resumable session.
+//
+// Deliberately NOT --bare: it does all of the above but also disables OAuth,
+// which would push claude off the subscription onto an API key (Gotcha 7).
+// The caller's CLAUDE.md is skipped by running in claudeWorkDir instead.
+var claudeIsolationArgs = []string{
+	"--strict-mcp-config",
+	"--setting-sources", "user",
+	"--no-session-persistence",
+}
+
+// claudeWorkDir is the neutral working directory for `claude --print`: an
+// empty directory conclave owns, so CLAUDE.md auto-discovery finds nothing.
+// Falls back to the caller's cwd only if the directory cannot be created;
+// the isolation flags still apply then. Explicit context reaches the panel
+// through -f / stdin, never through the cwd.
+func claudeWorkDir() string {
+	dir := filepath.Join(os.TempDir(), "conclave-claude-cwd")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return ""
+	}
+	return dir
+}
+
 // Query executes a prompt using Claude CLI with JSON output for metrics
-// Command: claude --print "{prompt}" --model {model} --output-format json
+// Command: claude --print "{prompt}" --model {model} --output-format json <isolation flags>
 func (p *ClaudeProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
 	}
 
 	start := time.Now()
-	args := []string{
+	args := append([]string{
 		"--print", prompt,
 		"--model", model,
 		"--output-format", "json",
-	}
-	// runCommandStdout, not runCommand: on an API error (unknown model, 404,
-	// quota) the CLI exits 1 but still writes its envelope to stdout, and that
-	// envelope's `result` is the only human-readable message. runCommand would
-	// discard it and leave the caller with "exit status 1".
-	output, err := runCommandStdout(ctx, "claude", args, nil)
+	}, claudeIsolationArgs...)
+	// keepStdoutOnErr: on an API error (unknown model, 404, quota) the CLI
+	// exits 1 but still writes its envelope to stdout, and that envelope's
+	// `result` is the only human-readable message. runCommand would discard
+	// it and leave the caller with "exit status 1".
+	output, err := runCommandWith(ctx, "claude", args, cmdOptions{dir: claudeWorkDir(), keepStdoutOnErr: true})
 	duration := time.Since(start)
 
 	if err != nil {
