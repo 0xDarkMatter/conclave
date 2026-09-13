@@ -34,3 +34,5 @@ config.yaml
 .grok/
 .opencode/
 .gemini/
+.claude/fleet/
+.fleet-worktrees/
