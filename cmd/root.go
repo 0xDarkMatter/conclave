@@ -118,31 +118,37 @@ Examples:
 			return nil
 		}
 
-		// With --batch and --all, prompt is optional (can be in JSONL)
+		// Upper bounds matter as much as lower ones: runConclave reads only the
+		// positions below, so a surplus word was silently dropped. An unquoted
+		// prompt lost everything after its first word, `--cache 6h` turned the
+		// TTL into an ignored argument, and `--all gemini "prompt"` sent the
+		// word "gemini" as the prompt (TestSurplusPositionalArgsAreRejected).
 		batchFile, _ := cmd.Flags().GetString("batch")
 		all, _ := cmd.Flags().GetBool("all")
-		if batchFile != "" && all {
-			return nil // Prompt can be in JSONL or on command line
-		}
-
-		// With --all, only need 1 arg (the prompt)
-		if all {
-			if len(args) < 1 {
-				return fmt.Errorf("requires prompt argument when using --all")
+		const quoteHint = `quote a prompt that contains spaces, and give a TTL as --cache=6h`
+		switch {
+		case batchFile != "" && all: // prompt optional: it can come from the JSONL
+			if len(args) > 1 {
+				return fmt.Errorf("--batch --all takes at most one argument, the prompt; got %d (%s)", len(args), quoteHint)
 			}
-			return nil
-		}
-
-		// With --batch, need providers and optional prompt
-		if batchFile != "" {
+		case all:
+			if len(args) != 1 {
+				return fmt.Errorf("--all takes exactly one argument, the prompt (it queries every available provider); got %d (%s)", len(args), quoteHint)
+			}
+		case batchFile != "": // providers, then an optional prompt
 			if len(args) < 1 {
 				return fmt.Errorf("requires providers argument when using --batch (or use --all)")
 			}
-			return nil // Prompt optional with --batch
-		}
-
-		if len(args) < 2 {
-			return fmt.Errorf("requires at least 2 args: <providers> <prompt>")
+			if len(args) > 2 {
+				return fmt.Errorf("--batch takes <providers> and an optional <prompt>; got %d arguments (%s)", len(args), quoteHint)
+			}
+		default:
+			if len(args) < 2 {
+				return fmt.Errorf("requires at least 2 args: <providers> <prompt>")
+			}
+			if len(args) > 2 {
+				return fmt.Errorf("expected <providers> <prompt>, got %d arguments (%s)", len(args), quoteHint)
+			}
 		}
 		return nil
 	},

@@ -81,3 +81,48 @@ func TestConfigDefaultsApplyUnlessTheFlagWasGiven(t *testing.T) {
 		t.Fatalf("an explicit flag lost to config: timeout=%d judge=%q max-context=%d", flagTimeout, flagJudge, flagMaxContext)
 	}
 }
+
+// TestSurplusPositionalArgsAreRejected: Args had no upper bound, and runConclave
+// reads only args[1] (or args[0] with --all). An unquoted prompt was cut to its
+// first word, `--cache 6h` turned "6h" into a silently ignored argument, and
+// `--all gemini "the prompt"` sent the word "gemini" as the prompt.
+func TestSurplusPositionalArgsAreRejected(t *testing.T) {
+	cases := []struct {
+		name  string
+		flags map[string]string
+		args  []string
+		ok    bool
+	}{
+		{"providers + prompt", nil, []string{"gemini", "hi"}, true},
+		{"unquoted prompt", nil, []string{"gemini", "what", "is", "this"}, false},
+		{"stray cache ttl", nil, []string{"gemini", "hi", "6h"}, false},
+		{"--all with one arg", map[string]string{"all": "true"}, []string{"hi"}, true},
+		{"--all with providers too", map[string]string{"all": "true"}, []string{"gemini", "hi"}, false},
+		{"--batch providers only", map[string]string{"batch": "in.jsonl"}, []string{"gemini"}, true},
+		{"--batch providers + prompt", map[string]string{"batch": "in.jsonl"}, []string{"gemini", "p"}, true},
+		{"--batch surplus", map[string]string{"batch": "in.jsonl"}, []string{"gemini", "p", "x"}, false},
+		{"--batch --all prompt", map[string]string{"batch": "in.jsonl", "all": "true"}, []string{"p"}, true},
+		{"--batch --all surplus", map[string]string{"batch": "in.jsonl", "all": "true"}, []string{"gemini", "p"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.flags {
+				if err := rootCmd.Flags().Set(k, v); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Cleanup(func() {
+				flagAll, flagBatch = false, ""
+				rootCmd.Flags().Lookup("all").Changed = false
+				rootCmd.Flags().Lookup("batch").Changed = false
+			})
+			err := rootCmd.Args(rootCmd, tc.args)
+			if tc.ok && err != nil {
+				t.Fatalf("valid args %q rejected: %v", tc.args, err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatalf("surplus args %q accepted", tc.args)
+			}
+		})
+	}
+}
