@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -82,20 +81,31 @@ var claudeIsolationArgs = []string{
 }
 
 // claudeWorkDir is the neutral working directory for `claude --print`: an
-// empty directory conclave owns, so CLAUDE.md auto-discovery finds nothing.
+// empty directory conclave owns (ADR-013), so CLAUDE.md auto-discovery finds
+// nothing. It is created fresh per query and removed by the returned cleanup:
+// a fixed shared path stays empty only until something writes into it, after
+// which every panel and judge query on the machine would pick that file up.
 // Falls back to the caller's cwd only if the directory cannot be created;
 // the isolation flags still apply then. Explicit context reaches the panel
 // through -f / stdin, never through the cwd.
-func claudeWorkDir() string {
-	dir := filepath.Join(os.TempDir(), "conclave-claude-cwd")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return ""
+func claudeWorkDir() (dir string, cleanup func()) {
+	dir, err := os.MkdirTemp("", "conclave-claude-cwd-")
+	if err != nil {
+		return "", func() {}
 	}
-	return dir
+	return dir, func() { _ = os.RemoveAll(dir) }
 }
 
 // Query executes a prompt using Claude CLI with JSON output for metrics
-// Command: claude --print "{prompt}" --model {model} --output-format json <isolation flags>
+// Command: claude --print --model {model} --output-format json <isolation flags>   (prompt on STDIN)
+//
+// The prompt goes on stdin, not argv (Gotcha 8). claude.exe is native, so the
+// cmd.exe newline problem does not apply, but Windows caps a command line at
+// 32,767 characters and the default judge's prompt is every panel answer
+// concatenated; a long panel was paid for and then the judge could not start.
+// A prompt that opens with "-" also parsed as a flag. `claude --print` reads
+// the prompt from stdin when no positional prompt is given. Pinned by
+// TestClaudeCLIPromptOnStdinInAFreshEmptyDir.
 func (p *ClaudeProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
@@ -103,15 +113,17 @@ func (p *ClaudeProvider) Query(ctx context.Context, prompt string, model string)
 
 	start := time.Now()
 	args := append([]string{
-		"--print", prompt,
+		"--print",
 		"--model", model,
 		"--output-format", "json",
 	}, claudeIsolationArgs...)
+	workDir, cleanup := claudeWorkDir()
+	defer cleanup()
 	// keepStdoutOnErr: on an API error (unknown model, 404, quota) the CLI
 	// exits 1 but still writes its envelope to stdout, and that envelope's
 	// `result` is the only human-readable message. runCommand would discard
 	// it and leave the caller with "exit status 1".
-	output, err := runCommandWith(ctx, "claude", args, cmdOptions{dir: claudeWorkDir(), keepStdoutOnErr: true})
+	output, err := runCommandWith(ctx, "claude", args, cmdOptions{stdin: strings.NewReader(prompt), dir: workDir, keepStdoutOnErr: true})
 	duration := time.Since(start)
 
 	if err != nil {
