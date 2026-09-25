@@ -40,14 +40,25 @@ func (p *GrokProvider) Preflight(ctx context.Context) error {
 }
 
 // Query executes a prompt using Grok CLI
-// Command: grok -p "{prompt}" -m {model}
+// Command: grok --prompt-file {tempfile} -m {model}
+//
+// The prompt travels in a temp file, never argv (Gotcha 8). As `-p <prompt>`
+// a prompt opening with "-" was rejected by grok's argument parser, and one
+// past Windows' 32,767-character command line could not start. grok has no
+// stdin prompt mode; --prompt-file is its single-turn equivalent of -p.
+// Pinned by TestGrokCLIPromptTravelsInAFile.
 func (p *GrokProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
 	}
 
 	start := time.Now()
-	args := []string{"-p", prompt, "-m", model}
+	promptFile, err := writePromptFile(prompt)
+	if err != nil {
+		return "", time.Since(start), nil, fmt.Errorf("grok: %w", err)
+	}
+	defer os.Remove(promptFile)
+	args := []string{"--prompt-file", promptFile, "-m", model}
 	output, err := runCommand(ctx, "grok", args, nil)
 	duration := time.Since(start)
 
@@ -57,6 +68,25 @@ func (p *GrokProvider) Query(ctx context.Context, prompt string, model string) (
 
 	// Parse JSONL output to extract assistant response
 	return parseGrokOutput(output), duration, nil, nil
+}
+
+// writePromptFile stores the prompt in a private temp file for a CLI that
+// reads its prompt from a path. The caller removes it.
+func writePromptFile(prompt string) (string, error) {
+	f, err := os.CreateTemp("", "conclave-prompt-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("create prompt file: %w", err)
+	}
+	if _, err := f.WriteString(prompt); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write prompt file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("close prompt file: %w", err)
+	}
+	return f.Name(), nil
 }
 
 // parseGrokOutput extracts the assistant's content from grok's JSONL output
