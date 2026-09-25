@@ -90,12 +90,41 @@ func runCommand(ctx context.Context, name string, args []string, stdin io.Reader
 	return runCommandEnv(ctx, name, args, stdin, nil)
 }
 
+// cliWaitDelay bounds how long Run() waits for a killed CLI's pipes to close.
+// Without it a deadline did not bound an npm .cmd shim at all: cmd.exe was
+// killed, node kept the inherited stdout open, and Run() waited for node to
+// finish on its own (19s past a 1s timeout, TestCLITimeoutBoundsShimGrandchild).
+const cliWaitDelay = 2 * time.Second
+
+// newCLICommand is the only place a provider subprocess is constructed, so
+// every CLI call (queries, preflights, subscription probes) gets the same
+// cancellation contract: the whole process tree dies with the context, and
+// Run() returns within cliWaitDelay of that even if a grandchild clings on.
+func newCLICommand(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Cancel = func() error { return killTree(cmd) }
+	cmd.WaitDelay = cliWaitDelay
+	return cmd
+}
+
+// withDeadline makes a context-ended run say so. A killed child otherwise
+// surfaces as "exit status 1", which reads as a CLI bug rather than a timeout.
+func withDeadline(ctx context.Context, name string, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return fmt.Errorf("%s: %w (%v)", name, ctxErr, err)
+	}
+	return err
+}
+
 // runCommandCombined runs a command and returns stdout+stderr together plus the
 // exit error. For status probes (codex login status prints to stderr on
 // success) where the stream split of runCommand hides the answer.
 func runCommandCombined(ctx context.Context, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := newCLICommand(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
+	if err != nil {
+		err = withDeadline(ctx, name, err)
+	}
 	return strings.TrimSpace(string(out)), err
 }
 
@@ -120,7 +149,7 @@ func runCommandEnv(ctx context.Context, name string, args []string, stdin io.Rea
 // runCommandWith runs the command with the given options. Every other
 // runCommand* is a wrapper over this; keep the exec logic here only.
 func runCommandWith(ctx context.Context, name string, args []string, o cmdOptions) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := newCLICommand(ctx, name, args...)
 	if len(o.extraEnv) > 0 {
 		cmd.Env = append(os.Environ(), o.extraEnv...)
 	}
@@ -141,6 +170,9 @@ func runCommandWith(ctx context.Context, name string, args []string, o cmdOption
 		out := ""
 		if o.keepStdoutOnErr {
 			out = strings.TrimSpace(stdout.String())
+		}
+		if ctx.Err() != nil {
+			return out, withDeadline(ctx, name, err)
 		}
 		// Include stderr in error message for debugging
 		if stderr.Len() > 0 {
