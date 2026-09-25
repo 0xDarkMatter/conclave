@@ -881,3 +881,15 @@ func TestJudgeParseErrorIsAFailedItem(t *testing.T) {
 		t.Fatalf("error %q should carry the judge's text", e)
 	}
 }
+
+// TestOverlongLineNamesTheLine: a line past the scanner limit aborted the run
+// with a bare "bufio.Scanner: token too long", leaving the user to bisect a
+// large JSONL by hand to find it.
+func TestOverlongLineNamesTheLine(t *testing.T) {
+	p := newTestProcessor(t, Options{}, okProvider("openai"))
+	long := `{"id":"big","prompt":"` + strings.Repeat("x", maxBatchLine) + `"}`
+	_, err := p.Process(context.Background(), strings.NewReader(`{"id":"a","prompt":"q"}`+"\n"+long+"\n"), &bytes.Buffer{}, "")
+	if err == nil || !strings.Contains(err.Error(), "line 2") {
+		t.Fatalf("got %v, want an error naming line 2", err)
+	}
+}

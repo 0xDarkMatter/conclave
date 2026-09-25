@@ -640,13 +640,14 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 func (p *Processor) readItems(input io.Reader) ([]Item, error) {
 	var items []Item
 	scanner := bufio.NewScanner(input)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer
+	scanner.Buffer(make([]byte, 64*1024), maxBatchLine)
 
 	lineNum := int64(0)
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		if line == "" {
+		// TrimSpace, not == "": a CRLF file's blank lines are "\r".
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 
@@ -672,8 +673,17 @@ func (p *Processor) readItems(input io.Reader) ([]Item, error) {
 		items = append(items, item)
 	}
 
-	return items, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		// Scan stopped ON the line after the last one it returned; name it,
+		// or the user bisects a large JSONL by hand (TestOverlongLineNamesTheLine).
+		return nil, fmt.Errorf("reading batch input at line %d (lines are limited to %d MB): %w", lineNum+1, maxBatchLine>>20, err)
+	}
+	return items, nil
 }
+
+// maxBatchLine bounds one JSONL item. It matches the default --max-context
+// ceiling with headroom, so an item carrying its own large prompt fits.
+const maxBatchLine = 4 << 20
 
 // === Cost estimation ===
 
