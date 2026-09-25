@@ -27,7 +27,7 @@ internal/
   output/          # Result formatting (JSON, human, brief)
   pricing/         # Cached OpenRouter model catalog: drift warnings, batch prices (ADR-009)
   cache/           # Opt-in response cache, $XDG_CACHE_HOME/conclave/responses/ (ADR-011)
-  progress/        # Terminal progress display
+  tui/             # Terminal progress display (Charm bubbletea; silent under --json/-q)
   providers/       # Provider implementations
     provider.go    # Provider interface
     registry.go    # Provider registration and lookup (holds BOTH sets, picks per token)
