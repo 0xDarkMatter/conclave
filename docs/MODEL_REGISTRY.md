@@ -185,7 +185,8 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 
 | Model ID | Description | Context | Input $/M | Output $/M | Released |
 |----------|-------------|---------|-----------|------------|----------|
-| `grok-4.6` | **Conclave default** - Current flagship; frontier coding, knowledge work, STEM. The only id the grok CLI offers | 500K | $2.00 | $6.00 | 2026-08 |
+| `grok-4.7` | **Conclave default** - Current flagship. The only id the grok CLI offers (`grok models`, 2026-09-25) | 500K | $1.60 | $4.80 | 2026-09 |
+| `grok-4.6` | Previous flagship; default until 2026-09-25, when the grok CLI stopped accepting it | 500K | $2.00 | $6.00 | 2026-08 |
 | `grok-4.5` | Previous flagship | 500K | $2.00 | $6.00 | 2026-07 |
 | `grok-4.3` | Reasoning, agentic, high factuality; batch available | 1M | $1.25 | $2.50 | 2026-04 |
 | `grok-4.20` | Fast reasoning with agentic tool calling, low hallucination, 2M context | 2M | $1.25 | $2.50 | 2026-03 |
@@ -244,7 +245,7 @@ Models used when no `-m` override is given. Source of truth: `internal/config/co
 | openai | `gpt-5.6-sol` | `gpt-5.6-sol` | CLI (codex, ChatGPT sub): 5s. API: 1.8s |
 | claude | `claude-opus-5` | `claude-opus-5` | CLI (claude, Max sub): 8s. API: untested, key has no credit |
 | perplexity | `sonar-pro` | `sonar-pro` | Listed, unchanged |
-| grok | `grok-4.6` | `grok-4.6` | The only id the grok CLI offers (`grok models`). API: 2.5s |
+| grok | `grok-4.7` | `grok-4.7` | The only id the grok CLI offers (`grok models`, 2026-09-25) |
 | glm | `glm-5.3` (Coding Plan API) | `glm-5.3` (disabled, ADR-006) | Coding Plan: 3.2s |
 
 Previous defaults (v1.2.0): openai `gpt-5.5`, claude `claude-opus-4-8`, grok `grok-4-1-fast-reasoning`, glm `glm-5.2`. All still served by their vendors as of the same date; override with `-m provider:model` if you need one.
@@ -261,7 +262,7 @@ Models used when `--cheap` / `-c` is set. Cheap mode implies `-g`, so these are 
 | openai | gpt-5.6-sol | `gpt-5-nano` | $0.05 | $0.40 | Listed, still cheapest |
 | claude | claude-opus-5 | `claude-haiku-4-5-20251001` | $1.00 | $5.00 | Listed, still the newest Haiku |
 | perplexity | sonar-pro | `sonar` | $1.00 | $1.00 | Listed, current |
-| grok | grok-4.6 | `grok-build-0.1` | $1.00 | $2.00 | Listed. `grok-4-1-fast-non-reasoning` ($0.20/$0.50) still works on xAI's API but is unlisted; set `CONCLAVE_CHEAP_GROK_MODEL` to use it |
+| grok | grok-4.7 | `grok-build-0.1` | $1.00 | $2.00 | Listed. `grok-4-1-fast-non-reasoning` ($0.20/$0.50) still works on xAI's API but is unlisted; set `CONCLAVE_CHEAP_GROK_MODEL` to use it |
 | glm | glm-5.3 | `glm-5.3-flash` | $0.075 | $0.25 | Listed. Moot in practice: `-g glm` is disabled (ADR-006) |
 
 **Cost comparison per 1K-token query (500 in / 500 out), API mode:**
@@ -306,7 +307,7 @@ Rough cost per 1K-token query (500 in, 500 out) in API mode. Conclave now prints
 | Perplexity | sonar | cheap | $0.001 + request fee |
 | Gemini | gemini-3-flash-preview | cheap | $0.00175 |
 | GLM | glm-5.3 | default | $0.003 pay-as-you-go; $0 on Coding Plan |
-| Grok | grok-4.6 | default | $0.004 |
+| Grok | grok-4.7 | default | $0.003 |
 | OpenAI | gpt-5.6-sol | default | $0.006 |
 | Gemini | gemini-3.1-pro-preview | default | $0.007 |
 | Claude | claude-opus-5 | default | $0.015 |

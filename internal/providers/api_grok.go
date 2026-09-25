@@ -17,7 +17,7 @@ func NewGrokAPIProvider() *GrokAPIProvider {
 	return &GrokAPIProvider{
 		apiBaseProvider: apiBaseProvider{
 			name:         "grok",
-			defaultModel: "grok-4.6",
+			defaultModel: "grok-4.7",
 			apiKeyEnv:    "XAI_API_KEY",
 			baseURL:      "https://api.x.ai",
 		},

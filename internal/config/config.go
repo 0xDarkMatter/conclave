@@ -42,7 +42,7 @@ func DefaultConfig() *Config {
 			"openai":     "gpt-5.6-sol",
 			"claude":     "claude-opus-5",
 			"perplexity": "sonar-pro",
-			"grok":       "grok-4.6", // the only id the grok CLI accepts; API serves it too
+			"grok":       "grok-4.7", // the only id the grok CLI accepts (grok models, 2026-09-25); API serves it too
 			"glm":        "glm-5.3",
 		},
 		CheapModels: map[string]string{

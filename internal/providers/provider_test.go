@@ -42,7 +42,7 @@ func TestProviderDefaultModels(t *testing.T) {
 		"openai":     "gpt-5.6-sol",
 		"claude":     "claude-opus-5",
 		"perplexity": "sonar-pro",
-		"grok":       "grok-4.6",
+		"grok":       "grok-4.7",
 		"glm":        "glm-5.3",
 	}
 
@@ -178,8 +178,8 @@ func TestGrokProvider(t *testing.T) {
 		t.Errorf("expected name 'grok', got %s", p.Name())
 	}
 
-	if p.DefaultModel() != "grok-4.6" {
-		t.Errorf("expected model 'grok-4.6', got %s", p.DefaultModel())
+	if p.DefaultModel() != "grok-4.7" {
+		t.Errorf("expected model 'grok-4.7', got %s", p.DefaultModel())
 	}
 }
 

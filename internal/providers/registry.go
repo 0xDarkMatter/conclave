@@ -334,6 +334,7 @@ var modelDisplayNames = map[string]string{
 	"grok-code-fast-1": "Grok Code Fast",
 	"grok-4-latest":    "Grok 4",
 	// Grok (API)
+	"grok-4.7":                    "Grok 4.7",
 	"grok-4.6":                    "Grok 4.6",
 	"grok-4.20":                   "Grok 4.20",
 	"grok-build-0.1":              "Grok Build 0.1",
