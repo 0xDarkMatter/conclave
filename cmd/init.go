@@ -196,6 +196,23 @@ func validateAPIKey(provider, envVar, key string) error {
 	return nil
 }
 
+// setupBlockedBy says why the interactive setup wizard must not run, or ""
+// when it may. The wizard reads stdin and prints its prompts on stdout, so it
+// needs a terminal on BOTH ends: with stdout redirected (or --json, whose
+// stdout is a machine contract) the prompts land in the output file and the
+// user waits on a question they cannot see (TestSetupNeedsATerminalBothWays).
+func setupBlockedBy(stdinTTY, stdoutTTY, jsonMode bool) string {
+	switch {
+	case !stdinTTY:
+		return "stdin is not a terminal"
+	case jsonMode:
+		return "--json output must stay machine-readable"
+	case !stdoutTTY:
+		return "stdout is not a terminal"
+	}
+	return ""
+}
+
 // RunInitIfNeeded checks if any providers are available and runs init if not
 // Returns true if init was run
 func RunInitIfNeeded(general bool) bool {
@@ -208,8 +225,8 @@ func RunInitIfNeeded(general bool) bool {
 	// (praxis grade, CI, cron) that reaches here would otherwise block forever
 	// on an invisible "Enter API key:" prompt and look like a hang. Reported
 	// 2026-09-08 as a 110s+ stall on a two-word prompt.
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprintln(os.Stderr, "No providers configured and stdin is not a terminal; skipping interactive setup. Run 'conclave init' or set API keys in the environment.")
+	if reason := setupBlockedBy(term.IsTerminal(int(os.Stdin.Fd())), term.IsTerminal(int(os.Stdout.Fd())), flagJSON); reason != "" {
+		fmt.Fprintf(os.Stderr, "No providers configured and %s; skipping interactive setup. Run 'conclave init' or set API keys in the environment.\n", reason)
 		return false
 	}
 
