@@ -69,3 +69,19 @@ func TestParseErrorKeepsTheJudgesText(t *testing.T) {
 		t.Fatalf("verdict %q, reasoning %q: the judge's text is lost", v.Result, v.Reasoning)
 	}
 }
+
+// TestBlindPromptHidesWhoFailed: blind mode anonymised the headers but pasted
+// each failure's error text verbatim, and provider errors name themselves
+// ("claude CLI failed", "gemini API error", the model id), so the judge could
+// still tell who was who.
+func TestBlindPromptHidesWhoFailed(t *testing.T) {
+	prompt := BuildPrompt("q", []providers.Response{
+		{Provider: "gemini", Model: "gemini-3.1-pro", Status: "success", Response: "fine"},
+		{Provider: "claude", Model: "claude-opus-5-5", Status: "error", Error: "claude CLI failed: claude-opus-5-5 overloaded"},
+	}, true)
+	for _, leak := range []string{"claude", "gemini"} {
+		if strings.Contains(strings.ToLower(prompt), leak) {
+			t.Fatalf("blind prompt names %q:\n%s", leak, prompt)
+		}
+	}
+}

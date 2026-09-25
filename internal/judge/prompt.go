@@ -58,6 +58,11 @@ func BuildPrompt(query string, responses []providers.Response, blind bool) strin
 
 		if r.Status == "success" {
 			analyses = append(analyses, fmt.Sprintf("### %s\n%s", header, r.Response))
+		} else if blind {
+			// Error text names its provider ("claude CLI failed", model ids),
+			// which would undo the anonymised header. The judge only needs to
+			// know there is no answer (TestBlindPromptHidesWhoFailed).
+			analyses = append(analyses, fmt.Sprintf("### %s\n[Error: this provider did not answer]", header))
 		} else {
 			analyses = append(analyses, fmt.Sprintf("### %s\n[Error: %s]", header, r.Error))
 		}
