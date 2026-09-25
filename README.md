@@ -622,6 +622,9 @@ Query Flags:
       --no-judge         Skip synthesis, return raw responses
   -t, --timeout <secs>   Per-provider timeout (default: 60)
   -m, --model <p:model>  Override model for provider (p@cli:model / p@api:model also accepted)
+      --max-context <n>  Max total -f/stdin context in bytes (default: 500000)
+      --no-stdin         Ignore piped stdin
+      --skip-preflight   Skip the credential check before querying
 
 Mode Flags:
   -g, --general          Use API mode (no coding restrictions)
@@ -652,7 +655,8 @@ Output Flags:
       --raw              Sentinel-separated provider blocks only (implies --no-judge)
 
 Subcommands:
-      conclave models    Inspect the model/price catalog
+      conclave init      Set up API keys interactively
+      conclave models    Inspect the model/price catalog (--check, --json, --all, --refresh)
       conclave keyring   Manage API keys in the OS keyring
       conclave cache     Inspect or empty the response cache
 
@@ -660,6 +664,10 @@ Other:
       --list-providers   List available providers and exit
       --version          Show version
 ```
+
+Quote the prompt: it must be a single argument. A prompt that starts with `-` goes
+after `--`, with every flag before it (`conclave --no-judge claude -- "-v means verbose?"`). A run whose judge fails
+still prints the panel, reports `execution.judge_error` under `--json`, and exits 1.
 
 ## Features
 
