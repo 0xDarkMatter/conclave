@@ -78,27 +78,33 @@ func isGeminiCLIAuthError(err error) bool {
 }
 
 // Query executes a prompt using Gemini CLI with JSON output for metrics
-// Command: gemini -o json -m {model} --skip-trust -p "{prompt}"
+// Command: gemini -o json -m {model} --skip-trust -p ""   (prompt on STDIN)
 //
-// Three things here are load-bearing (each was a live failure on 2026-09-08):
-//   - "-p": without it gemini-cli 0.58 treats the positional prompt as the seed
-//     for INTERACTIVE mode and never returns in a headless run.
+// Load-bearing details (each was a live failure):
+//   - The prompt goes on STDIN, never in argv (Gotcha 8). gemini is an npm
+//     .cmd shim on Windows, run through cmd.exe, which ends an argument at the
+//     first newline, expands %NAME% from the environment, and executes
+//     whatever follows an unbalanced quote and `&`. Pinned by
+//     TestGeminiCLIPromptNeverTouchesTheCommandLine.
+//   - "-p" with an EMPTY value: gemini-cli is headless whenever -p is present
+//     (isHeadlessMode), and with an empty -p its input is exactly stdin
+//     (gemini-cli 0.58: `input = input ? stdin + "\n\n" + input : stdin`).
+//     Without -p a positional seeds INTERACTIVE mode and never returns.
 //   - "--skip-trust" + GEMINI_CLI_TRUST_WORKSPACE: the trusted-folder gate
 //     exits 55 in any directory the user has not blessed interactively.
-//   - GEMINI_CLI_AUTH_TYPE=gemini-api-key: gemini-cli picks auth from its own
-//     settings.json (usually "oauth-personal"), ignoring an exported key. That
-//     OAuth path is dead (see Preflight), so we force key auth when a key is
-//     present and the user has not chosen otherwise.
+//   - gemini-cli picks auth from its own settings.json and ignores an exported
+//     key while that says "oauth-personal" (a retired tier), so an auth
+//     failure with a key present falls back to the API below.
 func (p *GeminiProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
 	}
 
 	start := time.Now()
-	args := []string{"-o", "json", "-m", model, "--skip-trust", "-p", prompt}
+	args := []string{"-o", "json", "-m", model, "--skip-trust", "-p", ""}
 	env := []string{"GEMINI_CLI_TRUST_WORKSPACE=true"}
 	hasKey := os.Getenv("GEMINI_API_KEY") != "" || os.Getenv("GOOGLE_API_KEY") != ""
-	output, err := runCommandEnv(ctx, "gemini", args, nil, env)
+	output, err := runCommandEnv(ctx, "gemini", args, strings.NewReader(prompt), env)
 	duration := time.Since(start)
 
 	if err != nil {
