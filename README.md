@@ -666,8 +666,9 @@ Other:
 ```
 
 Quote the prompt: it must be a single argument. A prompt that starts with `-` goes
-after `--`, with every flag before it (`conclave --no-judge claude -- "-v means verbose?"`). A run whose judge fails
-still prints the panel, reports `execution.judge_error` under `--json`, and exits 1.
+after `--`, with every flag before it (`conclave --no-judge claude -- "-v means verbose?"`). A run whose judge fails,
+or answers without a parseable verdict (`PARSE_ERROR`), still prints the panel and
+exits 1; `--json` reports a failure in `execution.judge_error`.
 
 ## Features
 

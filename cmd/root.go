@@ -520,12 +520,23 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	if renderErr != nil {
 		return renderErr
 	}
-	// A failed judge used to be dropped here: the panel rendered, the run
-	// exited 0, and --json/-q looked exactly like --no-judge. The panel is
-	// still shown (it was paid for), but the run must not report success for
-	// a verdict it did not produce. --json also carries execution.judge_error.
+	return verdictFailure(judgeName, verdict, judgeErr)
+}
+
+// verdictFailure decides the exit for a run whose judge was asked for a
+// verdict. A failed judge used to be dropped: the panel rendered, the run
+// exited 0, and --json/-q looked exactly like --no-judge. The panel is still
+// shown (it was paid for), but the run must not report success for a verdict
+// it did not produce, whether the judge errored (--json carries
+// execution.judge_error) or answered with no parseable verdict ("PARSE_ERROR",
+// whose text is in reasoning). No verdict and no error is --no-judge.
+// Pinned by TestNoVerdictIsAFailedRun.
+func verdictFailure(judgeName string, verdict *judge.Verdict, judgeErr error) error {
 	if judgeErr != nil {
 		return fmt.Errorf("judge %s failed, so there is no verdict (the panel responses above are complete): %w", judgeName, judgeErr)
+	}
+	if verdict != nil && verdict.Result == "PARSE_ERROR" {
+		return fmt.Errorf("judge %s answered but its verdict could not be parsed (its text is in the reasoning above; the panel responses are complete)", judgeName)
 	}
 	return nil
 }

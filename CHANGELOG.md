@@ -102,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only the first `{`, so a `}` in the reasoning or a brace in the preamble
   turned a good verdict into `PARSE_ERROR`; an object with no `verdict` was
   accepted as a blank success. On a real `PARSE_ERROR` the judge's text now
-  appears in `reasoning`.
+  appears in `reasoning`, and the run exits 1 like a failed judge.
 - Blind mode pasted failed providers' error text, which names them, into
   the judge prompt.
 - `--workers 0` hung, `--workers -1` panicked with exit 2, `-t 0` failed
