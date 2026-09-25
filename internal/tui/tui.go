@@ -74,10 +74,16 @@ func (p *Progress) Start() {
 	if p.isTTY {
 		// Create and run the TUI program
 		p.model = NewModel(p.providers)
+		// No input, on purpose. With default input bubbletea puts the console
+		// in raw mode (opening the console device even when stdin is piped),
+		// so Ctrl-C arrives as a keypress: it only closed the spinner while
+		// the query ran on, and the SIGINT handler in cmd/interrupt.go never
+		// fired. The display takes no keys; Ctrl-C must stay a signal.
 		p.program = tea.NewProgram(
 			p.model,
 			tea.WithOutput(p.out),
-			tea.WithoutSignalHandler(), // Let the caller handle signals
+			tea.WithInput(nil),
+			tea.WithoutSignalHandler(), // cmd/interrupt.go owns Ctrl-C
 		)
 
 		// Run in background

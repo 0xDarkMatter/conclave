@@ -140,6 +140,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancels the run: providers stop, the partial panel is shown, the judge is
   skipped, and the exit code is 130. A second Ctrl-C kills immediately. An
   interrupted batch also exits 130 now (it exited 1).
+- In a terminal the progress display took over the keyboard, so Ctrl-C only
+  closed the spinner while the query ran on; it now reaches the interrupt
+  handler. When every provider failed the display was never stopped: it
+  repainted over the error output and left the cursor hidden.
 - `make install` installs onto `conclave.exe` on Windows, even while it is
   running.
 

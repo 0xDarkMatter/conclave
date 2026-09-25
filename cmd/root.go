@@ -458,6 +458,11 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// before Ctrl-C, and never start the judge on a cancelled context.
 	interrupted := runInterrupted(cmd)
 	if orchErr != nil || interrupted {
+		// Shut the display down first. Only Complete() used to stop it, and
+		// this path never reaches Complete(), so the spinner kept repainting
+		// over the error output and exit left the terminal state unrestored
+		// (cursor hidden).
+		prog.Quit()
 		out := output.New(output.Options{
 			JSON:    flagJSON,
 			Verbose: flagVerbose,
