@@ -3,6 +3,7 @@ package judge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -62,9 +63,11 @@ func (j *Judge) Synthesize(ctx context.Context, query string, responses []provid
 	if err != nil {
 		// Return partial verdict with raw response
 		return &Verdict{
-			Result:         "PARSE_ERROR",
-			Confidence:     "low",
-			Reasoning:      "Failed to parse judge response: " + err.Error(),
+			Result:     "PARSE_ERROR",
+			Confidence: "low",
+			// RawResponse is not serialised, so the judge's own words go in
+			// Reasoning: a prose verdict is still useful to the reader.
+			Reasoning:      "Failed to parse judge response: " + err.Error() + "\n\nJudge output:\n" + response,
 			RawResponse:    response,
 			JudgeProvider:  j.provider.Name(),
 			JudgeModel:     model,
@@ -84,30 +87,48 @@ func (j *Judge) Synthesize(ctx context.Context, query string, responses []provid
 	return verdict, nil
 }
 
-// parseVerdict extracts JSON from the judge response
+// parseVerdict extracts the verdict object from the judge response.
+//
+// Judges wrap JSON in prose and code fences, and their reasoning routinely
+// contains braces (code, set notation). So every "{" is a candidate, braces
+// are matched string-aware, and the first candidate that unmarshals AND has a
+// non-empty "verdict" wins. An object without a verdict is not a verdict:
+// accepting "{}" rendered a blank synthesis as success.
 func parseVerdict(response string) (*Verdict, error) {
-	// Try to parse directly first
-	var verdict Verdict
-	if err := json.Unmarshal([]byte(response), &verdict); err == nil {
+	candidates := []string{response}
+	if fenced := extractJSON(response); fenced != "" {
+		candidates = append(candidates, fenced)
+	}
+	for i := 0; i < len(response); i++ {
+		if response[i] != '{' {
+			continue
+		}
+		if obj := findJSONObject(response[i:]); obj != "" {
+			candidates = append(candidates, obj)
+		}
+	}
+
+	// Report the most useful failure: "valid JSON but no verdict" beats the
+	// syntax error from trying to unmarshal the surrounding prose.
+	var syntaxErr, emptyErr error
+	for _, c := range candidates {
+		var verdict Verdict
+		if err := json.Unmarshal([]byte(c), &verdict); err != nil {
+			if syntaxErr == nil {
+				syntaxErr = err
+			}
+			continue
+		}
+		if strings.TrimSpace(verdict.Result) == "" {
+			emptyErr = errors.New(`judge JSON has no "verdict" field`)
+			continue
+		}
 		return &verdict, nil
 	}
-
-	// Try to extract JSON from markdown code blocks
-	jsonStr := extractJSON(response)
-	if jsonStr == "" {
-		// Try to find JSON object in response
-		jsonStr = findJSONObject(response)
+	if emptyErr != nil {
+		return nil, emptyErr
 	}
-
-	if jsonStr == "" {
-		return nil, json.Unmarshal([]byte(response), &verdict) // Return original error
-	}
-
-	if err := json.Unmarshal([]byte(jsonStr), &verdict); err != nil {
-		return nil, err
-	}
-
-	return &verdict, nil
+	return nil, syntaxErr
 }
 
 // extractJSON extracts JSON from markdown code blocks
@@ -121,17 +142,33 @@ func extractJSON(s string) string {
 	return ""
 }
 
-// findJSONObject finds a JSON object in a string
+// findJSONObject returns the first balanced {...} in s. Braces inside JSON
+// strings (and escaped quotes within them) do not count, so a "}" in the
+// judge's reasoning cannot end the object early.
 func findJSONObject(s string) string {
 	start := strings.Index(s, "{")
 	if start == -1 {
 		return ""
 	}
 
-	// Find matching closing brace
 	depth := 0
+	inString, escaped := false, false
 	for i := start; i < len(s); i++ {
-		switch s[i] {
+		c := s[i]
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = true
 		case '{':
 			depth++
 		case '}':
