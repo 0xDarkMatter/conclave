@@ -384,6 +384,13 @@ func extractChatResponse(data []byte) (string, *Metrics, error) {
 	}
 
 	text := resp.Choices[0].Message.Content
+	// An empty choice is a failure, not an answer: a reasoning model that
+	// spent its whole budget (finish_reason "length"), a content filter or a
+	// tool call all arrive this way, and passing "" on as success had the
+	// judge weigh a blank panel member (TestEmptyChatContentIsAnError).
+	if strings.TrimSpace(text) == "" {
+		return "", nil, fmt.Errorf("empty response (finish_reason=%q)", resp.Choices[0].FinishReason)
+	}
 
 	var metrics *Metrics
 	if resp.Usage.TotalTokens > 0 {
