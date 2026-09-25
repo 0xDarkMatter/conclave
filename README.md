@@ -699,8 +699,9 @@ The judge sees "Provider A", "Provider B", etc. instead of "OpenAI", "Claude".
 `~/.config/conclave/config.yaml`:
 
 ```yaml
-default_judge: claude
-timeout_seconds: 60
+default_judge: claude        # used when --judge is not given
+timeout_seconds: 60          # used when -t is not given (CONCLAVE_TIMEOUT overrides it)
+max_context_size: 500000     # bytes; used when --max-context is not given
 
 models:
   gemini: gemini-3.1-pro-preview
@@ -722,7 +723,7 @@ cheap_models:
 ### Environment Variables
 
 ```bash
-CONCLAVE_TIMEOUT=30               # Override timeout
+CONCLAVE_TIMEOUT=30               # Per-provider timeout in seconds (a -t flag still wins)
 CONCLAVE_GEMINI_MODEL=...         # Override default model
 CONCLAVE_CHEAP_CLAUDE_MODEL=...   # Override cheap mode model
 CONCLAVE_EXCLUDE=glm,grok         # Exclude providers from --all

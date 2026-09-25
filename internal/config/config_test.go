@@ -43,8 +43,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.MaxFileSize != 102400 {
 		t.Errorf("expected max file size 102400, got %d", cfg.MaxFileSize)
 	}
-	if cfg.MaxContextSize != 512000 {
-		t.Errorf("expected max context size 512000, got %d", cfg.MaxContextSize)
+	if cfg.MaxContextSize != 500000 {
+		t.Errorf("expected max context size 500000, got %d", cfg.MaxContextSize)
 	}
 }
 
@@ -185,5 +185,25 @@ func TestEnvOverridesApplyWhenHomeIsUnknown(t *testing.T) {
 	}
 	if got := cfg.Models["openai"]; got != "pinned-model" {
 		t.Fatalf("CONCLAVE_OPENAI_MODEL ignored when home is unknown: got %q", got)
+	}
+}
+
+// TestConclaveTimeoutEnvIsHonoured: README documents CONCLAVE_TIMEOUT, but
+// viper's AutomaticEnv never binds it (the key is timeout_seconds and
+// Unmarshal ignores unbound env), so it did nothing.
+func TestConclaveTimeoutEnvIsHonoured(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("CONCLAVE_TIMEOUT", "42")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TimeoutSeconds != 42 {
+		t.Fatalf("CONCLAVE_TIMEOUT=42 gave TimeoutSeconds=%d", cfg.TimeoutSeconds)
+	}
+
+	t.Setenv("CONCLAVE_TIMEOUT", "soon")
+	if _, err := Load(); err == nil {
+		t.Fatal("a non-numeric CONCLAVE_TIMEOUT must be reported, not ignored")
 	}
 }

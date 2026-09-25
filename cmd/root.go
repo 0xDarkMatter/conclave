@@ -233,10 +233,6 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	if flagRaw && flagJSON {
 		return fmt.Errorf("--raw and --json are mutually exclusive (both produce machine-readable output; pick one)")
 	}
-	if err := validateNumericFlags(); err != nil {
-		return err
-	}
-
 	// Batch mode implies cheap mode (unless -m overrides)
 	if flagBatch != "" {
 		flagCheap = true
@@ -248,6 +244,12 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("config error: %w", err)
+	}
+	// Config values fill in flags the user did not type; validation runs
+	// after, so a bad value from config.yaml is caught as well as a bad flag.
+	applyConfigDefaults(cmd, cfg)
+	if err := validateNumericFlags(); err != nil {
+		return err
 	}
 
 	// Auto-trigger init if no providers configured. A token pinned with
@@ -520,6 +522,27 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("judge %s failed, so there is no verdict (the panel responses above are complete): %w", judgeName, judgeErr)
 	}
 	return nil
+}
+
+// applyConfigDefaults lets config.yaml (and CONCLAVE_TIMEOUT, folded in by
+// config.Load) supply the values the README documents, without ever beating
+// a flag the user typed. Precedence, per AGENTS.md: flag > environment >
+// config file > built-in. These keys were parsed and never read before, so
+// `timeout_seconds: 180` in config.yaml had no effect.
+// Pinned by TestConfigDefaultsApplyUnlessTheFlagWasGiven.
+func applyConfigDefaults(cmd *cobra.Command, cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	if !cmd.Flags().Changed("timeout") && cfg.TimeoutSeconds != 0 {
+		flagTimeout = cfg.TimeoutSeconds
+	}
+	if !cmd.Flags().Changed("judge") && strings.TrimSpace(cfg.DefaultJudge) != "" {
+		flagJudge = strings.TrimSpace(cfg.DefaultJudge)
+	}
+	if !cmd.Flags().Changed("max-context") && cfg.MaxContextSize != 0 {
+		flagMaxContext = cfg.MaxContextSize
+	}
 }
 
 // validateNumericFlags rejects values that used to misbehave silently: a

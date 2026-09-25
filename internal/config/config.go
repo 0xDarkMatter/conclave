@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -55,7 +57,7 @@ func DefaultConfig() *Config {
 		},
 		Transports:     map[string]string{},
 		MaxFileSize:    102400, // 100KB
-		MaxContextSize: 512000, // 500KB
+		MaxContextSize: 500000, // bytes; equals the --max-context flag default, which it feeds
 		WarnFileSize:   51200,  // 50KB
 	}
 }
@@ -97,6 +99,18 @@ func Load() (*Config, error) {
 	// Unmarshal into struct
 	if err := v.Unmarshal(cfg); err != nil {
 		return nil, err
+	}
+
+	// CONCLAVE_TIMEOUT is documented in the README but viper never bound it:
+	// the key is timeout_seconds and Unmarshal ignores unbound env. Read it
+	// explicitly. A bad value is an error, not a silent default, because a
+	// caller who set it is relying on it.
+	if val := strings.TrimSpace(os.Getenv("CONCLAVE_TIMEOUT")); val != "" {
+		secs, err := strconv.Atoi(val)
+		if err != nil || secs < 1 {
+			return nil, fmt.Errorf("CONCLAVE_TIMEOUT=%q is not a positive whole number of seconds", val)
+		}
+		cfg.TimeoutSeconds = secs
 	}
 
 	// Override models from environment
