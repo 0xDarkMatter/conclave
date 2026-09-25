@@ -460,17 +460,18 @@ Roughly 70 h, 74 h with the optional TUI preview.
 
 > Numbering note: ADR-011 was taken by the response cache (accepted 2026-09-08) and
 > ADR-012 by per-provider transport (accepted 2026-09-13, open question 3 below) after this
-> plan was drafted, so the proposals start at ADR-013. Take the next free number at
+> plan was drafted, and ADR-013 by claude CLI isolation (2026-09-13), so the proposals
+> start at ADR-014. Take the next free number at
 > writing time; `ls docs/adr/` is the index.
 
-- ADR-013 Partial-panel quorum: a run proceeds at `min_providers` successes,
+- ADR-014 Partial-panel quorum: a run proceeds at `min_providers` successes,
   `degraded` means any failure, and exit 3 is opt-in.
-- ADR-014 Judge panels aggregate by verdict-string majority (ties are `SPLIT`), not by
+- ADR-015 Judge panels aggregate by verdict-string majority (ties are `SPLIT`), not by
   self-reported confidence.
-- ADR-015 Rubric contract: YAML-front-matter markdown in, fixed `scores` schema out;
+- ADR-016 Rubric contract: YAML-front-matter markdown in, fixed `scores` schema out;
   parse failures keep raw output; ties resolve per criterion type and a red-flag tie
   can never be `triggered`.
-- ADR-016 Request options are best-effort per provider: unsupported `system`,
+- ADR-017 Request options are best-effort per provider: unsupported `system`,
   `temperature`, or `max_tokens` warn once and never fail the run.
 
 ## Open questions for the operator
@@ -502,4 +503,4 @@ Roughly 70 h, 74 h with the optional TUI preview.
 | F6 | `_CONCLAVE_QUERY` instruction string (moves to `--system`); temperature pinning for determinism, which Praxis cannot do today | none |
 
 Maintenance rule: update the phasing when a feature lands, and delete this plan once
-ADR-013 to ADR-016 exist and the features ship.
+ADR-014 to ADR-017 exist and the features ship.

@@ -11,7 +11,7 @@ make check
 | Step | What it asserts |
 |---|---|
 | `go vet ./...` | no vet diagnostics |
-| `gofmt -l .` | prints nothing; a non-empty list is the failure |
+| `gofmt -l` over the `go list ./...` source files | prints nothing; a non-empty list is the failure (not `gofmt -l .`, which walks `.claude/worktrees/`; see below) |
 | `go test ./...` | the suite passes |
 | `go test -race ./...` | no data races |
 | build + `conclave models --check` | no compiled default has drifted out of the catalog |
