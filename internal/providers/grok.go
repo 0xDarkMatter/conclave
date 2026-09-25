@@ -31,13 +31,12 @@ type grokMessage struct {
 	Content string `json:"content"`
 }
 
-// Preflight checks that a Grok/xAI API key is available.
-func (p *GrokProvider) Preflight(ctx context.Context) error {
-	if os.Getenv("XAI_API_KEY") == "" {
-		return fmt.Errorf("XAI_API_KEY is not set")
-	}
-	return nil
-}
+// The grok CLI deliberately has no Preflight. It carries its own login
+// (grok.com OAuth or a deployment key; `grok models` names which), exactly
+// like codex and claude (Gotcha 7), so demanding XAI_API_KEY refused a working
+// CLI before any query ran. A CLI that is not logged in fails the query with
+// grok's own message. XAI_API_KEY gates grok@api only, in api_grok.go.
+// Pinned by TestGrokCLIPreflightDoesNotDemandAPIKey.
 
 // Query executes a prompt using Grok CLI
 // Command: grok --prompt-file {tempfile} -m {model}

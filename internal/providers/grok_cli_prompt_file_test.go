@@ -72,3 +72,15 @@ echo '{"role":"assistant","content":"OK"}'
 		}
 	}
 }
+
+// TestGrokCLIPreflightDoesNotDemandAPIKey defends the grok CLI route against
+// the same mistake codex once had (Gotcha 7): the grok CLI carries its own
+// login (grok.com or a deployment key), so gating it on XAI_API_KEY refused a
+// working CLI with "XAI_API_KEY is not set" before any query ran.
+func TestGrokCLIPreflightDoesNotDemandAPIKey(t *testing.T) {
+	t.Setenv("XAI_API_KEY", "")
+	t.Setenv("GROK_API_KEY", "")
+	if failures := RunPreflight(context.Background(), []Provider{NewGrokProvider()}); len(failures) > 0 {
+		t.Fatalf("grok CLI preflight failed without an API key: %v", failures[0].Error)
+	}
+}
