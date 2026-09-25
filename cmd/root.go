@@ -640,6 +640,20 @@ func withJudge(panel []providers.Provider, judge providers.Provider) []providers
 	return append(out, judge)
 }
 
+// batchPreflightSet is the panel plus, when items will be synthesised, the
+// judge. Preflighting only the panel let a judge without credentials fail on
+// every item after the panel had already been paid for.
+func batchPreflightSet(registry *providers.Registry, panel []providers.Provider, modelOverrides map[string]string) ([]providers.Provider, error) {
+	if len(panel) < 2 {
+		return panel, nil
+	}
+	judge, err := registry.GetProvider(flagJudge, modelOverrides)
+	if err != nil {
+		return nil, fmt.Errorf("judge provider error: %w", err)
+	}
+	return withJudge(panel, judge), nil
+}
+
 // providerNamesOf lists the bare names the resolved providers report, in
 // panel order. This is what output surfaces get instead of the raw tokens.
 func providerNamesOf(list []providers.Provider) []string {
@@ -824,6 +838,13 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		return fmt.Errorf("--resume needs -o <file>: the checkpoint lives next to the output file, and results written to stdout cannot be resumed")
 	}
 
+	// Batch always synthesises a multi-provider item and has no per-provider
+	// output shape without a verdict, so refuse rather than ignore the flag:
+	// ignoring it billed the judge on every item of a "no judge" run.
+	if flagNoJudge {
+		return fmt.Errorf("--no-judge (and --raw, which implies it) is not supported with --batch: every multi-provider item is synthesised by the judge. Run one provider per batch, or add --verbose to keep each provider's answer next to the verdict")
+	}
+
 	// Create registry and preflight auth checks
 	registry := providers.NewRegistry(cfg, flagGeneral, flagCheap)
 	if !flagSkipPreflight {
@@ -831,10 +852,14 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		if err != nil {
 			return err
 		}
-		warnModelDrift(catalog, tempProviders)
-		warnSubscriptionIdle(cmd, tempProviders)
+		checked, err := batchPreflightSet(registry, tempProviders, modelOverrides)
+		if err != nil {
+			return err
+		}
+		warnModelDrift(catalog, checked)
+		warnSubscriptionIdle(cmd, checked)
 		warnConfigTransportPins(cfg, providerNames, tempProviders)
-		if failures := providers.RunPreflight(cmd.Context(), tempProviders); len(failures) > 0 {
+		if failures := providers.RunPreflight(cmd.Context(), checked); len(failures) > 0 {
 			printPreflightFailures(failures)
 			return fmt.Errorf("preflight auth check failed for %d provider(s)", len(failures))
 		}

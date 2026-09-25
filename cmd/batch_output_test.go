@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
+	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
 
 // setBatchFlags points the batch globals at a temp run and restores them.
@@ -87,4 +88,54 @@ func mustRead(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// TestBatchRefusesNoJudge: --no-judge and --raw were silently ignored by
+// --batch, so a multi-provider batch run "without the judge" still ran and
+// billed the judge on every item.
+func TestBatchRefusesNoJudge(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.jsonl")
+	out := filepath.Join(dir, "out.jsonl")
+	mustWrite(t, in, `{"id":"A","prompt":"hi"}`+"\n")
+	mustWrite(t, out, "previous\n")
+	setBatchFlags(t, in, out, false, "gemini")
+	old := flagNoJudge
+	flagNoJudge = true
+	t.Cleanup(func() { flagNoJudge = old })
+	err := runBatchMode(rootCmd, config.DefaultConfig(), []string{"gemini", "openai"}, "", nil, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "--no-judge") {
+		t.Fatalf("got %v, want an error refusing --no-judge with --batch", err)
+	}
+	if got := mustRead(t, out); got != "previous\n" {
+		t.Fatalf("output was touched: %q", got)
+	}
+}
+
+// TestBatchPreflightIncludesTheJudge: batch preflighted only the panel, so a
+// judge with no credentials failed on every item AFTER the panel was paid.
+func TestBatchPreflightIncludesTheJudge(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "fake")
+	t.Setenv("OPENAI_API_KEY", "fake")
+	t.Setenv("ANTHROPIC_API_KEY", "fake")
+	reg := providers.NewRegistry(config.DefaultConfig(), true, false)
+	panel, err := reg.GetProviders([]string{"gemini", "openai"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := flagJudge
+	flagJudge = "claude"
+	t.Cleanup(func() { flagJudge = old })
+
+	checked, err := batchPreflightSet(reg, panel, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := providerNamesOf(checked); len(names) != 3 || names[2] != "claude" {
+		t.Fatalf("multi-provider batch preflights %v, want the judge included", names)
+	}
+	checked, _ = batchPreflightSet(reg, panel[:1], nil)
+	if len(checked) != 1 {
+		t.Fatalf("single-provider batch runs no judge, but preflights %v", providerNamesOf(checked))
+	}
 }
