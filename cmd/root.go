@@ -464,15 +464,20 @@ func runConclave(cmd *cobra.Command, args []string) error {
 
 	// Phase 2: Judge synthesis (unless --no-judge or single provider)
 	var verdict *judge.Verdict
+	var judgeErr error
 	if judgeProvider != nil {
 		prog.StartSynthesis()
 		j := judge.New(judgeProvider)
-		verdict, err = j.Synthesize(cmd.Context(), prompt, results, flagTimeout, flagBlind)
+		verdict, judgeErr = j.Synthesize(cmd.Context(), prompt, results, flagTimeout, flagBlind)
 		var synthTokens int
 		if verdict != nil {
 			synthTokens = verdict.JudgeTokens
 		}
-		prog.StopSynthesis(synthTokens, err)
+		prog.StopSynthesis(synthTokens, judgeErr)
+	}
+	judgeErrText := ""
+	if judgeErr != nil {
+		judgeErrText = judgeErr.Error()
 	}
 
 	prog.Complete()
@@ -490,16 +495,28 @@ func runConclave(cmd *cobra.Command, args []string) error {
 		Pricing: catalog,
 	})
 
-	return out.Render(output.Result{
-		Query:     prompt,
-		Context:   ctx,
-		Providers: providerNames,
-		JudgeName: judgeName,
-		Responses: results,
-		Verdict:   verdict,
-		Blind:     flagBlind,
-		Timeout:   flagTimeout,
+	renderErr := out.Render(output.Result{
+		Query:      prompt,
+		Context:    ctx,
+		Providers:  providerNames,
+		JudgeName:  judgeName,
+		Responses:  results,
+		Verdict:    verdict,
+		JudgeError: judgeErrText,
+		Blind:      flagBlind,
+		Timeout:    flagTimeout,
 	})
+	if renderErr != nil {
+		return renderErr
+	}
+	// A failed judge used to be dropped here: the panel rendered, the run
+	// exited 0, and --json/-q looked exactly like --no-judge. The panel is
+	// still shown (it was paid for), but the run must not report success for
+	// a verdict it did not produce. --json also carries execution.judge_error.
+	if judgeErr != nil {
+		return fmt.Errorf("judge %s failed, so there is no verdict (the panel responses above are complete): %w", judgeName, judgeErr)
+	}
+	return nil
 }
 
 // === Provider listing ===

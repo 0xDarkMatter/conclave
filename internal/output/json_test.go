@@ -163,3 +163,31 @@ func TestCachedHitKeepsStatusSuccessInJSON(t *testing.T) {
 		t.Fatalf("response body = %q", got.Response)
 	}
 }
+
+// TestJSONReportsAFailedJudge defends against a silent judge failure. When
+// synthesis failed after a successful panel, --json looked exactly like a
+// --no-judge run: no verdict, no error, exit 0. A script had no way to tell
+// "no verdict requested" from "the verdict failed". The panel still renders
+// (it was paid for) and execution.judge_error names the failure.
+func TestJSONReportsAFailedJudge(t *testing.T) {
+	result := Result{
+		Query:      "q",
+		Providers:  []string{"gemini", "openai"},
+		JudgeName:  "claude",
+		JudgeError: "claude: context deadline exceeded",
+		Responses: []providers.Response{
+			{Provider: "gemini", Model: "m", Status: "success", Response: "a"},
+			{Provider: "openai", Model: "m", Status: "success", Response: "b"},
+		},
+	}
+	out := renderJSONTo(t, New(Options{JSON: true}), result)
+	if out.Execution.JudgeError != "claude: context deadline exceeded" {
+		t.Fatalf("execution.judge_error = %q, want the judge's failure", out.Execution.JudgeError)
+	}
+	if out.Verdict != nil {
+		t.Fatal("a failed judge must not produce a verdict object")
+	}
+	if len(out.Responses) != 2 {
+		t.Fatalf("the paid-for panel must still render, got %d responses", len(out.Responses))
+	}
+}

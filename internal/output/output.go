@@ -40,8 +40,11 @@ type Result struct {
 	JudgeName string
 	Responses []providers.Response
 	Verdict   *judge.Verdict
-	Blind     bool
-	Timeout   int
+	// JudgeError is why synthesis produced no verdict, when it was attempted
+	// and failed. Empty means the judge succeeded or was never asked.
+	JudgeError string
+	Blind      bool
+	Timeout    int
 }
 
 // Formatter handles output rendering
@@ -354,6 +357,9 @@ type JSONOutput struct {
 		Providers      []string `json:"providers"`
 		Judge          string   `json:"judge"`
 		TimeoutSeconds int      `json:"timeout_seconds"`
+		// JudgeError is set when synthesis was attempted and failed, so a
+		// missing verdict can be told apart from --no-judge. Additive.
+		JudgeError string `json:"judge_error,omitempty"`
 	} `json:"execution"`
 	Responses map[string]ResponseJSON `json:"responses"`
 	Verdict   *VerdictJSON            `json:"verdict,omitempty"`
@@ -412,6 +418,7 @@ func (f *Formatter) renderJSON(r Result, c costs) error {
 
 	out.Execution.Providers = r.Providers
 	out.Execution.Judge = r.JudgeName
+	out.Execution.JudgeError = r.JudgeError
 	// The timeout is carried on both the formatter options and the Result;
 	// callers set them together, so read whichever is populated rather than
 	// silently reporting 0 when only one was filled in.
