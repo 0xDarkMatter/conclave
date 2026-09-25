@@ -106,6 +106,11 @@ type Stats struct {
 	// context rather than by the budget. Either way Skipped is non-zero and the
 	// output file is a PARTIAL result, which callers must be able to detect.
 	Cancelled bool
+	// WriteFailed counts results that were computed (and paid for) but could
+	// not be written to the output. They count as Failed and stay out of the
+	// checkpoint, so --resume re-runs them; callers must treat any non-zero
+	// value as a failed run.
+	WriteFailed int
 }
 
 // Processor handles batch processing of JSONL files
@@ -318,19 +323,27 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 		defer close(doneChan)
 		encoder := json.NewEncoder(output)
 		for result := range resultChan {
-			if err := encoder.Encode(result); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to write result for %s: %v\n", result.ID, err)
+			// A result that never reached the output must not be checkpointed
+			// or counted as a success: --resume would skip it and the run
+			// would report a clean finish over an empty file
+			// (TestUnwrittenResultsAreNotCheckpointedOrCounted).
+			writeErr := encoder.Encode(result)
+			if writeErr != nil {
+				fmt.Fprintf(os.Stderr, "Error: failed to write result for %s: %v\n", result.ID, writeErr)
 			}
 			// A cancelled item never really ran, so recording it would make
 			// --resume skip work that was never done.
-			if p.checkpoint != nil && !result.cancelled {
+			if p.checkpoint != nil && !result.cancelled && writeErr == nil {
 				_ = p.checkpoint.MarkProcessed(result.ID)
 			}
 
 			statsLock.Lock()
 			stats.Completed++
 			stats.TotalCost += result.CostUSD
-			if result.Error == "" {
+			if writeErr != nil {
+				stats.WriteFailed++
+				stats.Failed++
+			} else if result.Error == "" {
 				stats.Succeeded++
 			} else {
 				stats.Failed++

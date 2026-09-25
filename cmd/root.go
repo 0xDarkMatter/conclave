@@ -913,6 +913,13 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 	// as $0.0000, which reads as free.
 	fmt.Fprintf(os.Stderr, "  Estimated cost: %s\n", pricing.FormatUSD(stats.TotalCost))
 
+	// Results that could not be written are lost output, not a partial
+	// success: the processor kept them out of the checkpoint so --resume
+	// re-runs them, and the exit code must say the file is incomplete.
+	if stats.WriteFailed > 0 {
+		return fmt.Errorf("%d result(s) could not be written to the output, which is incomplete; they are not checkpointed, so --resume re-runs them", stats.WriteFailed)
+	}
+
 	// A budget stop is a non-zero exit: the run is incomplete on purpose and a
 	// caller in a pipeline must be able to tell that apart from a clean finish.
 	// The checkpoint holds every completed id, so --resume continues the rest.

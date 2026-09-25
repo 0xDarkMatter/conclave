@@ -1,6 +1,7 @@
 package batch
 
 import (
+	"errors"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -829,5 +830,38 @@ func TestNonPositiveWorkerCountIsRefused(t *testing.T) {
 		if _, err := NewProcessor(Options{Workers: n}); err == nil {
 			t.Fatalf("Workers=%d was accepted", n)
 		}
+	}
+}
+
+// failingWriter models a full disk or a closed pipe: every write fails.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("no space left on device") }
+
+// TestUnwrittenResultsAreNotCheckpointedOrCounted defends against a batch that
+// loses its results and reports success. A failed Encode was only a stderr
+// warning: the item was still checkpointed (so --resume skipped it for good,
+// with no line in the output) and still counted as Succeeded, and the command
+// exited 0 with an empty output file.
+func TestUnwrittenResultsAreNotCheckpointedOrCounted(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "out.jsonl")
+	p := newTestProcessor(t, Options{Workers: 1, OutputPath: outPath}, okProvider("openai"))
+	stats, err := p.Process(context.Background(),
+		strings.NewReader("{\"id\":\"a\",\"prompt\":\"q\"}\n{\"id\":\"b\",\"prompt\":\"q\"}\n"), failingWriter{}, "")
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if stats.WriteFailed != 2 || stats.Succeeded != 0 {
+		t.Fatalf("stats = %+v, want 2 write failures and 0 successes", stats)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cp := NewCheckpoint(outPath)
+	if err := cp.Load(); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if cp.ProcessedCount() != 0 {
+		t.Fatalf("checkpoint holds %d ids whose results were never written; --resume would skip them forever", cp.ProcessedCount())
 	}
 }
