@@ -65,7 +65,7 @@ type geminiResponse struct {
 }
 
 // Query executes a prompt using Gemini API
-// POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={API_KEY}
+// POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent  (x-goog-api-key header)
 func (p *GeminiAPIProvider) Query(ctx context.Context, prompt string, model string) (string, time.Duration, *Metrics, error) {
 	if model == "" {
 		model = p.defaultModel
@@ -83,10 +83,14 @@ func (p *GeminiAPIProvider) Query(ctx context.Context, prompt string, model stri
 		},
 	}
 
-	// Gemini uses query parameter for API key
-	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", p.baseURL, model, p.getAPIKey())
+	// The key goes in the x-goog-api-key header, never the query string. Go's
+	// *url.Error prints the full request URL, so with ?key= any transport
+	// failure (DNS, TLS, refused, timeout) wrote the key into Response.Error,
+	// stderr and stored --json. Pinned by TestGeminiAPIKeyAbsentFromTransportErrors.
+	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent", p.baseURL, model)
+	headers := map[string]string{"x-goog-api-key": p.getAPIKey()}
 
-	respBody, err := p.doRequest(ctx, "POST", url, nil, reqBody)
+	respBody, err := p.doRequest(ctx, "POST", url, headers, reqBody)
 	duration := time.Since(start)
 
 	if err != nil {
