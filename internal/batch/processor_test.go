@@ -1,10 +1,10 @@
 package batch
 
 import (
-	"errors"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -863,5 +863,21 @@ func TestUnwrittenResultsAreNotCheckpointedOrCounted(t *testing.T) {
 	}
 	if cp.ProcessedCount() != 0 {
 		t.Fatalf("checkpoint holds %d ids whose results were never written; --resume would skip them forever", cp.ProcessedCount())
+	}
+}
+
+// TestJudgeParseErrorIsAFailedItem: an unparseable synthesis became a result
+// with verdict "PARSE_ERROR", counted as Succeeded, so a judge that never once
+// produced JSON still reported a 100% success rate.
+func TestJudgeParseErrorIsAFailedItem(t *testing.T) {
+	prose := &fakeProvider{name: "claude", model: "fake-judge",
+		answer: func(int32, string) (string, error) { return "I think both are right.", nil }}
+	p := newTestProcessor(t, Options{Judge: prose}, okProvider("openai"), okProvider("gemini"))
+	results, stats := runBatch(t, p, `{"id":"a","prompt":"q"}`+"\n", "")
+	if stats.Succeeded != 0 || stats.Failed != 1 {
+		t.Fatalf("stats = %+v, want the item counted as failed", stats)
+	}
+	if e, _ := results[0]["error"].(string); !strings.Contains(e, "I think both are right.") {
+		t.Fatalf("error %q should carry the judge's text", e)
 	}
 }

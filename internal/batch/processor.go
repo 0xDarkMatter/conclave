@@ -578,6 +578,17 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 				cancelled: ctx.Err() != nil,
 			}
 		}
+		// An unparseable synthesis is a failed item, not a verdict of
+		// "PARSE_ERROR": counting it as a success hid a broken judge across a
+		// whole batch (TestJudgeParseErrorIsAFailedItem).
+		if verdict.Result == "PARSE_ERROR" {
+			return Result{
+				ID:         item.ID,
+				Error:      "judge returned no parseable verdict: " + verdict.Reasoning,
+				DurationMs: time.Since(start).Milliseconds(),
+				CostUSD:    p.estimateCost(responses, verdict),
+			}
+		}
 		result = Result{
 			ID:         item.ID,
 			Verdict:    verdict.Result,
