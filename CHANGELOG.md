@@ -65,9 +65,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its first line only and codex replied "Context loaded. What would you like
   me to work on?". The prompt now goes on stdin (`codex exec` reads it there
   when no positional prompt is given), which also lifts the 32K command-line
-  limit. Regression test: `TestCodexReceivesMultiLinePromptIntact`. The
-  `gemini` CLI is the same kind of shim and still passes `-p <prompt>`; it is
-  unaffected on this machine only because its CLI auth falls back to the API.
+  limit. Regression test: `TestCodexReceivesMultiLinePromptIntact`.
+- `gemini` CLI mode passed the prompt as `-p <prompt>` through the same
+  `cmd.exe` shim: truncated at the first newline, `%VAR%` expanded, and a
+  prompt containing `" & ...` ran as a second command. The prompt now goes on
+  stdin (`-p ""`).
+- `claude` and `grok` CLI prompts no longer travel on the command line, where
+  Windows caps it at 32,767 characters and a prompt starting with `-` parsed
+  as a flag: claude reads stdin, grok gets `--prompt-file`.
+- `-t` now bounds npm-shim CLIs (`codex`, `gemini`). Only `cmd.exe` was
+  killed on timeout, so its child kept the pipes open and the call ran on;
+  the whole process tree is killed now, and a timeout reads as
+  `context deadline exceeded`.
+- claude panel queries run isolated from the caller: an empty temporary
+  working directory (created per query and removed after), no MCP servers,
+  no settings sources, no session persistence. A bare "hi" had described
+  the caller's worktree; user settings added ~52k prompt tokens per query.
+  ADR-013.
+- claude's stdout carries prose ahead of its JSON envelope
+  (`Client.listTools() called but server does not advertise tools
+  capability`), which failed every query and preflight. Readers now locate
+  the object instead of unmarshalling the whole buffer, and an API error
+  envelope on exit 1 is surfaced instead of a bare exit status.
+- The grok CLI was gated on `XAI_API_KEY`, which only the API needs, and
+  defaulted to `grok-4.6`, which its CLI rejects. Default is now `grok-4.7`.
+- The Gemini API key travelled in the URL query, so it appeared in any
+  transport error message. It is sent as `x-goog-api-key` now.
+- An OpenAI-compatible reply with empty content (a reasoning model out of
+  budget, a content filter) counted as a successful blank answer. It is an
+  error naming `finish_reason`.
+- When every provider failed, the error said only "all providers failed";
+  it now names each provider and its error.
+- A failed judge exited 0 with no verdict. The panel output is still
+  printed, `--json` gains `execution.judge_error`, and the exit code is 1.
+- The judge parser matched braces without regard to JSON strings and tried
+  only the first `{`, so a `}` in the reasoning or a brace in the preamble
+  turned a good verdict into `PARSE_ERROR`; an object with no `verdict` was
+  accepted as a blank success. On a real `PARSE_ERROR` the judge's text now
+  appears in `reasoning`.
+- Blind mode pasted failed providers' error text, which names them, into
+  the judge prompt.
+- `--workers 0` hung, `--workers -1` panicked with exit 2, `-t 0` failed
+  every provider and `--budget -1` meant uncapped. Non-positive values (and
+  a negative budget) are usage errors, including ones from `config.yaml`.
+- `default_judge`, `timeout_seconds` and `max_context_size` in `config.yaml`
+  and `CONCLAVE_TIMEOUT` were documented but never read. They now apply
+  under any flag given on the command line. `CONCLAVE_*` overrides also
+  apply when the home directory cannot be resolved.
+- Surplus positional arguments were dropped: an unquoted prompt was cut to
+  its first word and `--cache 6h` ignored `6h`. They are usage errors.
+- An unreadable `-f` path was noted only in `--json` while the bare
+  question was sent and billed. It is now fatal; a file left out for the
+  `--max-context` limit is warned about on stderr.
+- `conclave init` ran with stdout redirected or under `--json`, writing its
+  prompts into the output while waiting for input.
+- `conclave models --check --json` dumped the catalog and exited 0 without
+  checking; `--json`/`--check` with a provider filter ignored it. These are
+  usage errors.
+- Batch: a failed setup (unknown judge, missing key) truncated the previous
+  output while its checkpoint survived, so a later `--resume` skipped lost
+  items. `--resume` without `-o <file>` re-ran everything; `-o -` created
+  `-.checkpoint`. A result that failed to write was still checkpointed and
+  counted as success. A judge `PARSE_ERROR` counted as success.
+  `--no-judge`/`--raw` were ignored (the judge still ran and billed); they
+  are refused. The judge is preflighted with the panel. A line over the
+  input limit (now 4 MB) is named in the error. A second Ctrl-C aborts a
+  graceful shutdown.
+- `make install` installs onto `conclave.exe` on Windows, even while it is
+  running.
 
 ## [1.3.0] - 2026-09-08
 
