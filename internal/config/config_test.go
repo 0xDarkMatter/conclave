@@ -162,3 +162,28 @@ func TestTransportEnvOverridesConfig(t *testing.T) {
 		t.Fatal("nil config must report no transport")
 	}
 }
+
+// TestEnvOverridesApplyWhenHomeIsUnknown: Load returned early when the home
+// directory could not be resolved (a service account, a sandbox with no
+// HOME/USERPROFILE), skipping every CONCLAVE_* override after that point. A
+// CONCLAVE_CLAUDE_TRANSPORT=cli pin was silently dropped, which can move a
+// provider from a subscription onto a metered key.
+func TestEnvOverridesApplyWhenHomeIsUnknown(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("home", "") // Plan 9 name, harmless elsewhere
+	t.Setenv("CONCLAVE_CLAUDE_TRANSPORT", "cli")
+	t.Setenv("CONCLAVE_OPENAI_MODEL", "pinned-model")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.GetTransport("claude"); got != "cli" {
+		t.Fatalf("CONCLAVE_CLAUDE_TRANSPORT ignored when home is unknown: got %q", got)
+	}
+	if got := cfg.Models["openai"]; got != "pinned-model" {
+		t.Fatalf("CONCLAVE_OPENAI_MODEL ignored when home is unknown: got %q", got)
+	}
+}

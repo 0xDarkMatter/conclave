@@ -69,16 +69,19 @@ func Load() (*Config, error) {
 	v.SetConfigName("config")
 	v.SetConfigType("yaml")
 
-	// XDG config directory
+	// XDG config directory. With no resolvable home there is simply no config
+	// FILE to read; the CONCLAVE_* environment overrides below must still
+	// apply. Returning early here used to drop them all, including transport
+	// pins (TestEnvOverridesApplyWhenHomeIsUnknown).
 	configDir := os.Getenv("XDG_CONFIG_HOME")
 	if configDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return cfg, nil // Use defaults if we can't find home
+		if home, err := os.UserHomeDir(); err == nil {
+			configDir = filepath.Join(home, ".config")
 		}
-		configDir = filepath.Join(home, ".config")
 	}
-	v.AddConfigPath(filepath.Join(configDir, "conclave"))
+	if configDir != "" {
+		v.AddConfigPath(filepath.Join(configDir, "conclave"))
+	}
 
 	// Environment variable overrides
 	v.SetEnvPrefix("CONCLAVE")
