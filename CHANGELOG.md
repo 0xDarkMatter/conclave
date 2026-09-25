@@ -131,6 +131,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are refused. The judge is preflighted with the panel. A line over the
   input limit (now 4 MB) is named in the error. A second Ctrl-C aborts a
   graceful shutdown.
+- Ctrl-C killed a single query outright, so grok's temp prompt file and
+  claude's temp working directory were never removed. The first Ctrl-C now
+  cancels the run: providers stop, the partial panel is shown, the judge is
+  skipped, and the exit code is 130. A second Ctrl-C kills immediately. An
+  interrupted batch also exits 130 now (it exited 1).
 - `make install` installs onto `conclave.exe` on Windows, even while it is
   running.
 

@@ -15,7 +15,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -198,14 +197,18 @@ func Execute() {
 	// Load API keys from ~/.config/conclave/.env before anything else
 	_ = config.LoadEnvFile()
 
-	if err := rootCmd.Execute(); err != nil {
-		// A command may ask for a specific exit code so callers can branch on
-		// the reason; see cmd/exit.go.
-		var coded exitCoder
-		if errors.As(err, &coded) {
-			os.Exit(coded.ExitCode())
-		}
-		os.Exit(1)
+	// Ctrl-C cancels this context rather than killing the process, so
+	// cleanup defers run (see cmd/interrupt.go).
+	ctx, stop := interruptContext()
+	err := rootCmd.ExecuteContext(ctx)
+	// Read before stop(): stop also cancels ctx, so afterwards Err() would
+	// report every run as interrupted.
+	interrupted := ctx.Err() != nil
+	stop()
+	// A command may ask for a specific exit code so callers can branch on the
+	// reason; see cmd/exit.go.
+	if code := exitCodeFor(err, interrupted); code != 0 {
+		os.Exit(code)
 	}
 }
 
@@ -450,7 +453,11 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// provider's individual error. Render it so the user sees the full,
 	// untruncated diagnostic (HTTP code, OpenAI error param/code, etc.)
 	// instead of only the spinner's truncated single-line preview.
-	if orchErr != nil {
+	//
+	// An interrupted run takes the same path: render what the panel returned
+	// before Ctrl-C, and never start the judge on a cancelled context.
+	interrupted := runInterrupted(cmd)
+	if orchErr != nil || interrupted {
 		out := output.New(output.Options{
 			JSON:    flagJSON,
 			Verbose: flagVerbose,
@@ -470,6 +477,9 @@ func runConclave(cmd *cobra.Command, args []string) error {
 			Blind:     flagBlind,
 			Timeout:   flagTimeout,
 		})
+		if interrupted {
+			return errInterrupted
+		}
 		return orchErr
 	}
 
