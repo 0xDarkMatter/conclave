@@ -785,21 +785,14 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		defer input.Close()
 	}
 
-	// Set up output
-	var output *os.File
-	if flagOutput == "" || flagOutput == "-" {
-		output = os.Stdout
-	} else {
-		// If resuming, open for append
-		if flagResume {
-			output, err = os.OpenFile(flagOutput, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		} else {
-			output, err = os.Create(flagOutput)
-		}
-		if err != nil {
-			return fmt.Errorf("failed to open output file: %w", err)
-		}
-		defer output.Close()
+	// "-" means stdout, which has no file to keep a checkpoint beside: pass ""
+	// so NewProcessor keeps none (it used to create "-.checkpoint" in the cwd).
+	outputPath := flagOutput
+	if outputPath == "-" {
+		outputPath = ""
+	}
+	if flagResume && outputPath == "" {
+		return fmt.Errorf("--resume needs -o <file>: the checkpoint lives next to the output file, and results written to stdout cannot be resumed")
 	}
 
 	// Create registry and preflight auth checks
@@ -836,7 +829,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		JudgeName:      flagJudge,
 		Workers:        flagWorkers,
 		Timeout:        flagTimeout,
-		OutputPath:     flagOutput,
+		OutputPath:     outputPath,
 		Resume:         flagResume,
 		Verbose:        flagVerbose,
 		Blind:          flagBlind,
@@ -850,6 +843,25 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		return fmt.Errorf("failed to create batch processor: %w", err)
 	}
 	defer processor.Close() // Clean up checkpoint file handle
+
+	// Open (and, without --resume, truncate) the output only now that setup
+	// has succeeded. NewProcessor is also where a fresh run clears the old
+	// checkpoint, so the two change together or not at all. Truncating first
+	// meant a run that failed in setup left an empty output beside a
+	// checkpoint still listing the previous run's ids, and a later --resume
+	// skipped those items for good (TestFailedBatchSetupLeavesOutputAndCheckpointAlone).
+	output := os.Stdout
+	if outputPath != "" {
+		if flagResume {
+			output, err = os.OpenFile(outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		} else {
+			output, err = os.Create(outputPath)
+		}
+		if err != nil {
+			return fmt.Errorf("failed to open output file: %w", err)
+		}
+		defer output.Close()
+	}
 
 	// Run batch processing
 	stats, err := processor.Process(cmd.Context(), input, output, defaultPrompt)
