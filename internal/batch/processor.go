@@ -264,9 +264,19 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
+	defer signal.Stop(sigChan)
 	go func() {
-		<-sigChan
-		fmt.Fprintln(os.Stderr, "\nShutting down gracefully...")
+		select {
+		case <-sigChan:
+		case <-ctx.Done():
+			return
+		}
+		// Hand Ctrl-C back to the runtime: a graceful stop waits for
+		// in-flight items (up to --timeout each), and while this handler
+		// held the signal a second Ctrl-C was swallowed, so there was no way
+		// to force-quit.
+		signal.Stop(sigChan)
+		fmt.Fprintln(os.Stderr, "\nShutting down gracefully (finishing in-flight items; Ctrl-C again to abort)...")
 		cancel()
 	}()
 
