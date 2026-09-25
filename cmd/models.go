@@ -53,7 +53,23 @@ func init() {
 	rootCmd.AddCommand(modelsCmd)
 }
 
+// validateModelsFlags refuses combinations where one part would be silently
+// ignored. --json used to return before --check ran, so a CI step written as
+// `models --check --json` exited 0 on drift.
+func validateModelsFlags(args []string) error {
+	if flagModelsJSON && flagModelsCheck {
+		return fmt.Errorf("--json and --check cannot be combined: --check reports drift through its exit code, --json dumps the whole catalog")
+	}
+	if len(args) == 1 && (flagModelsJSON || flagModelsCheck) {
+		return fmt.Errorf("a provider filter (%q) does not apply to --json or --check, which always cover every provider", args[0])
+	}
+	return nil
+}
+
 func runModels(cmd *cobra.Command, args []string) error {
+	if err := validateModelsFlags(args); err != nil {
+		return err
+	}
 	// Both of these mean "unknown", not "wrong", so they exit distinctly from
 	// real drift and must never fail a build.
 	if pricing.Disabled() {
