@@ -2,6 +2,8 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,5 +130,26 @@ func TestTotalDurationEmpty(t *testing.T) {
 	total := TotalDuration(nil)
 	if total != 0 {
 		t.Errorf("expected 0, got %s", total)
+	}
+}
+
+// TestAllFailedErrorCarriesEachProviderError defends batch mode's adaptive
+// rate limiting. When every provider failed, Run returned the bare string
+// "all providers failed", so batch's isRateLimitError (which matches "429" /
+// "rate limit" in the error text) never fired, and every batch error line
+// lost its cause. The returned error must name each provider's failure.
+func TestAllFailedErrorCarriesEachProviderError(t *testing.T) {
+	providerList := []providers.Provider{
+		&mockProvider{name: "gemini", model: "m", err: errors.New("HTTP 429 Too Many Requests")},
+		&mockProvider{name: "openai", model: "m", err: errors.New("HTTP 401: invalid key")},
+	}
+	_, err := New(providerList, 30).Run(context.Background(), "q")
+	if err == nil {
+		t.Fatal("expected an error when every provider fails")
+	}
+	for _, want := range []string{"all providers failed", "gemini", "429", "openai", "invalid key"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q is missing %q", err, want)
+		}
 	}
 }

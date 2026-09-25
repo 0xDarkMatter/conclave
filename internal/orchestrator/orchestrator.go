@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -116,9 +117,16 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 		}
 	}
 
-	// If all providers failed, return an error
+	// If all providers failed, return an error that names each failure. The
+	// causes are load-bearing, not decoration: batch mode's adaptive rate
+	// limiter matches "429"/"rate limit" in this text, and a bare "all
+	// providers failed" disabled it (TestAllFailedErrorCarriesEachProviderError).
 	if successCount == 0 && len(o.providers) > 0 {
-		return results, fmt.Errorf("all providers failed")
+		causes := make([]string, 0, len(results))
+		for _, r := range results {
+			causes = append(causes, fmt.Sprintf("%s: %s", r.Provider, r.Error))
+		}
+		return results, fmt.Errorf("all providers failed: %s", strings.Join(causes, "; "))
 	}
 
 	return results, nil
