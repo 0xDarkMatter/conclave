@@ -113,22 +113,23 @@ func TestBuildWithTruncation(t *testing.T) {
 	}
 }
 
-func TestBuildWithMissingFile(t *testing.T) {
-	ctx, err := Build(Options{
-		Files:       []string{"/nonexistent/file.txt"},
-		MaxSize:     500000,
-		IgnoreStdin: true,
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if len(ctx.Sources) != 1 {
-		t.Errorf("expected 1 source, got %d", len(ctx.Sources))
-	}
-
-	if ctx.Sources[0].Error == "" {
-		t.Error("source should have error for missing file")
+// TestBuildFailsOnAnUnreadableFile defends against paying for a query that
+// silently lost its context. A mistyped, missing or directory -f path used to
+// become a Source with an Error that only --json showed; the run went ahead
+// and every provider (and the judge) was billed for the bare question.
+func TestBuildFailsOnAnUnreadableFile(t *testing.T) {
+	for _, path := range []string{"/nonexistent/file.txt", t.TempDir()} {
+		_, err := Build(Options{
+			Files:       []string{path},
+			MaxSize:     500000,
+			IgnoreStdin: true,
+		})
+		if err == nil {
+			t.Fatalf("-f %q could not be read, but Build returned no error", path)
+		}
+		if !strings.Contains(err.Error(), path) {
+			t.Fatalf("error %q should name the path %q", err, path)
+		}
 	}
 }
 

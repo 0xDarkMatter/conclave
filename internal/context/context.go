@@ -56,22 +56,24 @@ func Build(opts Options) (*Context, error) {
 
 	// Process files
 	for _, path := range opts.Files {
+		// An -f path the user named but we cannot read is fatal, not a note in
+		// Sources: recording it and carrying on sent (and billed) the bare
+		// question to every provider, and only --json ever showed why
+		// (TestBuildFailsOnAnUnreadableFile).
 		data, err := os.ReadFile(path)
 		if err != nil {
-			ctx.Sources = append(ctx.Sources, Source{
-				Name:  path,
-				Error: err.Error(),
-			})
-			continue
+			return nil, fmt.Errorf("cannot read -f %s: %w", path, err)
 		}
 
-		// Check if we have room
+		// Check if we have room. Excluding a readable file for size is a
+		// judgement call, so it proceeds, but it must be said out loud.
 		remaining := opts.MaxSize - totalSize
 		if remaining <= 0 {
 			ctx.Sources = append(ctx.Sources, Source{
 				Name:  path,
 				Error: "context size limit reached",
 			})
+			fmt.Fprintf(os.Stderr, "Warning: %s was left out: the context limit (--max-context %d bytes) was already reached\n", path, opts.MaxSize)
 			continue
 		}
 
