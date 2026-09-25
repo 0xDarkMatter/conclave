@@ -334,6 +334,10 @@ conclave --all --batch items.jsonl -o out.jsonl --budget 5.00 --resume
 conclave -c claude "Analyze" --batch items.jsonl -o results.jsonl --resume
 ```
 
+`--resume` skips items that succeeded and retries everything else, including items
+that failed. It appends to the output, so a retried item has its old error line and
+a new line: take the last line per `id`.
+
 **Input format (JSONL):**
 ```jsonl
 {"id": "1", "context": "Username: @acme_corp\nBio: Enterprise solutions...\nFollowers: 50K\n\nRecent posts:\n..."}
@@ -638,7 +642,7 @@ Batch Mode:
       --batch <file>     JSONL input file for batch processing
       --workers <n>      Number of parallel workers (default: 5)
   -o, --output <file>    Output file (default: stdout)
-      --resume           Resume from checkpoint, skip processed items
+      --resume           Resume from checkpoint: skip succeeded items, retry failed ones
       --retries <n>      Retry failed batch items N times with exponential backoff (batch mode only)
       --no-rate-limit    Disable rate limiting (high-tier API accounts)
       --budget <usd>     Stop dispatching once estimated spend hits this cap (also CONCLAVE_BATCH_BUDGET)

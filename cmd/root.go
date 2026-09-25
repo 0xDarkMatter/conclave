@@ -958,6 +958,11 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 	// Shared formatter: a real but sub-tenth-of-a-cent estimate must not print
 	// as $0.0000, which reads as free.
 	fmt.Fprintf(os.Stderr, "  Estimated cost: %s\n", pricing.FormatUSD(stats.TotalCost))
+	// Failed items are not checkpointed, so say how to retry them; the
+	// output keeps their error lines and a retry appends a new line per id.
+	if retryable := stats.Failed - stats.WriteFailed; retryable > 0 && flagOutput != "" && flagOutput != "-" {
+		fmt.Fprintf(os.Stderr, "  %d failed item(s) are not checkpointed: rerun with -o %s --resume to retry them (the last line per id wins).\n", retryable, flagOutput)
+	}
 
 	// Results that could not be written are lost output, not a partial
 	// success: the processor kept them out of the checkpoint so --resume
@@ -968,7 +973,8 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 
 	// A budget stop is a non-zero exit: the run is incomplete on purpose and a
 	// caller in a pipeline must be able to tell that apart from a clean finish.
-	// The checkpoint holds every completed id, so --resume continues the rest.
+	// The checkpoint holds every successful id, so --resume continues the rest
+	// and retries failures.
 	if stats.BudgetStopped {
 		fmt.Fprintf(os.Stderr, "  Budget cap $%.4f reached: %d item(s) not dispatched.\n", stats.Budget, stats.Skipped)
 		if flagOutput != "" && flagOutput != "-" {

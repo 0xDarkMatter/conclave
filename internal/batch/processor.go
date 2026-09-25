@@ -341,9 +341,13 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 			if writeErr != nil {
 				fmt.Fprintf(os.Stderr, "Error: failed to write result for %s: %v\n", result.ID, writeErr)
 			}
-			// A cancelled item never really ran, so recording it would make
-			// --resume skip work that was never done.
-			if p.checkpoint != nil && !result.cancelled && writeErr == nil {
+			// Only successes are checkpointed. A cancelled item never really
+			// ran, and a failed one (rate limit, timeout, provider 500) is what
+			// --resume exists to retry; checkpointing it skipped it for good
+			// (TestResumeRetriesFailedItems). --resume appends, so a retried
+			// item has its old error line AND its new line in the output:
+			// consumers take the LAST line per id.
+			if p.checkpoint != nil && !result.cancelled && writeErr == nil && result.Error == "" {
 				_ = p.checkpoint.MarkProcessed(result.ID)
 			}
 

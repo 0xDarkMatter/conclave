@@ -131,6 +131,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are refused. The judge is preflighted with the panel. A line over the
   input limit (now 4 MB) is named in the error. A second Ctrl-C aborts a
   graceful shutdown.
+- Batch `--resume` never retried a failed item: failures were checkpointed
+  like successes. Only successes are checkpointed now, so `--resume` retries
+  failures. It appends, so a retried item has two lines; the last per `id`
+  wins. The summary says how many failures a resume would retry.
 - Ctrl-C killed a single query outright, so grok's temp prompt file and
   claude's temp working directory were never removed. The first Ctrl-C now
   cancels the run: providers stop, the partial panel is shown, the judge is

@@ -893,3 +893,35 @@ func TestOverlongLineNamesTheLine(t *testing.T) {
 		t.Fatalf("got %v, want an error naming line 2", err)
 	}
 }
+
+// TestResumeRetriesFailedItems: failed items were checkpointed like successes,
+// so --resume skipped them for good and the only way to retry a rate-limited
+// or timed-out item was to hand-edit the checkpoint.
+func TestResumeRetriesFailedItems(t *testing.T) {
+	outPath := filepath.Join(t.TempDir(), "out.jsonl")
+	flaky := &fakeProvider{name: "openai", model: "m",
+		answer: func(_ int32, prompt string) (string, error) {
+			if prompt == "bad" {
+				return "", errors.New("upstream 500")
+			}
+			return "ok", nil
+		}}
+	p := newTestProcessor(t, Options{Workers: 1, OutputPath: outPath}, flaky)
+	_, stats := runBatch(t, p, "{\"id\":\"good\",\"prompt\":\"fine\"}\n{\"id\":\"flaky\",\"prompt\":\"bad\"}\n", "")
+	if stats.Failed != 1 {
+		t.Fatalf("stats = %+v, want one failure", stats)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	cp := NewCheckpoint(outPath)
+	if err := cp.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if !cp.IsProcessed("good") {
+		t.Fatal("the successful item is missing from the checkpoint and would be re-paid")
+	}
+	if cp.IsProcessed("flaky") {
+		t.Fatal("the failed item is checkpointed, so --resume will never retry it")
+	}
+}
