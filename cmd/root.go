@@ -233,6 +233,9 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	if flagRaw && flagJSON {
 		return fmt.Errorf("--raw and --json are mutually exclusive (both produce machine-readable output; pick one)")
 	}
+	if err := validateNumericFlags(); err != nil {
+		return err
+	}
 
 	// Batch mode implies cheap mode (unless -m overrides)
 	if flagBatch != "" {
@@ -515,6 +518,26 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	// a verdict it did not produce. --json also carries execution.judge_error.
 	if judgeErr != nil {
 		return fmt.Errorf("judge %s failed, so there is no verdict (the panel responses above are complete): %w", judgeName, judgeErr)
+	}
+	return nil
+}
+
+// validateNumericFlags rejects values that used to misbehave silently: a
+// zero worker count hung the batch feeder forever, a negative one panicked
+// (exit 2, which cmd/exit.go reserves for model drift), a non-positive -t
+// expired every provider instantly, a negative --budget meant "uncapped",
+// and a zero --max-context refused every -f file. Pinned by
+// TestNumericFlagsAreValidatedBeforeAnyWork.
+func validateNumericFlags() error {
+	switch {
+	case flagTimeout < 1:
+		return fmt.Errorf("--timeout must be at least 1 second (got %d)", flagTimeout)
+	case flagWorkers < 1:
+		return fmt.Errorf("--workers must be at least 1 (got %d)", flagWorkers)
+	case flagBudget < 0:
+		return fmt.Errorf("--budget must be 0 (uncapped) or a positive dollar amount (got %g)", flagBudget)
+	case flagMaxContext < 1:
+		return fmt.Errorf("--max-context must be a positive number of bytes (got %d)", flagMaxContext)
 	}
 	return nil
 }

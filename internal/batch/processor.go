@@ -168,6 +168,13 @@ type Options struct {
 
 // NewProcessor creates a new batch processor
 func NewProcessor(opts Options) (*Processor, error) {
+	// Process starts exactly opts.Workers goroutines and sizes its item
+	// channel by it: 0 deadlocks the feeder and a negative value panics in
+	// make(chan). cmd validates the flag too; this guards other callers.
+	if opts.Workers < 1 {
+		return nil, fmt.Errorf("workers must be at least 1 (got %d)", opts.Workers)
+	}
+
 	// Get provider instances (explicit injection wins; see Options.Providers)
 	providerList := opts.Providers
 	if providerList == nil {

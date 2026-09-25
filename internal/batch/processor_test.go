@@ -820,3 +820,14 @@ func TestJudgeFailureStillCountsThePanelSpend(t *testing.T) {
 		t.Fatalf("TotalCost = %v, want the two billed provider calls (~2.00) counted despite the judge failing", stats.TotalCost)
 	}
 }
+
+// TestNonPositiveWorkerCountIsRefused: Process sizes its channel and worker
+// pool by Workers, so 0 deadlocked the feeder forever and -1 panicked in
+// make(chan). NewProcessor must refuse both before anything runs.
+func TestNonPositiveWorkerCountIsRefused(t *testing.T) {
+	for _, n := range []int{0, -1} {
+		if _, err := NewProcessor(Options{Workers: n}); err == nil {
+			t.Fatalf("Workers=%d was accepted", n)
+		}
+	}
+}
