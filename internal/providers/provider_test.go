@@ -39,7 +39,7 @@ func TestAllProvidersRegistered(t *testing.T) {
 func TestProviderDefaultModels(t *testing.T) {
 	expectedModels := map[string]string{
 		"gemini":     "gemini-3.1-pro-preview",
-		"openai":     "gpt-5.6-sol",
+		"openai":     "gpt-6.1-sol",
 		"claude":     "claude-opus-5-5",
 		"perplexity": "sonar-pro",
 		"grok":       "grok-4.7",
@@ -142,8 +142,8 @@ func TestOpenAIProvider(t *testing.T) {
 		t.Errorf("expected name 'openai', got %s", p.Name())
 	}
 
-	if p.DefaultModel() != "gpt-5.6-sol" {
-		t.Errorf("expected model 'gpt-5.6-sol', got %s", p.DefaultModel())
+	if p.DefaultModel() != "gpt-6.1-sol" {
+		t.Errorf("expected model 'gpt-6.1-sol', got %s", p.DefaultModel())
 	}
 }
 

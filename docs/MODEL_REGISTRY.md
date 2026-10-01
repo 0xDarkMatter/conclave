@@ -118,11 +118,11 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 
 | Model ID | Description | Context | Input $/M | Output $/M | Released |
 |----------|-------------|---------|-----------|------------|----------|
-| `gpt-6.1-sol` | Newest. Near-Astra coding and computer use at Sol's price; 5 reasoning-effort levels (medium default). Tool calling needs the Responses API; Conclave's Chat Completions call (no tools) works. **Not offered by the codex CLI yet** | 1.05M / 128K out | $2.00 ($4.00 >272K) | $10.00 ($15.00 >272K) | 2026-09 |
-| `gpt-6-sol` | GPT-6 flagship tier. **Not offered by the codex CLI yet** | 1.05M / 128K out | $2.00 | $10.00 | 2026-09 |
-| `gpt-6-astra` | GPT-6 frontier tier; the only GPT-6 model the codex CLI offers (`codex debug models`, codex-cli 0.153.4) | 1.05M / 128K out | $10.00 | $50.00 | 2026-09 |
-| `gpt-6-luna` | **Conclave cheap** (since 2026-10-01) - GPT-6 cost tier; 2x `gpt-5-nano` on input, a generation newer. In OpenAI's live `/v1/models`; no end-to-end call yet (key out of credit) | 1.05M / 128K out | $0.10 | $0.50 | 2026-09 |
-| `gpt-5.6-sol` | **Conclave default** - Flagship of the GPT-5.6 series; codex now labels 5.6 "Older generation" | 1M | $2.00 | $10.00 | 2026-07 |
+| `gpt-6.1-sol` | **Conclave default** (since 2026-10-01) - Newest. Near-Astra coding and computer use at Sol's price; 5 reasoning-effort levels (medium default). Tool calling needs the Responses API; Conclave's Chat Completions call (no tools) works. codex's own default since codex 0.159.1; answered headless via `openai@cli` 2026-10-01 | 1.05M / 128K out (272K in codex) | $2.00 ($4.00 >272K) | $10.00 ($15.00 >272K) | 2026-09 |
+| `gpt-6-sol` | GPT-6 flagship tier; codex >= 0.157.0. Answered headless via `openai@cli` 2026-10-01 | 1.05M / 128K out (272K in codex) | $2.00 | $10.00 | 2026-09 |
+| `gpt-6-astra` | GPT-6 frontier tier. Answered headless via `openai@cli` 2026-10-01 | 1.05M / 128K out (272K in codex) | $10.00 | $50.00 | 2026-09 |
+| `gpt-6-luna` | **Conclave cheap** (since 2026-10-01) - GPT-6 cost tier; 2x `gpt-5-nano` on input, a generation newer. codex >= 0.157.0; answered headless via `openai@cli` 2026-10-01. The API route (what cheap mode uses) is in OpenAI's live `/v1/models` but not yet called end to end (key out of credit) | 1.05M / 128K out (272K in codex) | $0.10 | $0.50 | 2026-09 |
+| `gpt-5.6-sol` | Default until 2026-10-01. Flagship of the GPT-5.6 series; codex now labels 5.6 "Older generation" | 1M | $2.00 | $10.00 | 2026-07 |
 | `gpt-5.6-terra` | Mid tier of GPT-5.6; everyday coding and agentic work | 1M | $2.00 | $12.00 | 2026-07 |
 | `gpt-5.6-luna` | Cost tier of GPT-5.6; chat, classification, light agents | 1M | $0.20 | $1.20 | 2026-07 |
 | `gpt-5.6-{sol,terra,luna}-pro`, `gpt-6-*-pro` | Listed on OpenRouter only; absent from OpenAI's own `/v1/models` (2026-10-01), so not reachable through the direct provider | 1M | varies | varies | - |
@@ -142,7 +142,7 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 **Notes:**
 - Reasoning tokens are billed as output tokens
 - Reasoning models (`gpt-N` for N >= 5, and the o-series `o1`/`o3`/`o4-*`) require `max_completion_tokens` instead of `max_tokens`; Conclave handles this in `api_openai.go` (`isReasoningModel`), by version number rather than a prefix list, so GPT-6 and later are covered. Before 2026-10-01 the rule was the literal prefix `gpt-5`, and every `gpt-6*` id got HTTP 400 `unsupported_parameter`.
-- **CLI vs API reach differs for GPT-6.** In CLI mode (codex, ChatGPT subscription) only `gpt-6-astra` is offered; `gpt-6-sol` and `gpt-6.1-sol` exist only on the API. A default that works under `-g` can fail under `openai@cli`, so the default must be chosen per transport or kept on an id both serve.
+- **CLI reach for GPT-6 depends on the installed codex version**, because codex bundles its model catalog: 0.157.0 (2026-09-25) added `gpt-6-sol` / `gpt-6-luna`, and 0.159.1 (2026-09-29) added `gpt-6.1-sol` as codex's default. On 0.153.4 only `gpt-6-astra` was offered, which is what this file briefly recorded on 2026-10-01 before codex was updated to 0.159.2 (`codex debug models`; all four GPT-6 ids then answered headless via `openai@cli`). A default `openai@cli` relies on therefore needs codex at least that new on every machine that runs it. codex also caps context at 272K against the API's 1.05M.
 - Batch API: 50% discount, 24hr turnaround
 - GPT-5.6 Sol is cheaper than GPT-5.5 on both input and output, which is why it became the default in v1.3.0
 - `o1` is still listed at $15/$60 but there is no reason to use it
@@ -282,13 +282,13 @@ Models used when no `-m` override is given. Source of truth: `internal/config/co
 | Provider | CLI Mode | API Mode (`-g`) | Last verified |
 |----------|----------|-----------------|---------------|
 | gemini | `gemini-3.1-pro-preview` | `gemini-3.1-pro-preview` | 2026-09-08. API: 3.7s. CLI: needs `GEMINI_API_KEY` (free OAuth tier retired); falls back to the API if gemini-cli's auth is still set to OAuth. Gemini 4 is not callable through either (2026-10-01: absent from `v1beta/models`, from gemini-cli 0.62.0 and its 0.64 nightly) |
-| openai | `gpt-5.6-sol` | `gpt-5.6-sol` | 2026-09-08. CLI (codex, ChatGPT sub): 5s. API: 1.8s. Kept: the codex CLI does not offer `gpt-6-sol` / `gpt-6.1-sol` |
+| openai | `gpt-6.1-sol` | `gpt-6.1-sol` | 2026-10-01. CLI (codex 0.159.2, ChatGPT sub): 5.8s headless; needs codex >= 0.159.1. API: in OpenAI's live `/v1/models`, not called end to end (key out of credit) |
 | claude | `claude-opus-5-5` | `claude-opus-5-5` | 2026-10-01. CLI (claude, Max sub) answered. API: untested, key has no credit |
 | perplexity | `sonar-pro` | `sonar-pro` | Listed, unchanged |
 | grok | `grok-4.7` | `grok-4.7` | The only id the grok CLI offers (`grok models`, 2026-09-25) |
 | glm | `glm-5.3` (Coding Plan API) | `glm-5.3` (disabled, ADR-006) | Coding Plan: 3.2s |
 
-Previous defaults: claude `claude-opus-5` (until 2026-10-01); v1.2.0 openai `gpt-5.5`, claude `claude-opus-4-8`, grok `grok-4-1-fast-reasoning`, glm `glm-5.2`. All still served by their vendors; override with `-m provider:model` if you need one.
+Previous defaults: claude `claude-opus-5` and openai `gpt-5.6-sol` (until 2026-10-01); v1.2.0 openai `gpt-5.5`, claude `claude-opus-4-8`, grok `grok-4-1-fast-reasoning`, glm `glm-5.2`. All still served by their vendors; override with `-m provider:model` if you need one.
 
 ---
 
@@ -299,7 +299,7 @@ Models used when `--cheap` / `-c` is set. Cheap mode implies `-g`, so these are 
 | Provider | Default Model | Cheap Model | Input $/M | Output $/M | Status vs OpenRouter feed |
 |----------|---------------|-------------|-----------|------------|---------------------------|
 | gemini | gemini-3.1-pro-preview | `gemini-3-flash-preview` | $0.50 | $3.00 | Listed; `gemini-3.1-flash-lite` is cheaper ($0.25/$1.50) |
-| openai | gpt-5.6-sol | `gpt-6-luna` | $0.10 | $0.50 | Listed. Was `gpt-5-nano` ($0.05/$0.40) until 2026-10-01; set `CONCLAVE_CHEAP_OPENAI_MODEL=gpt-5-nano` to keep the cheaper, older model |
+| openai | gpt-6.1-sol | `gpt-6-luna` | $0.10 | $0.50 | Listed. Was `gpt-5-nano` ($0.05/$0.40) until 2026-10-01; set `CONCLAVE_CHEAP_OPENAI_MODEL=gpt-5-nano` to keep the cheaper, older model |
 | claude | claude-opus-5-5 | `claude-sonnet-5-5` | $2.00 | $10.00 | Listed. Was `claude-haiku-4-5-20251001` ($1/$5), which retires no sooner than 2026-10-15; no Haiku 5 yet |
 | perplexity | sonar-pro | `sonar` | $1.00 | $1.00 | Listed on OpenRouter, but the vendor's chat-completions route was reportedly retired 2026-09-25 (see Perplexity above) |
 | grok | grok-4.7 | `grok-build-0.1` | $1.00 | $2.00 | Listed. `grok-4-1-fast-non-reasoning` ($0.20/$0.50) still works on xAI's API but is unlisted; set `CONCLAVE_CHEAP_GROK_MODEL` to use it |
@@ -355,7 +355,7 @@ Rough cost per 1K-token query (500 in, 500 out) in API mode. Conclave now prints
 | Gemini | gemini-3-flash-preview | cheap | $0.00175 |
 | GLM | glm-5.3 | default | $0.003 pay-as-you-go; $0 on Coding Plan |
 | Grok | grok-4.7 | default | $0.004 |
-| OpenAI | gpt-5.6-sol | default | $0.006 |
+| OpenAI | gpt-6.1-sol | default | $0.006 |
 | Gemini | gemini-3.1-pro-preview | default | $0.007 |
 | Claude | claude-opus-5-5 | default | $0.012 |
 
@@ -365,7 +365,7 @@ Rough cost per 1K-token query (500 in, 500 out) in API mode. Conclave now prints
 
 ## Version History
 
-- **2026-10-01:** Defaults: claude `claude-opus-5` -> `claude-opus-5-5`; cheap claude `claude-haiku-4-5-20251001` -> `claude-sonnet-5-5`; cheap openai `gpt-5-nano` -> `gpt-6-luna`. Inventory refresh: Added GPT-6 Sol / Luna / Astra and GPT-6.1 Sol (API only except Astra, which is also on the codex CLI), Claude Opus 5.5 and Sonnet 5.5 (Opus 5 and Sonnet 5 now legacy), Gemini rolling aliases and 3.1 Pro custom-tools, GLM 5.3 Prime / FlashX (OpenRouter-listed only). Recorded Gemini 4 Argon as announced but not callable, the Perplexity Sonar chat-completions retirement (unverified), and the Haiku 4.5 retirement date. Corrected grok-4.7 ($2/$6) and glm-5.3-flash ($0.15/$0.50) prices. `isReasoningModel` now covers GPT-6 onward.
+- **2026-10-01:** Defaults: claude `claude-opus-5` -> `claude-opus-5-5`; openai `gpt-5.6-sol` -> `gpt-6.1-sol` (after updating codex to 0.159.2); cheap claude `claude-haiku-4-5-20251001` -> `claude-sonnet-5-5`; cheap openai `gpt-5-nano` -> `gpt-6-luna`. Inventory refresh: Added GPT-6 Sol / Luna / Astra and GPT-6.1 Sol (all four on the codex CLI from 0.159.1; codex updated to 0.159.2 and each answered headless), Claude Opus 5.5 and Sonnet 5.5 (Opus 5 and Sonnet 5 now legacy), Gemini rolling aliases and 3.1 Pro custom-tools, GLM 5.3 Prime / FlashX (OpenRouter-listed only). Recorded Gemini 4 Argon as announced but not callable, the Perplexity Sonar chat-completions retirement (unverified), and the Haiku 4.5 retirement date. Corrected grok-4.7 ($2/$6) and glm-5.3-flash ($0.15/$0.50) prices. `isReasoningModel` now covers GPT-6 onward.
 - **2026-09-08 (v1.3.0):** Defaults bumped to the ids the per-provider tables now badge (gpt-5.6-sol, claude-opus-5, grok-4.6, glm-5.3; cheap grok-build-0.1, glm-5.3-flash). `conclave models --check` exit codes are 0 ok / 2 drift / 3 catalog unreachable. Cost figures now print live per response in API mode.
 - **2026-09-08:** Full refresh against the OpenRouter models feed. Added GPT-5.6 Sol/Terra/Luna, Claude Fable 5 / 5.1, Opus 5, Sonnet 5, Gemini 3.5 to 3.8 Flash, Grok 4.20 to 4.6 and Build 0.1, GLM 5.3 and 5.3 Flash. Marked retired IDs. Added the API-mode-only pricing note, Drift Watch, and the maintenance rule tying the defaults tables to `config.go`.
 - **2026-06-18:** Defaults tables updated for v1.2.0 (gpt-5.5, gemini-3.1-pro-preview, claude-opus-4-8, glm-5.2, grok-4-1-fast-reasoning). Per-provider tables were not refreshed.

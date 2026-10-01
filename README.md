@@ -192,7 +192,7 @@ Uses provider-specific CLI tools optimized for coding tasks. Each provider requi
 |----------|----------|--------------|
 | **gemini** | `gemini` | `npm install -g @google/gemini-cli`, plus `GEMINI_API_KEY` (Google retired the CLI's free OAuth tier; Conclave falls back to the API if the CLI's auth fails) |
 | **claude** | `claude` | `npm install -g @anthropic-ai/claude-code`, then `claude auth login` (Max subscription, no API key) |
-| **openai** | `codex` | `npm install -g @openai/codex`, then `codex login` (ChatGPT subscription, no API key) |
+| **openai** | `codex` | `npm install -g @openai/codex`, then `codex login` (ChatGPT subscription, no API key). Needs codex 0.159.1 or newer: codex bundles its model list, and older builds reject the default `gpt-6.1-sol` |
 | **grok** | `grok` | See [xAI Grok CLI](https://github.com/xai-org/grok-cli) |
 | **perplexity** | `perplexity` | See [Perplexity CLI](https://github.com/perplexity-ai/perplexity-cli) |
 | **glm** | _(none — direct API)_ | Set `GLM_API_KEY` (GLM Coding Plan key from [z.ai](https://z.ai/manage-apikey/apikey-list)) |
@@ -262,7 +262,7 @@ conclave -c --all "Summarize" -f doc.md --brief
 | Provider | Default Model | Cheap Model |
 |----------|---------------|-------------|
 | gemini | gemini-3.1-pro-preview | gemini-3-flash-preview |
-| openai | gpt-5.6-sol | gpt-6-luna |
+| openai | gpt-6.1-sol | gpt-6-luna |
 | claude | claude-opus-5-5 | claude-sonnet-5-5 |
 | perplexity | sonar-pro | sonar |
 | grok | grok-4.7 | grok-build-0.1 |
@@ -374,7 +374,7 @@ See [docs/BATCH_MODE.md](docs/BATCH_MODE.md) for full documentation and [docs/BA
 | Provider | CLI Mode | API Mode |
 |----------|----------|----------|
 | gemini | gemini-3.1-pro-preview | gemini-3.1-pro-preview |
-| openai | gpt-5.6-sol | gpt-5.6-sol |
+| openai | gpt-6.1-sol | gpt-6.1-sol |
 | claude | claude-opus-5-5 | claude-opus-5-5 |
 | perplexity | sonar-pro | sonar-pro |
 | grok | grok-4.7 | grok-4.7 |
@@ -608,7 +608,7 @@ conclave -g gemini,openai "Classify" --raw -f items.txt | my-extractor
 
 Format:
 ```
-===PROVIDER:openai MODEL:gpt-5.6-sol STATUS:success===
+===PROVIDER:openai MODEL:gpt-6.1-sol STATUS:success===
 <response body>
 ===PROVIDER:claude MODEL:claude-opus-5-5 STATUS:error===
 <error message>
@@ -718,8 +718,8 @@ max_context_size: 500000     # bytes; used when --max-context is not given
 
 models:
   gemini: gemini-3.1-pro-preview
-  openai: gpt-5.6-sol
-  claude: claude-opus-5
+  openai: gpt-6.1-sol
+  claude: claude-opus-5-5
 
 # Pin a provider's transport for bare tokens (optional; ADR-012).
 # A token's own @cli/@api suffix still wins; -g/-c applies to the rest.

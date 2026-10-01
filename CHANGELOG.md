@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - claude's default model is `claude-opus-5-5` (was `claude-opus-5`, now
   legacy): Anthropic's recommended model and 20% cheaper on the API.
+- openai's default model is `gpt-6.1-sol` (was `gpt-5.6-sol`; same $2/$10
+  API price). CLI mode needs codex 0.159.1 or newer, because codex bundles
+  its model list and older builds do not know the id.
 - Cheap mode: claude uses `claude-sonnet-5-5` (was
   `claude-haiku-4-5-20251001`, which retires no sooner than 2026-10-15, with
   no Haiku 5 yet; cheap claude now costs $2/$10 instead of $1/$5), and openai

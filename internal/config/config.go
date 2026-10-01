@@ -41,7 +41,7 @@ func DefaultConfig() *Config {
 		// Last verified live 2026-10-01 (claude-opus-5-5 and claude-sonnet-5-5 on the claude CLI; see the per-entry notes for what could not be called).
 		Models: map[string]string{
 			"gemini":     "gemini-3.1-pro-preview",
-			"openai":     "gpt-5.6-sol",
+			"openai":     "gpt-6.1-sol",     // needs codex >= 0.159.1, which bundles it as codex's own default; verified headless on codex 0.159.2 2026-10-01. API route unverified: key out of credit
 			"claude":     "claude-opus-5-5", // claude CLI verified 2026-10-01; API key has no credit, so the API route is unverified
 			"perplexity": "sonar-pro",
 			"grok":       "grok-4.7", // the only id the grok CLI accepts (grok models, 2026-09-25); API serves it too
