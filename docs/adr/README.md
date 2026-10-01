@@ -17,3 +17,4 @@
 | ADR-011 | accepted | 2026-09-08 | Opt-in response cache keyed on the full prompt, never on the judge |
 | ADR-012 | accepted | 2026-09-13 | Per-provider transport with a `@cli` / `@api` token suffix |
 | ADR-013 | accepted | 2026-09-13 | Claude CLI queries run isolated from the caller's project context |
+| ADR-015 | accepted | 2026-10-01 | Batch retries skip permanent failures, and running out of credit does not abort a batch |

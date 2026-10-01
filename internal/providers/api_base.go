@@ -6,6 +6,10 @@
 // except a billing failure (BillingError), which is returned on the attempt
 // that saw it. Some vendors report "out of credit" as a 429, and waiting never
 // adds credit (TestOutOfCredit429IsNotRetried).
+//
+// Every non-2xx comes back typed, *APIError or a *BillingError wrapping one,
+// so callers classify by status rather than by matching text: IsPermanent is
+// how batch decides an item is not worth its --retries (ADR-015).
 package providers
 
 import (
@@ -395,12 +399,55 @@ func billingCode(statusCode int, body []byte) (string, bool) {
 	return "", false
 }
 
+// APIError is a non-2xx response from a provider API, as parseAPIError
+// renders it. It is typed so a caller can classify the status without
+// matching text (IsPermanent); Text is exactly what Error() returns, the
+// message users and tests already read, so typing it changed no output.
+type APIError struct {
+	StatusCode int
+	Text       string
+}
+
+func (e *APIError) Error() string { return e.Text }
+
+// IsPermanent reports whether err is an API failure the same request cannot
+// fix by being sent again: a billing failure, or a 4xx that doRequest does not
+// retry (every 4xx but 429). Anything else, including untyped errors (CLI
+// stderr, transport failures, timeouts, an empty answer) and a 429 or 5xx
+// that outlasted doRequest's retries, is assumed transient, because wrongly
+// retrying costs a request while wrongly giving up loses an answer.
+//
+// "Permanent" is for one run only: a key, a credit balance or a parameter is
+// fixed between runs, which is why batch still leaves these items out of the
+// checkpoint for --resume.
+func IsPermanent(err error) bool {
+	if IsBillingError(err) {
+		return true
+	}
+	var a *APIError
+	if !errors.As(err, &a) {
+		return false
+	}
+	// Every 5xx is transient: isRetryable retries the whole class (429 and
+	// 5xx, including Anthropic's 529), and one that outlasted doRequest's
+	// backoff may still answer on the next item-level attempt. Only a 4xx
+	// doRequest does not retry (everything but 429) is a client error.
+	return a.StatusCode >= 400 && a.StatusCode < 500 && !isRetryable(a.StatusCode)
+}
+
 // parseAPIError creates a descriptive error from API response. It surfaces
 // the HTTP status code prominently and extracts the provider's error code,
 // param, and message when available — these are the fields that make 400s
 // debuggable (OpenAI returns "code: unsupported_parameter, param: max_tokens"
 // which is far more actionable than a generic "request failed").
 func parseAPIError(statusCode int, body []byte) error {
+	return &APIError{StatusCode: statusCode, Text: apiErrorText(statusCode, body)}
+}
+
+// apiErrorText is parseAPIError's message. Its wording is load-bearing: batch
+// error lines, the CLI's failure output and BillingError.Error() all show it
+// verbatim (TestClientErrorsArePermanentAndKeepTheirText).
+func apiErrorText(statusCode int, body []byte) string {
 	var errResp struct {
 		Error struct {
 			Message string `json:"message"`
@@ -428,7 +475,7 @@ func parseAPIError(statusCode int, body []byte) error {
 			if errResp.Error.Param != "" {
 				details += fmt.Sprintf(" [param: %s]", errResp.Error.Param)
 			}
-			return fmt.Errorf("HTTP %d: %s", statusCode, details)
+			return fmt.Sprintf("HTTP %d: %s", statusCode, details)
 		}
 	}
 
@@ -448,7 +495,7 @@ func parseAPIError(statusCode int, body []byte) error {
 			if code := strings.TrimSpace(string(first.Code)); code != "" && code != "null" {
 				details += fmt.Sprintf(" [code: %s]", strings.Trim(code, `"`))
 			}
-			return fmt.Errorf("HTTP %d: %s", statusCode, details)
+			return fmt.Sprintf("HTTP %d: %s", statusCode, details)
 		}
 	}
 
@@ -461,23 +508,23 @@ func parseAPIError(statusCode int, body []byte) error {
 	switch statusCode {
 	case 401:
 		if rawBody != "" {
-			return fmt.Errorf("HTTP 401 authentication failed: %s", rawBody)
+			return fmt.Sprintf("HTTP 401 authentication failed: %s", rawBody)
 		}
-		return fmt.Errorf("HTTP 401 authentication failed: invalid API key")
+		return "HTTP 401 authentication failed: invalid API key"
 	case 403:
 		if rawBody != "" {
-			return fmt.Errorf("HTTP 403 forbidden: %s", rawBody)
+			return fmt.Sprintf("HTTP 403 forbidden: %s", rawBody)
 		}
-		return fmt.Errorf("HTTP 403 forbidden: API key lacks permissions")
+		return "HTTP 403 forbidden: API key lacks permissions"
 	case 429:
 		if rawBody != "" {
-			return fmt.Errorf("HTTP 429 rate limited: %s", rawBody)
+			return fmt.Sprintf("HTTP 429 rate limited: %s", rawBody)
 		}
-		return fmt.Errorf("HTTP 429 rate limited: too many requests")
+		return "HTTP 429 rate limited: too many requests"
 	case 500, 502, 503, 504:
-		return fmt.Errorf("HTTP %d server error: %s", statusCode, rawBody)
+		return fmt.Sprintf("HTTP %d server error: %s", statusCode, rawBody)
 	default:
-		return fmt.Errorf("HTTP %d: %s", statusCode, rawBody)
+		return fmt.Sprintf("HTTP %d: %s", statusCode, rawBody)
 	}
 }
 

@@ -35,7 +35,7 @@ cat results.jsonl
 | `--workers N` | 5 | Number of parallel workers |
 | `--output FILE` | stdout | Output file path |
 | `--resume` | false | Skip already-processed items |
-| `--retries N` | 0 | Retry failed items N times with exponential backoff (batch only — single-call queries auto-retry 429/5xx internally) |
+| `--retries N` | 0 | Retry failed items N times with exponential backoff (1s, 2s, 4s…, capped at 30s). An item whose every provider failed permanently (billing, or a 4xx other than 429) is not retried; see [Retries](#retries-and-permanent-failures). Batch only — single-call queries auto-retry 429/5xx internally |
 | `--no-rate-limit` | false | Disable rate limiting (for high-tier accounts) |
 | `--budget USD` | 0 (uncapped) | Stop dispatching new items once estimated spend reaches this cap (also `CONCLAVE_BATCH_BUDGET`) |
 | `--cache[=TTL]` | off | Reuse identical provider responses across items and runs; a hit costs nothing and does not count against `--budget` |
@@ -137,6 +137,25 @@ conclave --all "Classify" --batch items.jsonl --output results.jsonl --resume
 4. Checkpoint is updated atomically after each item
 
 **Important:** Keep the input file unchanged between runs for resume to work correctly.
+
+---
+
+## Retries and Permanent Failures
+
+`--retries N` re-runs a failed item up to N more times, backing off 1s, 2s, 4s… between attempts. It skips the retries when **every** provider in the panel failed in a way resending can't fix:
+
+- a billing failure: out of credit, quota exhausted, any 402
+- a 4xx other than 429: bad or revoked key, rejected parameter, unknown model, prompt too long
+
+One transient cause is enough to retry (a 429, a 5xx, a timeout, any CLI error), since that provider may answer next time. A skipped retry says so on the item's error line:
+
+```
+query error after 1 of 3 attempts (permanent failure, not retried): all providers failed: openai: HTTP 401 authentication failed: invalid API key
+```
+
+"Permanent" means permanent for this run. The item still has its error line and stays out of the checkpoint, so `--resume` retries it after you fix the key or the parameter, or add credit.
+
+**Running out of credit does not abort the batch.** With a single key every remaining item will fail the same way, but conclave can't know there is a single key: comma-separated keys rotate per request, so one dead key fails only its share; OpenRouter can refuse one oversized request with a 402 while smaller ones succeed; and a top-up mid-run lets later items through. Each failure costs one unbilled request, so the run continues and prints one warning on stderr the first time an item fails because every provider is out of credit. To stop early, press Ctrl-C, add credit, then rerun with `--resume`. The reasoning is recorded in [ADR-015](adr/ADR-015-batch-skips-permanent-failures-and-never-aborts-on-billing.md).
 
 ---
 
