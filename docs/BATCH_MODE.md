@@ -245,13 +245,13 @@ Batch mode uses cheap models by default:
 | Provider | Model | Input $/M | Output $/M |
 |----------|-------|-----------|------------|
 | gemini | gemini-3-flash-preview | $0.50 | $3.00 |
-| openai | gpt-5-nano | $0.05 | $0.40 |
-| claude | claude-haiku-4-5-20251001 | $1.00 | $5.00 |
+| openai | gpt-6-luna | $0.10 | $0.50 |
+| claude | claude-sonnet-5-5 | $2.00 | $10.00 |
 | perplexity | sonar | $1.00 | $1.00 |
 | grok | grok-build-0.1 | $1.00 | $2.00 |
-| glm | glm-5.3-flash | $0.075 | $0.25 (moot: `-g glm` is disabled, ADR-006) |
+| glm | glm-5.3-flash | $0.15 | $0.50 (moot: `-g glm` is disabled, ADR-006) |
 
-Prices come from the live OpenRouter catalog at run time (`conclave models`); the table is a snapshot from 2026-09-08. Each output line carries its real `cost_usd`.
+Prices come from the live OpenRouter catalog at run time (`conclave models`); the table is a snapshot from 2026-10-01. Each output line carries its real `cost_usd`.
 
 **Estimated cost per item (5 providers + judge):** ~$0.002-0.005
 

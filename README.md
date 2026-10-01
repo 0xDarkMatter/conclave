@@ -262,8 +262,8 @@ conclave -c --all "Summarize" -f doc.md --brief
 | Provider | Default Model | Cheap Model |
 |----------|---------------|-------------|
 | gemini | gemini-3.1-pro-preview | gemini-3-flash-preview |
-| openai | gpt-5.6-sol | gpt-5-nano |
-| claude | claude-opus-5 | claude-haiku-4-5 |
+| openai | gpt-5.6-sol | gpt-6-luna |
+| claude | claude-opus-5-5 | claude-sonnet-5-5 |
 | perplexity | sonar-pro | sonar |
 | grok | grok-4.7 | grok-build-0.1 |
 | glm | glm-5.3 | glm-5.3-flash |
@@ -375,7 +375,7 @@ See [docs/BATCH_MODE.md](docs/BATCH_MODE.md) for full documentation and [docs/BA
 |----------|----------|----------|
 | gemini | gemini-3.1-pro-preview | gemini-3.1-pro-preview |
 | openai | gpt-5.6-sol | gpt-5.6-sol |
-| claude | claude-opus-5 | claude-opus-5 |
+| claude | claude-opus-5-5 | claude-opus-5-5 |
 | perplexity | sonar-pro | sonar-pro |
 | grok | grok-4.7 | grok-4.7 |
 
@@ -610,7 +610,7 @@ Format:
 ```
 ===PROVIDER:openai MODEL:gpt-5.6-sol STATUS:success===
 <response body>
-===PROVIDER:claude MODEL:claude-opus-5 STATUS:error===
+===PROVIDER:claude MODEL:claude-opus-5-5 STATUS:error===
 <error message>
 ===END===
 ```
@@ -730,7 +730,7 @@ transports:
 # Override cheap mode models (optional)
 cheap_models:
   gemini: gemini-3.1-flash-lite # Cheaper than the default cheap model
-  claude: claude-sonnet-5       # Balance speed/quality
+  openai: gpt-5-nano            # Older but cheaper than the default gpt-6-luna
 ```
 
 ### Environment Variables

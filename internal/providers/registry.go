@@ -323,6 +323,10 @@ var modelDisplayNames = map[string]string{
 	"gemini-3-pro-preview":   "Gemini 3 Pro",
 	"gemini-3.1-pro-preview": "Gemini 3.1 Pro",
 	// OpenAI
+	"gpt-6.1-sol":   "GPT-6.1 Sol",
+	"gpt-6-sol":     "GPT-6 Sol",
+	"gpt-6-astra":   "GPT-6 Astra",
+	"gpt-6-luna":    "GPT-6 Luna", // matches the cheap-model id in config.go
 	"gpt-5.6-sol":   "GPT-5.6 Sol",
 	"gpt-5.6-terra": "GPT-5.6 Terra",
 	"gpt-5.6-luna":  "GPT-5.6 Luna",
@@ -339,13 +343,15 @@ var modelDisplayNames = map[string]string{
 	"opus":   "Claude Opus",
 	"haiku":  "Claude Haiku",
 	// Claude (API)
+	"claude-opus-5-5":            "Claude Opus 5.5",
+	"claude-sonnet-5-5":          "Claude Sonnet 5.5", // matches the cheap-model id in config.go
 	"claude-opus-5":              "Claude Opus 5",
 	"claude-sonnet-5":            "Claude Sonnet 5",
 	"claude-fable-5-1":           "Claude Fable 5.1",
 	"claude-opus-4-8":            "Claude Opus 4.8",
 	"claude-opus-4-5-20251101":   "Claude Opus 4.5",
 	"claude-sonnet-4-5-20250929": "Claude Sonnet 4.5",
-	"claude-haiku-4-5-20251001":  "Claude Haiku 4.5", // matches the cheap-model id in config.go
+	"claude-haiku-4-5-20251001":  "Claude Haiku 4.5",
 	// Perplexity
 	"sonar-pro":           "Sonar Pro",
 	"sonar":               "Sonar",

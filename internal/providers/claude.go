@@ -21,7 +21,7 @@ func NewClaudeProvider() *ClaudeProvider {
 	return &ClaudeProvider{
 		baseProvider: baseProvider{
 			name:         "claude",
-			defaultModel: "claude-opus-5",
+			defaultModel: "claude-opus-5-5",
 			command:      "claude",
 		},
 	}

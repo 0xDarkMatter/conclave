@@ -38,19 +38,19 @@ func DefaultConfig() *Config {
 		// `conclave models --check`; keep them to ids that feed lists, or
 		// every run prints a drift warning. Mirror any change in
 		// docs/MODEL_REGISTRY.md and the per-provider defaultModel fields.
-		// Last verified live (CLI + API) 2026-09-08.
+		// Last verified live 2026-10-01 (claude-opus-5-5 and claude-sonnet-5-5 on the claude CLI; see the per-entry notes for what could not be called).
 		Models: map[string]string{
 			"gemini":     "gemini-3.1-pro-preview",
 			"openai":     "gpt-5.6-sol",
-			"claude":     "claude-opus-5",
+			"claude":     "claude-opus-5-5", // claude CLI verified 2026-10-01; API key has no credit, so the API route is unverified
 			"perplexity": "sonar-pro",
 			"grok":       "grok-4.7", // the only id the grok CLI accepts (grok models, 2026-09-25); API serves it too
 			"glm":        "glm-5.3",
 		},
 		CheapModels: map[string]string{
 			"gemini":     "gemini-3-flash-preview",
-			"openai":     "gpt-5-nano",
-			"claude":     "claude-haiku-4-5-20251001",
+			"openai":     "gpt-6-luna",        // in OpenAI's live /v1/models 2026-10-01; key out of credit, so no end-to-end call. Needs isReasoningModel (gpt-6 takes max_completion_tokens)
+			"claude":     "claude-sonnet-5-5", // replaces Haiku 4.5 (retiring no sooner than 2026-10-15); id verified on the claude CLI 2026-10-01
 			"perplexity": "sonar",
 			"grok":       "grok-build-0.1", // cheapest grok still listed; grok-4-1-fast-* work on xAI's API but are unlisted
 			"glm":        "glm-5.3-flash",

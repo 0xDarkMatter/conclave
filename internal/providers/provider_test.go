@@ -40,7 +40,7 @@ func TestProviderDefaultModels(t *testing.T) {
 	expectedModels := map[string]string{
 		"gemini":     "gemini-3.1-pro-preview",
 		"openai":     "gpt-5.6-sol",
-		"claude":     "claude-opus-5",
+		"claude":     "claude-opus-5-5",
 		"perplexity": "sonar-pro",
 		"grok":       "grok-4.7",
 		"glm":        "glm-5.3",
@@ -154,8 +154,8 @@ func TestClaudeProvider(t *testing.T) {
 		t.Errorf("expected name 'claude', got %s", p.Name())
 	}
 
-	if p.DefaultModel() != "claude-opus-5" {
-		t.Errorf("expected model 'claude-opus-5', got %s", p.DefaultModel())
+	if p.DefaultModel() != "claude-opus-5-5" {
+		t.Errorf("expected model 'claude-opus-5-5', got %s", p.DefaultModel())
 	}
 }
 

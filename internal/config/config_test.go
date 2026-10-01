@@ -27,7 +27,7 @@ func TestDefaultConfig(t *testing.T) {
 	expectedModels := map[string]string{
 		"gemini":     "gemini-3.1-pro-preview",
 		"openai":     "gpt-5.6-sol",
-		"claude":     "claude-opus-5",
+		"claude":     "claude-opus-5-5",
 		"perplexity": "sonar-pro",
 		"grok":       "grok-4.7",
 		"glm":        "glm-5.3",

@@ -51,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- claude's default model is `claude-opus-5-5` (was `claude-opus-5`, now
+  legacy): Anthropic's recommended model and 20% cheaper on the API.
+- Cheap mode: claude uses `claude-sonnet-5-5` (was
+  `claude-haiku-4-5-20251001`, which retires no sooner than 2026-10-15, with
+  no Haiku 5 yet; cheap claude now costs $2/$10 instead of $1/$5), and openai
+  uses `gpt-6-luna` (was `gpt-5-nano`; $0.10/$0.50 instead of $0.05/$0.40).
+  `CONCLAVE_CHEAP_<PROVIDER>_MODEL` or `cheap_models:` restores either.
 - `output.Options.APIMode` is gone (internal). Pricing is decided per
   response from `Response.Transport`; a response that does not say how it ran
   is not priced. `cache.Wrap`'s mode argument is now a fallback that a

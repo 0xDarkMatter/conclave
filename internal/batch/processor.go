@@ -743,12 +743,12 @@ const maxBatchLine = 4 << 20
 // is the source of truth and this table is expected to drift. Keep it, do not
 // grow it: batch mode must estimate something even fully offline.
 var fallbackCosts = map[string]struct{ in, out float64 }{
-	"gemini":     {0.50, 3.00}, // gemini-3-flash-preview
-	"openai":     {0.05, 0.40}, // gpt-5-nano
-	"claude":     {1.00, 5.00}, // claude-haiku-4-5
-	"perplexity": {1.00, 1.00}, // sonar
-	"grok":       {0.20, 0.50}, // grok-4-1-fast-non-reasoning
-	"glm":        {0.00, 0.00}, // free tier
+	"gemini":     {0.50, 3.00},  // gemini-3-flash-preview
+	"openai":     {0.10, 0.50},  // gpt-6-luna
+	"claude":     {2.00, 10.00}, // claude-sonnet-5-5
+	"perplexity": {1.00, 1.00},  // sonar
+	"grok":       {0.20, 0.50},  // grok-4-1-fast-non-reasoning
+	"glm":        {0.00, 0.00},  // free tier
 }
 
 // estimateCost estimates the cost of a query from token usage. The arithmetic
