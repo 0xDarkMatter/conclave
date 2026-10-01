@@ -1,9 +1,18 @@
+// Shared transport for every HTTP API provider (ADR-004): key rotation with
+// an OS-keyring fallback, one retry loop (doRequest), error rendering, and the
+// OpenAI-compatible chat wire format.
+//
+// Retry contract: 429 and 5xx back off and retry up to maxRetries times,
+// except a billing failure (BillingError), which is returned on the attempt
+// that saw it. Some vendors report "out of credit" as a 429, and waiting never
+// adds credit (TestOutOfCredit429IsNotRetried).
 package providers
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -23,6 +32,8 @@ import (
 //
 //	conclave keyring set GLM_API_KEY        # or any provider's *_API_KEY
 const KeyringService = "conclave"
+
+// === Key rotation ===
 
 // KeyRotator provides round-robin selection of API keys
 type KeyRotator struct {
@@ -95,6 +106,8 @@ func (r *KeyRotator) Count() int {
 	return len(r.keys)
 }
 
+// === Retry and transport ===
+
 // Retry configuration
 const (
 	maxRetries     = 3
@@ -140,7 +153,8 @@ func (p *apiBaseProvider) httpClient() *http.Client {
 	return p.client
 }
 
-// isRetryable returns true if the status code indicates a transient error
+// isRetryable returns true if the status code usually means a transient
+// error. A 429 is not always one: doRequest checks billingCode first.
 func isRetryable(statusCode int) bool {
 	switch statusCode {
 	case 429, 500, 502, 503, 504:
@@ -183,7 +197,9 @@ func parseRetryAfter(resp *http.Response) time.Duration {
 }
 
 // doRequest performs an HTTP request with JSON body and returns the response body.
-// It automatically retries on transient errors (429, 5xx) with exponential backoff.
+// It automatically retries on transient errors (429, 5xx) with exponential
+// backoff. A billing failure is returned at once as a *BillingError, even when
+// it arrives as a 429.
 func (p *apiBaseProvider) doRequest(ctx context.Context, method, url string, headers map[string]string, body any) ([]byte, error) {
 	// Pre-marshal body so we can retry with same content
 	var jsonBody []byte
@@ -255,6 +271,12 @@ func (p *apiBaseProvider) doRequest(ctx context.Context, method, url string, hea
 			return respBody, nil
 		}
 
+		// Checked before isRetryable because OpenAI sends "no credits
+		// remaining" as a 429. Typed so batch does not pace itself for it.
+		if code, ok := billingCode(resp.StatusCode, respBody); ok {
+			return nil, &BillingError{StatusCode: resp.StatusCode, Code: code, Err: parseAPIError(resp.StatusCode, respBody)}
+		}
+
 		// Non-retryable error
 		if !isRetryable(resp.StatusCode) {
 			return nil, parseAPIError(resp.StatusCode, respBody)
@@ -277,6 +299,72 @@ func (p *apiBaseProvider) doRequest(ctx context.Context, method, url string, hea
 		return nil, fmt.Errorf("%w (after %d retries)", lastErr, maxRetries)
 	}
 	return nil, fmt.Errorf("request failed after %d retries", maxRetries)
+}
+
+// === Error classification ===
+
+// BillingError is an API response saying the account cannot pay for the
+// call: out of credit, quota exhausted, payment required. It is permanent
+// until a human adds credit, so doRequest never retries it and batch's
+// adaptive rate limiter never counts it, whatever its HTTP status.
+// Error() is the vendor's message exactly as parseAPIError renders it.
+type BillingError struct {
+	StatusCode int    // 429 (OpenAI), 402 (Anthropic, OpenRouter)
+	Code       string // the vendor code that classified it; "" for a bare 402
+	Err        error
+}
+
+func (e *BillingError) Error() string { return e.Err.Error() }
+func (e *BillingError) Unwrap() error { return e.Err }
+
+// IsBillingError reports whether err, or anything it wraps, is a BillingError.
+func IsBillingError(err error) bool {
+	var b *BillingError
+	return errors.As(err, &b)
+}
+
+// billingErrorCodes are matched against error.code, error.type and
+// error.status, whichever the vendor fills. Sources: the vendor table in
+// docs/PLAN-reliability-judging.md, Feature 2 (docs fetched 2026-09-08), and
+// the live OpenAI 429 of 2026-10-01.
+//
+// Gemini's RESOURCE_EXHAUSTED is deliberately absent. Gemini sends that one
+// status for per-minute rate limits, which one backoff fixes, and for daily
+// or free-tier quota; telling them apart means parsing details[].quotaId, so
+// it stays retryable. Its billing/location error is FAILED_PRECONDITION, a
+// 400 that already fails at once, as does Anthropic's "credit balance too
+// low" (a 400 on /v1/messages, identified by its message, not a code).
+var billingErrorCodes = map[string]bool{
+	"credit_balance_exhausted": true, // OpenAI, HTTP 429 (seen live 2026-10-01)
+	"insufficient_quota":       true, // OpenAI, HTTP 429, as code and as type
+	"billing_error":            true, // Anthropic, HTTP 402, as error.type
+}
+
+// billingCode reports whether a non-2xx response is a billing failure, and
+// the vendor code that said so. Any 402 Payment Required counts: OpenRouter's
+// 402 body carries a numeric code ({"error":{"code":402,...}}), so the status
+// is its only reliable signal.
+func billingCode(statusCode int, body []byte) (string, bool) {
+	var e struct {
+		Error struct {
+			Type   string          `json:"type"`
+			Code   json.RawMessage `json:"code"` // a string (OpenAI) or a number (Gemini, OpenRouter)
+			Status string          `json:"status"`
+		} `json:"error"`
+	}
+	// Best effort: a plain-text body or an odd field type leaves fields empty.
+	_ = json.Unmarshal(body, &e)
+	var code string
+	_ = json.Unmarshal(e.Error.Code, &code)
+	for _, c := range []string{code, e.Error.Type, e.Error.Status} {
+		if billingErrorCodes[c] {
+			return c, true
+		}
+	}
+	if statusCode == http.StatusPaymentRequired {
+		return "", true
+	}
+	return "", false
 }
 
 // parseAPIError creates a descriptive error from API response. It surfaces
@@ -341,6 +429,8 @@ func parseAPIError(statusCode int, body []byte) error {
 		return fmt.Errorf("HTTP %d: %s", statusCode, rawBody)
 	}
 }
+
+// === OpenAI-compatible wire format ===
 
 // OpenAI-compatible chat completion request/response structures
 // Used by OpenAI, Perplexity, Grok, and GLM (they all use this format)

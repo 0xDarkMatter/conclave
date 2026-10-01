@@ -10,6 +10,23 @@ import (
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
 
+// AllFailedError is Run's error when no provider answered. Error() names every
+// provider's failure (see Run for why that text is load-bearing). Causes holds
+// each provider's error value in panel order, so a caller can classify them by
+// type: batch asks whether any is a real rate limit, and a billing 429
+// (providers.BillingError) is not one.
+//
+// Deliberately no Unwrap: cmd picks the exit status with errors.As(err,
+// &exitCoder), and a CLI provider wraps *exec.ExitError, which has an
+// ExitCode() method, so unwrapping would turn a subprocess's exit status
+// into conclave's own.
+type AllFailedError struct {
+	Causes []error
+	msg    string
+}
+
+func (e *AllFailedError) Error() string { return e.msg }
+
 // ProgressCallback is called when a provider starts or completes.
 // tokens is the total token count (input + output) when completed, 0 otherwise;
 // cached reports that the answer came from conclave's response store rather
@@ -40,6 +57,7 @@ func (o *Orchestrator) WithProgress(cb ProgressCallback) *Orchestrator {
 // Run executes the prompt against all providers in parallel
 func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Response, error) {
 	results := make([]providers.Response, len(o.providers))
+	errs := make([]error, len(o.providers))
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var firstError error
@@ -81,6 +99,7 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 			}
 
 			if err != nil {
+				errs[idx] = err
 				results[idx] = providers.Response{
 					Provider:  provider.Name(),
 					Model:     model,
@@ -118,15 +137,19 @@ func (o *Orchestrator) Run(ctx context.Context, prompt string) ([]providers.Resp
 	}
 
 	// If all providers failed, return an error that names each failure. The
-	// causes are load-bearing, not decoration: batch mode's adaptive rate
-	// limiter matches "429"/"rate limit" in this text, and a bare "all
-	// providers failed" disabled it (TestAllFailedErrorCarriesEachProviderError).
+	// causes are load-bearing, not decoration: every batch error line and the
+	// CLI's failure message are this text, and a bare "all providers failed"
+	// once hid every cause (TestAllFailedErrorCarriesEachProviderError).
+	// Batch's rate limiter classifies the typed Causes, not this text.
 	if successCount == 0 && len(o.providers) > 0 {
 		causes := make([]string, 0, len(results))
 		for _, r := range results {
 			causes = append(causes, fmt.Sprintf("%s: %s", r.Provider, r.Error))
 		}
-		return results, fmt.Errorf("all providers failed: %s", strings.Join(causes, "; "))
+		return results, &AllFailedError{
+			Causes: errs,
+			msg:    fmt.Sprintf("all providers failed: %s", strings.Join(causes, "; ")),
+		}
 	}
 
 	return results, nil

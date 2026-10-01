@@ -65,6 +65,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An out-of-credit API key no longer retries. OpenAI reports "You have no
+  credits remaining" (`credit_balance_exhausted`) and `insufficient_quota` as
+  HTTP 429, which the shared client retried three times with backoff (~7 s
+  per call, per item in batch) before failing with the same message. Billing
+  failures are now classified by the vendor's error code (OpenAI
+  `credit_balance_exhausted` / `insufficient_quota`, Anthropic
+  `billing_error`, any HTTP 402 such as OpenRouter's) and fail on the first
+  call with the vendor's message. Batch's adaptive rate limiter no longer
+  slows down for them either; it now reads each provider's typed error
+  (`orchestrator.AllFailedError.Causes`) instead of grepping the joined text
+  for "429", so one member's real rate limit still counts. Gemini's 429
+  `RESOURCE_EXHAUSTED` is still retried: it is mostly a per-minute limit.
+  Regression tests: `TestOutOfCredit429IsNotRetried`,
+  `TestBillingIsToldApartFromRateLimits`,
+  `TestBillingFailureDoesNotSlowTheBatch`.
 - `openai` CLI mode dropped every line of the prompt after the first on
   Windows. `codex` on PATH is npm's `codex.cmd` shim, Go launches it through
   `cmd.exe`, and `cmd.exe` stops reading a positional argument at the first

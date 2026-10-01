@@ -36,6 +36,7 @@ Most providers expose an OpenAI-compatible `/chat/completions` endpoint, so thei
 ### Negative
 - The shared `chatCompletionRequest` is a lowest-common-denominator shape; provider-specific fields require special-casing (e.g. `max_completion_tokens` for gpt-5.x).
 - A bug in the shared client affects all OpenAI-compatible providers at once.
+- A status code is not enough to decide a retry. OpenAI sends "no credits remaining" (`credit_balance_exhausted`, `insufficient_quota`) as a 429, and retrying it added ~7 s per call before failing anyway (seen 2026-10-01). Since then the retry loop classifies billing by the vendor's error code before looking at the status: those codes, Anthropic `billing_error` and any 402 return on the first attempt as a typed `BillingError`, which batch's adaptive rate limiter also ignores. The code list (`billingErrorCodes`) is per-vendor knowledge and needs updating when a vendor adds a billing code. Gemini's 429 `RESOURCE_EXHAUSTED` is deliberately still retried, because Gemini uses it mostly for per-minute limits.
 
 ### Non-goals
 - Does not cover non-OpenAI wire formats (Anthropic/Gemini keep bespoke structs).

@@ -307,6 +307,50 @@ func TestIsRateLimitError(t *testing.T) {
 	}
 }
 
+// TestBillingFailureDoesNotSlowTheBatch defends the adaptive rate limiter
+// against an out-of-credit key. OpenAI reports "no credits remaining" as an
+// HTTP 429, and isRateLimitError matched the "429" in its text, so a batch on
+// a dead key stretched its interval by 50% per item for a failure that no
+// pacing fixes. A real rate limit from another panel member must still count.
+func TestBillingFailureDoesNotSlowTheBatch(t *testing.T) {
+	// What doRequest returns for OpenAI's out-of-credit 429.
+	billing := &providers.BillingError{
+		StatusCode: 429,
+		Code:       "credit_balance_exhausted",
+		Err:        errors.New("HTTP 429: You have no credits remaining. [code: credit_balance_exhausted]"),
+	}
+	limited := errors.New("HTTP 429 rate limited: too many requests")
+	cases := []struct {
+		name  string
+		errs  []error
+		slows bool
+	}{
+		{"out of credit", []error{billing}, false},
+		{"out of credit beside a real rate limit", []error{billing, limited}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var list []providers.Provider
+			for i, e := range tc.errs {
+				list = append(list, &fakeProvider{
+					name:   fmt.Sprintf("p%d", i),
+					model:  "m",
+					answer: func(int32, string) (string, error) { return "", e },
+				})
+			}
+			p := newTestProcessor(t, Options{}, list...)
+			// A paced limiter, so a slow-down is observable; the first Wait
+			// never blocks, and one item with no --retries waits only once.
+			p.rateLimiter = NewRateLimiter(len(list))
+			before := p.rateLimiter.Interval()
+			runBatch(t, p, `{"id":"a","prompt":"q"}`+"\n", "")
+			if slowed := p.rateLimiter.Interval() > before; slowed != tc.slows {
+				t.Fatalf("limiter slowed = %v, want %v (interval %s -> %s)", slowed, tc.slows, before, p.rateLimiter.Interval())
+			}
+		})
+	}
+}
+
 // === Checkpoint / resume ===
 
 // TestResumeSkipsProcessedIDs defends against paying twice for work a previous

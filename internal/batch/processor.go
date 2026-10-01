@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -806,13 +807,30 @@ func (p *Processor) Close() error {
 	return nil
 }
 
-// isRateLimitError checks if an error is a rate limit (429) error
+// isRateLimitError reports whether a failed item hit a rate limit, which
+// slows the adaptive limiter. An all-failed panel counts when any member was
+// rate limited. A billing failure never counts, even as an HTTP 429 (OpenAI's
+// "no credits remaining"): pacing cannot add credit, and it would stretch the
+// interval for every remaining item (TestBillingFailureDoesNotSlowTheBatch).
+// Untyped errors (CLI stderr) fall back to matching the text.
 func isRateLimitError(err error) bool {
 	if err == nil {
 		return false
 	}
-	s := err.Error()
+	var all *orchestrator.AllFailedError
+	if errors.As(err, &all) {
+		for _, cause := range all.Causes {
+			if isRateLimitError(cause) {
+				return true
+			}
+		}
+		return false
+	}
+	if providers.IsBillingError(err) {
+		return false
+	}
+	s := strings.ToLower(err.Error())
 	return strings.Contains(s, "429") ||
-		strings.Contains(strings.ToLower(s), "rate limit") ||
-		strings.Contains(strings.ToLower(s), "too many requests")
+		strings.Contains(s, "rate limit") ||
+		strings.Contains(s, "too many requests")
 }
