@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-01
+
 ### Added
 
 - Per-provider transport: a token may carry `@cli` or `@api`
@@ -196,6 +198,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The judge's verdict parser scanned quadratically on unbalanced braces (5s
   on 100k). It now uses the same object scanner as the CLI readers
   (`internal/jsonscan`).
+
+### Known issues
+
+- Perplexity ended support for Sonar chat completions on 2026-09-27 in
+  favour of its Agent API. The `perplexity` API provider still calls
+  `/chat/completions`, which Perplexity says it is reformulating onto the
+  Agent API gradually, so it most likely still answers; this was not
+  verified against the live API (no key). A migration to the Agent API is
+  written but held for a later release until a key proves it, since it
+  changes what a perplexity model id is (presets instead of `sonar*`).
+- The new defaults (`claude-opus-5-5`, `gpt-6.1-sol`, cheap
+  `claude-sonnet-5-5` and `gpt-6-luna`) were verified through the claude and
+  codex CLIs, not through the Anthropic and OpenAI APIs, whose keys had no
+  credit at release time.
 
 ## [1.3.0] - 2026-09-08
 
@@ -441,6 +457,8 @@ Initial public release.
 - Blind mode for unbiased judging.
 - Interactive setup (`conclave init`) for API key configuration.
 
+[Unreleased]: https://github.com/0xDarkMatter/conclave/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/0xDarkMatter/conclave/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/0xDarkMatter/conclave/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/0xDarkMatter/conclave/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/0xDarkMatter/conclave/compare/v1.0.0...v1.1.0

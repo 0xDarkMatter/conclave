@@ -19,11 +19,33 @@ Built with [Charm](https://charm.sh)'s Bubble Tea for a terminal UI that doesn't
 - **Reduce bias** - No single model's quirks dominate the response
 - **Catch blind spots** - Disagreements are surfaced, not averaged away; different models notice different issues
 - **Faster iteration** - Parallel queries, one synthesized answer, and an opt-in cache so re-runs are free
-- **Know what it cost** - API-mode runs print the real dollar figure per response, from a daily-refreshed price catalog
-- **Never run a dead model** - Conclave warns when a configured model id has vanished from the catalog
+- **Use the plans you already pay for** - Pin each provider to its subscription CLI or its metered API, even within one panel (`gemini@api,openai@cli,claude@cli`)
+- **Know what it cost** - API legs print the real dollar figure per response from a daily-refreshed price catalog, which also warns when a configured model id has vanished
 - **Beautiful TUI** - Animated progress with [Charm](https://charm.sh) (Bubble Tea)
 
 ## Recent Updates
+
+### v1.4.0 — 2026-10-01
+
+**🔌 Subscriptions and API keys in one panel**
+
+Any provider token can pin its own transport: `conclave gemini@api,openai@cli,claude@cli "..."` runs gemini on a metered key beside openai and claude on their ChatGPT and Claude Max subscriptions. A standing choice goes in `config.yaml` under `transports:`. Only the API legs are priced, and `--json` says which leg ran where.
+
+**🚀 GPT-6.1 Sol and Claude Opus 5.5 by default**
+
+Defaults move to `gpt-6.1-sol` and `claude-opus-5-5` (20% cheaper on the API), with `gpt-6-luna` and `claude-sonnet-5-5` in cheap mode, since Haiku 4.5 is retiring. CLI mode now needs codex 0.159.1 or newer, which bundles the GPT-6 models.
+
+**🛡️ A hardening pass**
+
+Thirty-seven fix commits, led by Windows: prompts no longer travel on the command line, where `cmd.exe` cut multi-line prompts to their first line, and `-t` now bounds npm-shim CLIs. A failed or unparseable judge exits 1, Ctrl-C cancels cleanly with exit 130, batch `--resume` retries failures, and an out-of-credit key fails at once instead of retrying.
+
+**🎯 Panel answers no longer shaped by your repo**
+
+claude panel queries run in an empty directory with no MCP servers or settings, so an answer depends on the prompt and its `-f` context, not on whichever project you ran conclave from.
+
+**⚠️ Known issue:** Perplexity ended Sonar chat-completions support on 2026-09-27. The provider most likely still works (Perplexity is reformulating the old calls onto its Agent API), but this is unverified; a migration is held for a later release. See [CHANGELOG](CHANGELOG.md#140---2026-10-01).
+
+---
 
 ### v1.3.0 — 2026-09-08
 
