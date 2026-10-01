@@ -687,6 +687,8 @@ Transient failures (429 rate limits, 5xx errors) automatically retry with expone
 - 1s → 2s → 4s delays with jitter
 - Respects `Retry-After` headers
 
+A 429 that means the account is out of credit (OpenAI's "You have no credits remaining" / `insufficient_quota`) is not retried, since waiting won't add credit: it fails on the first call with the vendor's message. The same goes for any 402 and Anthropic's `billing_error`.
+
 This is built-in for **all** single-call queries via API mode. The `--retries` flag is separate and applies only to **batch mode** (`--batch`) — it retries failed items in the JSONL pipeline. 400-class errors (auth, bad params) never retry in either path since they won't fix themselves.
 
 ### Blind Mode

@@ -99,6 +99,75 @@ func TestDoRequest_RetriesOn429(t *testing.T) {
 	}
 }
 
+// TestOutOfCredit429IsNotRetried defends against retrying a 429 that is a
+// billing state, not a rate limit. On 2026-10-01 an out-of-credit OpenAI key
+// answered every completion with this exact body; doRequest retried it three
+// times (~7 s of backoff, multiplied per item in batch mode) before returning
+// the same message with "(after 3 retries)". No amount of waiting adds credit.
+func TestOutOfCredit429IsNotRetried(t *testing.T) {
+	var callCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.WriteHeader(429)
+		_, _ = w.Write([]byte(`{"error":{"message":"You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.","code":"credit_balance_exhausted"}}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("OPENAI_API_KEY", "test")
+	p := NewOpenAIAPIProvider()
+	p.baseURL = srv.URL
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _, _, err := p.Query(ctx, "Reply with exactly: OK", "gpt-6-luna")
+	if err == nil {
+		t.Fatal("expected the billing error")
+	}
+	if callCount != 1 {
+		t.Errorf("an out-of-credit 429 was sent %d times, want exactly 1", callCount)
+	}
+	for _, want := range []string{"HTTP 429", "You have no credits remaining", "credit_balance_exhausted"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should carry the vendor's message (%q); got: %s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "retries") {
+		t.Errorf("a billing failure was retried; got: %s", err)
+	}
+	// Batch's rate limiter relies on the type, not the text, to skip it.
+	if !IsBillingError(err) {
+		t.Errorf("error is not a *BillingError, so batch would count it as a rate limit: %T", err)
+	}
+}
+
+// TestBillingIsToldApartFromRateLimits pins the per-vendor classification.
+// Too narrow, and an out-of-credit key burns three backoffs per call; too
+// broad, and a per-minute rate limit that one backoff would have absorbed
+// fails a panel member outright. Gemini's RESOURCE_EXHAUSTED is the trap: it
+// mentions quota and billing but is mostly a per-minute limit.
+func TestBillingIsToldApartFromRateLimits(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  int
+		body    string
+		billing bool
+	}{
+		{"openai credit exhausted", 429, `{"error":{"message":"You have no credits remaining.","code":"credit_balance_exhausted"}}`, true},
+		{"openai insufficient quota", 429, `{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}`, true},
+		{"anthropic billing_error", 402, `{"type":"error","error":{"type":"billing_error","message":"Billing issue"}}`, true},
+		{"openrouter 402 with a numeric code", 402, `{"error":{"message":"Insufficient credits","code":402}}`, true},
+		{"openai rate limit", 429, `{"error":{"message":"Rate limit reached for requests","type":"requests","param":null,"code":"rate_limit_exceeded"}}`, false},
+		{"gemini resource exhausted", 429, `{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED"}}`, false},
+		{"bare 429", 429, ``, false},
+		{"plain-text 429", 429, `Too Many Requests`, false},
+	}
+	for _, tc := range cases {
+		if _, got := billingCode(tc.status, []byte(tc.body)); got != tc.billing {
+			t.Errorf("%s: billing = %v, want %v", tc.name, got, tc.billing)
+		}
+	}
+}
+
 // TestParseAPIError_OpenAIMaxTokensRejection verifies that the actual
 // OpenAI error body for the gpt-5.x max_tokens bug surfaces param/code in
 // the returned error — this is what made the original report hard to debug.
