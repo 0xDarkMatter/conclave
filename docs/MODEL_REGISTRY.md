@@ -187,17 +187,20 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 **Auth:** `PERPLEXITY_API_KEY`
 **CLI mode:** `perplexity` CLI; metered by the account behind it.
 
-> **Likely broken since 2026-09-27: Sonar chat completions retired.** Perplexity's changelog
-> says "Sonar Chat Completions is now Agent API" (`POST /v1/agent`, `/v1/responses` as alias);
-> third-party reports date `sonar` moving on 2026-09-25 and `sonar-pro` / `sonar-reasoning-pro`
-> ceasing to route on 2026-09-27, with the Agent API taking presets (`fast`, `low`, `medium`,
-> `high`, `xhigh`; reported mapping sonar -> fast, sonar-pro -> low) instead of these ids.
-> Conclave's API provider still calls `https://api.perplexity.ai/chat/completions`
-> (`api_perplexity.go`). **Not verified live** (no Perplexity key on this machine), and
-> `models --check` cannot catch it: OpenRouter still lists the sonar ids. Smoke-test with
-> `conclave -g perplexity "Say hello" --no-judge` before relying on this provider.
-> Sources: [Perplexity changelog](https://docs.perplexity.ai/docs/resources/changelog),
-> [llmgateway](https://llmgateway.io/blog/perplexity-sonar-api-retirement).
+> **Sonar chat completions support ended 2026-09-27; the route reportedly still answers.**
+> Perplexity's own migration guide says support for Sonar Chat Completions ended on
+> 2026-09-27 in favour of its Agent API (`POST /v1/agent`, `/v1/responses` as alias), which
+> takes presets (`fast`, `low`, `medium`, `high`, `xhigh`; the vendor maps `sonar-pro` ->
+> `fast`) or hosted `vendor/model` ids instead of sonar ids. It also says synchronous calls to
+> `/chat/completions` are "reformulated as Agent API requests, rolling out gradually by model",
+> so Conclave's API provider, which still calls `https://api.perplexity.ai/chat/completions`
+> (`api_perplexity.go`), most likely keeps working for now. Keyless probes agree: that route
+> still exists (401, not 404). **Neither path is verified live** (no Perplexity key on this
+> machine), and `models --check` cannot catch a retirement: OpenRouter still lists the sonar
+> ids. A migration to the Agent API is written and held on branch
+> `claude/gallant-germain-fefb40` (ADR-014 there; breaking, since sonar ids would be refused)
+> until a key proves it. Smoke-test with `conclave -g perplexity "Say hello" --no-judge`.
+> Sources: [Perplexity changelog](https://docs.perplexity.ai/docs/resources/changelog).
 
 | Model ID | Description | Context | Input $/M | Output $/M | Request Fee |
 |----------|-------------|---------|-----------|------------|-------------|
@@ -301,7 +304,7 @@ Models used when `--cheap` / `-c` is set. Cheap mode implies `-g`, so these are 
 | gemini | gemini-3.1-pro-preview | `gemini-3-flash-preview` | $0.50 | $3.00 | Listed; `gemini-3.1-flash-lite` is cheaper ($0.25/$1.50) |
 | openai | gpt-6.1-sol | `gpt-6-luna` | $0.10 | $0.50 | Listed. Was `gpt-5-nano` ($0.05/$0.40) until 2026-10-01; set `CONCLAVE_CHEAP_OPENAI_MODEL=gpt-5-nano` to keep the cheaper, older model |
 | claude | claude-opus-5-5 | `claude-sonnet-5-5` | $2.00 | $10.00 | Listed. Was `claude-haiku-4-5-20251001` ($1/$5), which retires no sooner than 2026-10-15; no Haiku 5 yet |
-| perplexity | sonar-pro | `sonar` | $1.00 | $1.00 | Listed on OpenRouter, but the vendor's chat-completions route was reportedly retired 2026-09-25 (see Perplexity above) |
+| perplexity | sonar-pro | `sonar` | $1.00 | $1.00 | Listed on OpenRouter. Vendor support for sonar chat completions ended 2026-09-27; the route reportedly still answers via reformulation (see Perplexity above) |
 | grok | grok-4.7 | `grok-build-0.1` | $1.00 | $2.00 | Listed. `grok-4-1-fast-non-reasoning` ($0.20/$0.50) still works on xAI's API but is unlisted; set `CONCLAVE_CHEAP_GROK_MODEL` to use it |
 | glm | glm-5.3 | `glm-5.3-flash` | $0.15 | $0.50 | Listed (price doubled since 2026-09-08). Moot in practice: `-g glm` is disabled (ADR-006) |
 
@@ -319,11 +322,11 @@ Models used when `--cheap` / `-c` is set. Cheap mode implies `-g`, so these are 
 
 `conclave models --check` passes as of 2026-10-01: every compiled default and cheap model resolves in the OpenRouter feed. Run it before each release; a MISSING row means either the vendor retired the id or OpenRouter dropped it, and only a smoke test against the vendor tells you which.
 
-The check has a blind spot the other way too: a vendor can retire an id while OpenRouter keeps listing it. That is the current state of `sonar-pro` / `sonar` (Perplexity moved to its Agent API on 2026-09-25/27, OpenRouter still lists both), so a pass is not proof the direct provider works. Known retirements that `--check` cannot see yet:
+The check has a blind spot the other way too: a vendor can retire an id while OpenRouter keeps listing it. That is the current state of `sonar-pro` / `sonar` (Perplexity ended Sonar chat-completions support on 2026-09-27 in favour of its Agent API; OpenRouter still lists both), so a pass is not proof the direct provider works. Known retirements that `--check` cannot see yet:
 
 | Id | Role | Vendor status (2026-10-01) |
 |----|------|----------------------------|
-| `sonar-pro`, `sonar` | perplexity default / cheap | Chat-completions route reportedly retired; unverified live |
+| `sonar-pro`, `sonar` | perplexity default / cheap | Support ended 2026-09-27; calls reportedly reformulated onto the Agent API. Unverified live; migration held on `claude/gallant-germain-fefb40` |
 | `gpt-6-luna` | openai cheap | In OpenAI's live model list; not yet called end to end (API key out of credit 2026-10-01) |
 
 ```bash
@@ -365,7 +368,7 @@ Rough cost per 1K-token query (500 in, 500 out) in API mode. Conclave now prints
 
 ## Version History
 
-- **2026-10-01:** Defaults: claude `claude-opus-5` -> `claude-opus-5-5`; openai `gpt-5.6-sol` -> `gpt-6.1-sol` (after updating codex to 0.159.2); cheap claude `claude-haiku-4-5-20251001` -> `claude-sonnet-5-5`; cheap openai `gpt-5-nano` -> `gpt-6-luna`. Inventory refresh: Added GPT-6 Sol / Luna / Astra and GPT-6.1 Sol (all four on the codex CLI from 0.159.1; codex updated to 0.159.2 and each answered headless), Claude Opus 5.5 and Sonnet 5.5 (Opus 5 and Sonnet 5 now legacy), Gemini rolling aliases and 3.1 Pro custom-tools, GLM 5.3 Prime / FlashX (OpenRouter-listed only). Recorded Gemini 4 Argon as announced but not callable, the Perplexity Sonar chat-completions retirement (unverified), and the Haiku 4.5 retirement date. Corrected grok-4.7 ($2/$6) and glm-5.3-flash ($0.15/$0.50) prices. `isReasoningModel` now covers GPT-6 onward.
+- **2026-10-01:** Defaults: claude `claude-opus-5` -> `claude-opus-5-5`; openai `gpt-5.6-sol` -> `gpt-6.1-sol` (after updating codex to 0.159.2); cheap claude `claude-haiku-4-5-20251001` -> `claude-sonnet-5-5`; cheap openai `gpt-5-nano` -> `gpt-6-luna`. Inventory refresh: Added GPT-6 Sol / Luna / Astra and GPT-6.1 Sol (all four on the codex CLI from 0.159.1; codex updated to 0.159.2 and each answered headless), Claude Opus 5.5 and Sonnet 5.5 (Opus 5 and Sonnet 5 now legacy), Gemini rolling aliases and 3.1 Pro custom-tools, GLM 5.3 Prime / FlashX (OpenRouter-listed only). Recorded Gemini 4 Argon as announced but not callable, the end of Perplexity Sonar chat-completions support (old route reportedly still answers; Agent API migration held until a key verifies it), and the Haiku 4.5 retirement date. Corrected grok-4.7 ($2/$6) and glm-5.3-flash ($0.15/$0.50) prices. `isReasoningModel` now covers GPT-6 onward.
 - **2026-09-08 (v1.3.0):** Defaults bumped to the ids the per-provider tables now badge (gpt-5.6-sol, claude-opus-5, grok-4.6, glm-5.3; cheap grok-build-0.1, glm-5.3-flash). `conclave models --check` exit codes are 0 ok / 2 drift / 3 catalog unreachable. Cost figures now print live per response in API mode.
 - **2026-09-08:** Full refresh against the OpenRouter models feed. Added GPT-5.6 Sol/Terra/Luna, Claude Fable 5 / 5.1, Opus 5, Sonnet 5, Gemini 3.5 to 3.8 Flash, Grok 4.20 to 4.6 and Build 0.1, GLM 5.3 and 5.3 Flash. Marked retired IDs. Added the API-mode-only pricing note, Drift Watch, and the maintenance rule tying the defaults tables to `config.go`.
 - **2026-06-18:** Defaults tables updated for v1.2.0 (gpt-5.5, gemini-3.1-pro-preview, claude-opus-4-8, glm-5.2, grok-4-1-fast-reasoning). Per-provider tables were not refreshed.
