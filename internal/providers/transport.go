@@ -79,6 +79,15 @@ func BareName(token string) string {
 	return name
 }
 
+// IsMetered reports whether a response or judge call that ran on transport t
+// was billed per token and should be priced: only the API transport is. CLI
+// legs ride subscriptions, and "" (a provider built outside the registry)
+// is unknown, which prices as nothing rather than as a guess. This is the ONE
+// billing predicate: output/cost.go (the dollars shown) and batch/processor.go
+// (cost_usd and the --budget total) both call it, so a response can never be
+// priced in one place and free in the other.
+func IsMetered(t string) bool { return t == string(TransportAPI) }
+
 // transporter is implemented by the registry's override wrapper so the
 // transport a provider was resolved with can be recovered from any point in a
 // decorator chain (the cache wrapper sits on top of it).

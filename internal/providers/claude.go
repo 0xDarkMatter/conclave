@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/0xDarkMatter/conclave-cli/internal/jsonscan"
 )
 
 // ClaudeProvider implements the Claude Code CLI
@@ -217,43 +219,11 @@ func parseClaudeAuthStatus(output string) (bool, error) {
 	return status.LoggedIn, nil
 }
 
-// findJSONObject scans output for JSON objects and returns the raw bytes of
-// the first one that accept approves. accept sees both the raw object and its
-// top-level fields, so it can reject on shape (missing key) or on a failed
-// typed decode and let the scan continue.
-//
-// Every '{' is tried as a candidate start, so noise before, after, or between
-// objects is skipped, as is an unbalanced brace inside a log line. A candidate
-// is only handed to accept if it decodes as a complete object; nested objects
-// are reached only after their parent was rejected, since the parent's '{'
-// comes first. json.Decoder rather than Unmarshal so bytes after the object
-// (another noise line, CRLF) do not fail the decode; InputOffset bounds the
-// returned slice to the object itself.
-//
-// Cost is linear in the common case (the first '{' is the envelope). The worst
-// case, output with many braces and no acceptable object, is bounded by one
-// failed decode per brace, each of which stops at the first bad token.
-func findJSONObject(output string, accept func(json.RawMessage, map[string]json.RawMessage) bool) (json.RawMessage, bool) {
-	for i := 0; i < len(output); i++ {
-		start := strings.IndexByte(output[i:], '{')
-		if start < 0 {
-			break
-		}
-		i += start
-
-		dec := json.NewDecoder(strings.NewReader(output[i:]))
-		var fields map[string]json.RawMessage
-		if err := dec.Decode(&fields); err != nil {
-			continue
-		}
-		raw := json.RawMessage(output[i : i+int(dec.InputOffset())])
-		if !accept(raw, fields) {
-			continue
-		}
-		return raw, true
-	}
-	return nil, false
-}
+// findJSONObject is the package-local name for jsonscan.FindObject, the one
+// shared locate-the-object-in-the-noise scanner (Gotcha 13). Kept as an alias
+// so the CLI readers below read naturally; the implementation and its tests
+// live in internal/jsonscan.
+var findJSONObject = jsonscan.FindObject
 
 // truncate shortens s for error messages.
 func truncate(s string, n int) string {

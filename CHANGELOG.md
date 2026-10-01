@@ -146,6 +146,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repainted over the error output and left the cursor hidden.
 - `make install` installs onto `conclave.exe` on Windows, even while it is
   running.
+- An interrupted batch exited 0 when Ctrl-C came after the last item was
+  dispatched (any batch no bigger than `--workers`), because only
+  undispatched items were treated as an interruption. It now always exits
+  130, and the summary says whether anything was lost.
+- Batch Ctrl-C said "finishing in-flight items" but cancelled them, discarding
+  paid-for calls. In-flight items now finish (each still bounded by `-t`);
+  only new dispatches and retries stop. Items the shutdown did cut short are
+  counted and re-run by `--resume`. A second Ctrl-C could also be swallowed
+  when the root handler won the race for the first one; it now always kills.
+- Batch priced responses with no declared transport, while the rendered
+  dollars did not, so `cost_usd` and `--budget` could disagree with the
+  display. Both now use one predicate (`providers.IsMetered`).
+- With openai and claude both on the API, the two subscription-login probes
+  ran one after another (up to 6s before any query). They run concurrently.
+- Batch never announced a `config.yaml` transport pin on the judge; batch and
+  single queries now share one warning path.
+- A `transports:` pin to a transport the provider lacks (`glm: api`) was
+  reported as a typed `glm@api` suffix; the error now names the config key.
+- API-mode openai sent `max_tokens` to the GPT-6 line (`gpt-6-sol`,
+  `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`) and to `o4-mini`, which reject
+  it with HTTP 400. Reasoning models are now detected by version (`gpt-N`,
+  N >= 5, and the o-series), not by the literal prefix `gpt-5`.
+- The judge's verdict parser scanned quadratically on unbalanced braces (5s
+  on 100k). It now uses the same object scanner as the CLI readers
+  (`internal/jsonscan`).
 
 ## [1.3.0] - 2026-09-08
 

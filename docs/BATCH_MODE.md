@@ -377,17 +377,24 @@ Batch complete: 2000/2000 items processed (47m23s)
   Estimated cost: $4.52
 ```
 
-An **interrupted** run (Ctrl-C, or a cancelled context) also exits non-zero and
-says so, because the output file is partial and a pipeline must not read it as
-the complete answer:
+An **interrupted** run (Ctrl-C, or a cancelled context) exits 130 and says so,
+because the output file is usually partial and a pipeline must not read it as
+the complete answer. The first Ctrl-C stops dispatching new items and retries
+but lets items already in flight finish (each bounded by `--timeout`), so work
+that was paid for is written and checkpointed; a second Ctrl-C kills the
+process at once. Items the shutdown cut short (a retry abandoned in backoff)
+are counted and re-run by `--resume`:
 
 ```
 Batch complete: 312/2000 items processed (7m02s)
   Success: 312 (100.0%) | Failed: 0 (0.0%)
   Estimated cost: $0.7104
-  Interrupted: 1688 item(s) not dispatched; the output is partial.
+  Interrupted: 1688 item(s) not dispatched and 0 cut short in flight; the output is partial.
   Resume with: conclave ... --batch <input> -o out.jsonl --resume
 ```
+
+If Ctrl-C lands after the last item was dispatched and every in-flight item
+finishes, the summary says the output is complete; the exit code is still 130.
 
 When `--budget` stops the run early, two more lines appear and the exit code is
 also non-zero:

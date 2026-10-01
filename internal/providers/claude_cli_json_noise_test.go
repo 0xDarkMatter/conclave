@@ -2,7 +2,6 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -265,22 +264,5 @@ func TestParseClaudeJSONOutputMetricsSurviveNoise(t *testing.T) {
 	}
 }
 
-// TestFindJSONObjectBoundsToObject: the raw slice handed back must be exactly
-// the object, not the object plus whatever followed it, or a later Unmarshal
-// of that slice fails on the trailing bytes.
-func TestFindJSONObjectBoundsToObject(t *testing.T) {
-	raw, ok := findJSONObject("x {\"a\":1} trailing {\"b\":2}", func(json.RawMessage, map[string]json.RawMessage) bool { return true })
-	if !ok || string(raw) != `{"a":1}` {
-		t.Fatalf("got %q, %v", raw, ok)
-	}
-}
-
-// TestFindJSONObjectLargeNoiseIsFast guards the worst case the scan comment
-// promises: many braces and no acceptable object must still finish in
-// negligible time (each candidate decode stops at its first bad token).
-func TestFindJSONObjectLargeNoiseIsFast(t *testing.T) {
-	noise := strings.Repeat("if (x) { y{ } z{{ ", 20000) // ~80k braces, `{ }` decodes but has no key
-	if _, ok := findJSONObject(noise, func(_ json.RawMessage, f map[string]json.RawMessage) bool { _, ok := f["result"]; return ok }); ok {
-		t.Fatal("no object expected")
-	}
-}
+// The scanner's own tests (object bounds, large-noise speed) moved with it to
+// internal/jsonscan/jsonscan_test.go.

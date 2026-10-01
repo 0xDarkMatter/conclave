@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xDarkMatter/conclave-cli/internal/jsonscan"
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 )
 
@@ -90,40 +91,48 @@ func (j *Judge) Synthesize(ctx context.Context, query string, responses []provid
 // parseVerdict extracts the verdict object from the judge response.
 //
 // Judges wrap JSON in prose and code fences, and their reasoning routinely
-// contains braces (code, set notation). So every "{" is a candidate, braces
-// are matched string-aware, and the first candidate that unmarshals AND has a
-// non-empty "verdict" wins. An object without a verdict is not a verdict:
-// accepting "{}" rendered a blank synthesis as success.
+// contains braces (code, set notation). The whole response and any fenced
+// block are tried first; after that every "{" is a candidate, located by the
+// shared jsonscan scanner (string-aware, one failed decode per stray brace),
+// and the first object that decodes AND has a non-empty "verdict" wins. An
+// object without a verdict is not a verdict: accepting "{}" rendered a blank
+// synthesis as success. Candidates are tried lazily and the scan stops at the
+// first hit; collecting every candidate up front made unbalanced braces
+// quadratic (TestParseVerdictUnbalancedBracesStayLinear).
 func parseVerdict(response string) (*Verdict, error) {
-	candidates := []string{response}
-	if fenced := extractJSON(response); fenced != "" {
-		candidates = append(candidates, fenced)
-	}
-	for i := 0; i < len(response); i++ {
-		if response[i] != '{' {
-			continue
-		}
-		if obj := findJSONObject(response[i:]); obj != "" {
-			candidates = append(candidates, obj)
-		}
-	}
-
 	// Report the most useful failure: "valid JSON but no verdict" beats the
 	// syntax error from trying to unmarshal the surrounding prose.
 	var syntaxErr, emptyErr error
-	for _, c := range candidates {
+	try := func(raw []byte) *Verdict {
 		var verdict Verdict
-		if err := json.Unmarshal([]byte(c), &verdict); err != nil {
+		if err := json.Unmarshal(raw, &verdict); err != nil {
 			if syntaxErr == nil {
 				syntaxErr = err
 			}
-			continue
+			return nil
 		}
 		if strings.TrimSpace(verdict.Result) == "" {
 			emptyErr = errors.New(`judge JSON has no "verdict" field`)
-			continue
+			return nil
 		}
-		return &verdict, nil
+		return &verdict
+	}
+
+	if v := try([]byte(response)); v != nil {
+		return v, nil
+	}
+	if fenced := extractJSON(response); fenced != "" {
+		if v := try([]byte(fenced)); v != nil {
+			return v, nil
+		}
+	}
+	var found *Verdict
+	jsonscan.FindObject(response, func(raw json.RawMessage, _ map[string]json.RawMessage) bool {
+		found = try(raw)
+		return found != nil
+	})
+	if found != nil {
+		return found, nil
 	}
 	if emptyErr != nil {
 		return nil, emptyErr
@@ -139,45 +148,5 @@ func extractJSON(s string) string {
 	if len(matches) > 1 {
 		return matches[1]
 	}
-	return ""
-}
-
-// findJSONObject returns the first balanced {...} in s. Braces inside JSON
-// strings (and escaped quotes within them) do not count, so a "}" in the
-// judge's reasoning cannot end the object early.
-func findJSONObject(s string) string {
-	start := strings.Index(s, "{")
-	if start == -1 {
-		return ""
-	}
-
-	depth := 0
-	inString, escaped := false, false
-	for i := start; i < len(s); i++ {
-		c := s[i]
-		if inString {
-			switch {
-			case escaped:
-				escaped = false
-			case c == '\\':
-				escaped = true
-			case c == '"':
-				inString = false
-			}
-			continue
-		}
-		switch c {
-		case '"':
-			inString = true
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return s[start : i+1]
-			}
-		}
-	}
-
 	return ""
 }

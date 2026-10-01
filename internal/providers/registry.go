@@ -131,11 +131,15 @@ func (r *Registry) GetProvider(token string, modelOverrides map[string]string) (
 	// is a per-provider default, so it sits above the panel-wide -g/-c and
 	// below anything typed on this invocation.
 	explicit := transport != TransportDefault
+	// fromConfig records that the transport came from config.yaml or
+	// CONCLAVE_<P>_TRANSPORT rather than a typed suffix, so an error can name
+	// the file the user must edit instead of a suffix they never wrote.
+	fromConfig := false
 	if !explicit {
 		switch cfgT := r.config.GetTransport(name); cfgT {
 		case "":
 		case string(TransportCLI), string(TransportAPI):
-			transport, explicit = Transport(cfgT), true
+			transport, explicit, fromConfig = Transport(cfgT), true, true
 			if transport == TransportCLI && IsOpenRouterModel(name) {
 				return nil, fmt.Errorf("config transports.%s is %q, but %q is an OpenRouter model and OpenRouter is API-only (ADR-010)", name, cfgT, name)
 			}
@@ -179,7 +183,7 @@ func (r *Registry) GetProvider(token string, modelOverrides map[string]string) (
 		}
 		if p, ok = set[name]; !ok {
 			if _, known := other[name]; known {
-				return nil, noTransportError(name, transport, explicit)
+				return nil, noTransportError(name, transport, explicit, fromConfig)
 			}
 			return nil, fmt.Errorf("unknown provider: %s", name)
 		}
@@ -213,22 +217,40 @@ func (r *Registry) GetProvider(token string, modelOverrides map[string]string) (
 
 // noTransportError explains a provider that exists but not on the requested
 // transport. Today that is only glm on the API side (ADR-006), but the shape
-// is generic so a future one-sided provider is described correctly.
-func noTransportError(name string, transport Transport, explicit bool) error {
+// is generic so a future one-sided provider is described correctly. Three
+// sources can ask for the missing transport, and each gets its own remedy: a
+// config pin (edit the pin), a typed suffix (use the other suffix), or the
+// global mode (drop -g / add -g).
+func noTransportError(name string, transport Transport, explicit, fromConfig bool) error {
+	reason := "it has no CLI implementation"
 	if transport == TransportAPI {
-		reason := "it has no API implementation"
+		reason = "it has no API implementation"
 		if name == "glm" {
 			reason = "its API mode is disabled (ADR-006: pay-as-you-go endpoint latency and balance)"
 		}
+	}
+	if fromConfig {
+		return fmt.Errorf("config transports.%s is %q (config.yaml or CONCLAVE_%s_TRANSPORT), but %s: %s; remove the pin or set it to %q",
+			name, transport, strings.ToUpper(name), name, reason, otherTransport(transport))
+	}
+	if transport == TransportAPI {
 		if explicit {
 			return fmt.Errorf("provider %s@api: %s; use %s@cli (the Coding Plan endpoint) instead", name, reason, name)
 		}
 		return fmt.Errorf("provider %s is not available in API mode: %s; drop -g or write %s@cli", name, reason, name)
 	}
 	if explicit {
-		return fmt.Errorf("provider %s@cli: it has no CLI implementation; use %s@api instead", name, name)
+		return fmt.Errorf("provider %s@cli: %s; use %s@api instead", name, reason, name)
 	}
-	return fmt.Errorf("provider %s is not available in CLI mode: it has no CLI implementation; add -g or write %s@api", name, name)
+	return fmt.Errorf("provider %s is not available in CLI mode: %s; add -g or write %s@api", name, reason, name)
+}
+
+// otherTransport is the transport a remedy should point at.
+func otherTransport(t Transport) Transport {
+	if t == TransportCLI {
+		return TransportAPI
+	}
+	return TransportCLI
 }
 
 // GetProviders returns multiple providers by token. The same bare name may

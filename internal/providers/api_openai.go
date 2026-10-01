@@ -9,17 +9,35 @@ import (
 	"time"
 )
 
-// defaultGPT5MaxCompletionTokens is the budget used for gpt-5.x reasoning
-// models. They consume hidden reasoning tokens against the completion budget;
+// defaultGPT5MaxCompletionTokens is the budget used for reasoning models
+// (gpt-5 onward, o-series; see isReasoningModel). They consume hidden reasoning tokens against the completion budget;
 // 16000 leaves room for both reasoning and a substantive answer.
 // Override with CONCLAVE_OPENAI_MAX_COMPLETION_TOKENS.
 const defaultGPT5MaxCompletionTokens = 16000
 
-// isGPT5Family reports whether the model is a gpt-5.x reasoning model that
-// requires max_completion_tokens instead of max_tokens.
-func isGPT5Family(model string) bool {
+// isReasoningModel reports whether the model is an OpenAI reasoning model
+// that rejects max_tokens and requires max_completion_tokens: gpt-N for any
+// major version N >= 5 (gpt-5.x, gpt-6-sol, gpt-6.1-sol, ...) and the o-series
+// (o1, o3, o4-mini, ...).
+//
+// Deliberately a version comparison, not a list of prefixes. The rule used to
+// be the literal prefixes "gpt-5", "o1", "o3", and every new generation
+// (GPT-6, 2026-09; o4-mini) silently fell outside it and got HTTP 400
+// unsupported_parameter. Older ids (gpt-4o, gpt-4.1) and non-numeric names
+// (gpt-oss-120b, gpt-chat-latest) still take max_tokens.
+// Pinned by TestReasoningModelDetection.
+func isReasoningModel(model string) bool {
 	m := strings.ToLower(model)
-	return strings.HasPrefix(m, "gpt-5") || strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "o3")
+	if rest, ok := strings.CutPrefix(m, "gpt-"); ok {
+		digits := 0
+		for digits < len(rest) && rest[digits] >= '0' && rest[digits] <= '9' {
+			digits++
+		}
+		major, err := strconv.Atoi(rest[:digits])
+		return err == nil && major >= 5
+	}
+	// o-series: "o" followed directly by a digit (not "omni-...").
+	return len(m) >= 2 && m[0] == 'o' && m[1] >= '1' && m[1] <= '9'
 }
 
 // gpt5BudgetFromEnv reads CONCLAVE_OPENAI_MAX_COMPLETION_TOKENS, falling back
@@ -76,7 +94,7 @@ func (p *OpenAIAPIProvider) Query(ctx context.Context, prompt string, model stri
 		},
 	}
 
-	if isGPT5Family(model) {
+	if isReasoningModel(model) {
 		budget := gpt5BudgetFromEnv(defaultGPT5MaxCompletionTokens)
 		reqBody.MaxCompletionTokens = &budget
 	}

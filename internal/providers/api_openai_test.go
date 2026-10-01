@@ -261,7 +261,11 @@ func TestParseAPIError_NoStatusCodeStripping(t *testing.T) {
 	}
 }
 
-func TestIsGPT5Family(t *testing.T) {
+// TestReasoningModelDetection: the family test was a literal "gpt-5" prefix,
+// so the GPT-6 line (gpt-6-sol, gpt-6.1-sol, gpt-6-luna, gpt-6-astra; shipped
+// 2026-09) and o4-mini were sent max_tokens and rejected with HTTP 400
+// unsupported_parameter, the exact bug the gpt-5 fix closed.
+func TestReasoningModelDetection(t *testing.T) {
 	cases := []struct {
 		model string
 		want  bool
@@ -270,16 +274,26 @@ func TestIsGPT5Family(t *testing.T) {
 		{"gpt-5.5", true},
 		{"gpt-5-nano", true},
 		{"GPT-5.2", true},
+		{"gpt-6-sol", true},
+		{"gpt-6.1-sol", true},
+		{"gpt-6-luna", true},
+		{"gpt-6-astra", true},
+		{"gpt-10", true},
 		{"o1-preview", true},
 		{"o3-mini", true},
+		{"o4-mini", true},
 		{"gpt-4o", false},
 		{"gpt-4-turbo", false},
+		{"gpt-4.1", false},
+		{"gpt-oss-120b", false},
+		{"gpt-chat-latest", false},
+		{"omni-moderation-latest", false},
 		{"", false},
 		{"claude-opus-4-5", false},
 	}
 	for _, tc := range cases {
-		if got := isGPT5Family(tc.model); got != tc.want {
-			t.Errorf("isGPT5Family(%q) = %v, want %v", tc.model, got, tc.want)
+		if got := isReasoningModel(tc.model); got != tc.want {
+			t.Errorf("isReasoningModel(%q) = %v, want %v", tc.model, got, tc.want)
 		}
 	}
 }

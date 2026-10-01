@@ -10,7 +10,9 @@ package cmd
 // partial panel is still rendered. The signal is then handed back to the
 // runtime, so a SECOND Ctrl-C kills immediately. An interrupted run exits 130.
 // Batch keeps its own handler for its "finishing in-flight items" message;
-// both receive the signal and both only cancel.
+// both receive the signal and both only cancel. For batch, cancelling means
+// "stop dispatching": in-flight items run on a detached context and finish
+// (internal/batch.processItem), so paid-for calls are recorded, not discarded.
 
 import (
 	"context"

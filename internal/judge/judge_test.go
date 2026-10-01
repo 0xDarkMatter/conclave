@@ -115,43 +115,7 @@ func TestExtractJSON(t *testing.T) {
 	}
 }
 
-func TestFindJSONObject(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "simple object",
-			input:    `{"key": "value"}`,
-			expected: `{"key": "value"}`,
-		},
-		{
-			name:     "nested object",
-			input:    `prefix {"outer": {"inner": "value"}} suffix`,
-			expected: `{"outer": {"inner": "value"}}`,
-		},
-		{
-			name:     "no object",
-			input:    "no json here",
-			expected: "",
-		},
-		{
-			name:     "with text before",
-			input:    "Here is the result: {\"verdict\": \"YES\"}",
-			expected: `{"verdict": "YES"}`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := findJSONObject(tt.input)
-			if result != tt.expected {
-				t.Errorf("expected %q, got %q", tt.expected, result)
-			}
-		})
-	}
-}
+// The object scanner parseVerdict relies on is tested in internal/jsonscan.
 
 func TestBuildPrompt(t *testing.T) {
 	responses := []providers.Response{

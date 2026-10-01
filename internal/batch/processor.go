@@ -106,6 +106,11 @@ type Stats struct {
 	// context rather than by the budget. Either way Skipped is non-zero and the
 	// output file is a PARTIAL result, which callers must be able to detect.
 	Cancelled bool
+	// CutShort counts dispatched items the shutdown interrupted (retries
+	// abandoned, rate-limit wait abandoned). They were dispatched, so Skipped
+	// does not include them, but they have no real result and are not
+	// checkpointed: --resume re-runs them, and the output is partial.
+	CutShort int
 	// WriteFailed counts results that were computed (and paid for) but could
 	// not be written to the output. They count as Failed and stay out of the
 	// checkpoint, so --resume re-runs them; callers must treat any non-zero
@@ -258,17 +263,32 @@ func NewProcessor(opts Options) (*Processor, error) {
 
 // Process runs the batch processing pipeline
 func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writer, defaultPrompt string) (*Stats, error) {
-	// Set up graceful shutdown
+	// Graceful shutdown. ctx is the STOP signal, not the work context: when it
+	// ends (this handler, or the root Ctrl-C handler in cmd/interrupt.go, which
+	// cancels the parent) dispatch stops and no new attempt starts, but a query
+	// already in flight runs to completion on a detached context inside
+	// processItem, bounded by its own --timeout. Cancelling the queries
+	// themselves threw away paid-for calls and made "finishing in-flight items"
+	// false (TestShutdownLetsInFlightItemsFinish). The second Ctrl-C reaches
+	// the runtime and kills the process; that is the abort.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
 	defer signal.Stop(sigChan)
+	// finished ends the handler on a normal return. It is deliberately not
+	// ctx.Done(): the root handler (cmd/interrupt.go) receives the same Ctrl-C
+	// and cancels the parent, and when that cancellation won the race this
+	// goroutine returned with sigChan still registered, so the second Ctrl-C
+	// was swallowed here instead of killing the process.
+	finished := make(chan struct{})
+	defer close(finished)
 	go func() {
 		select {
 		case <-sigChan:
-		case <-ctx.Done():
+		case <-ctx.Done(): // parent cancelled: the root handler saw the Ctrl-C
+		case <-finished:
 			return
 		}
 		// Hand Ctrl-C back to the runtime: a graceful stop waits for
@@ -353,6 +373,9 @@ func (p *Processor) Process(ctx context.Context, input io.Reader, output io.Writ
 
 			statsLock.Lock()
 			stats.Completed++
+			if result.cancelled {
+				stats.CutShort++
+			}
 			stats.TotalCost += result.CostUSD
 			if writeErr != nil {
 				stats.WriteFailed++
@@ -453,9 +476,18 @@ feed:
 
 // === Per-item work ===
 
-// processItem processes a single item through the pipeline with retry support
+// processItem processes a single item through the pipeline with retry support.
+//
+// ctx is the shutdown signal (see Process). It gates only what has not
+// started yet: the rate-limit wait, a retry and its backoff. The panel query
+// and the judge run on work, which a shutdown does not cancel, so an item
+// already under way finishes and is recorded instead of being billed and then
+// discarded. Each is still bounded by p.timeout. A result the shutdown DID
+// cut short carries cancelled=true: it stays out of the checkpoint and is
+// counted in Stats.CutShort.
 func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt string) Result {
 	start := time.Now()
+	work := context.WithoutCancel(ctx)
 
 	// Use item prompt or default
 	prompt := item.Prompt
@@ -479,6 +511,9 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 	maxAttempts := p.retries + 1
 	var lastErr error
 	var responses []providers.Response
+	// stoppedEarly: the shutdown ended the retry loop with attempts left, so
+	// the failure below is not this item's final answer.
+	stoppedEarly := false
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		// Wait for rate limit
@@ -493,7 +528,7 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 		// Run orchestration
 		orch := orchestrator.New(p.providers, p.timeout)
 		var err error
-		responses, err = orch.Run(ctx, fullPrompt)
+		responses, err = orch.Run(work, fullPrompt)
 		if err == nil {
 			lastErr = nil
 			break
@@ -506,13 +541,14 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 			p.rateLimiter.RecordRateLimit()
 		}
 
-		// Don't retry on context cancellation
-		if ctx.Err() != nil {
+		// Don't retry on last attempt
+		if attempt == maxAttempts {
 			break
 		}
 
-		// Don't retry on last attempt
-		if attempt == maxAttempts {
+		// Don't start another attempt once shutting down
+		if ctx.Err() != nil {
+			stoppedEarly = true
 			break
 		}
 
@@ -543,7 +579,7 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 			Error:      fmt.Sprintf("query error after %d attempts: %v", maxAttempts, lastErr),
 			DurationMs: time.Since(start).Milliseconds(),
 			CostUSD:    p.estimateCost(responses, nil),
-			cancelled:  ctx.Err() != nil,
+			cancelled:  stoppedEarly,
 		}
 	}
 
@@ -579,7 +615,8 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 	} else {
 		// Multiple providers: run judge synthesis
 		j := judge.New(p.judgeProvider)
-		verdict, err := j.Synthesize(ctx, prompt, responses, p.timeout, p.blind)
+		// The panel is paid for, so synthesis finishes on work too.
+		verdict, err := j.Synthesize(work, prompt, responses, p.timeout, p.blind)
 		if err != nil {
 			return Result{
 				ID:         item.ID,
@@ -588,8 +625,7 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 				// The panel answered and was billed even though synthesis
 				// failed; without this a broken judge model makes --budget
 				// unenforceable.
-				CostUSD:   p.estimateCost(responses, nil),
-				cancelled: ctx.Err() != nil,
+				CostUSD: p.estimateCost(responses, nil),
 			}
 		}
 		// An unparseable synthesis is a failed item, not a verdict of
@@ -731,9 +767,10 @@ func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.
 	var totalCost float64
 	for _, r := range responses {
 		// A cache hit was not billed by anyone; counting it would inflate the
-		// running total the budget cap reads. A CLI-transport response (a
-		// "@cli" token in a batch, ADR-012) is subscription-billed: same rule.
-		if r.Cached || r.Metrics == nil || r.Transport == string(providers.TransportCLI) {
+		// running total the budget cap reads. Only a metered (API-transport)
+		// response is priced, by the same predicate the rendered dollars use,
+		// so cost_usd and --budget never disagree with the display (ADR-012).
+		if r.Cached || r.Metrics == nil || !providers.IsMetered(r.Transport) {
 			continue
 		}
 		if cost, ok := p.pricing.CostOf(r.Provider, r.Model, r.Metrics.InputTokens, r.Metrics.OutputTokens); ok {
@@ -746,7 +783,7 @@ func (p *Processor) estimateCost(responses []providers.Response, verdict *judge.
 		}
 	}
 
-	if verdict != nil && verdict.JudgeTokens > 0 && verdict.JudgeTransport != string(providers.TransportCLI) {
+	if verdict != nil && verdict.JudgeTokens > 0 && providers.IsMetered(verdict.JudgeTransport) {
 		if cost, ok := p.pricing.JudgeCostOf(verdict.JudgeProvider, verdict.JudgeModel, verdict.JudgeTokens); ok {
 			totalCost += cost
 		} else if c, ok := fallbackCosts[verdict.JudgeProvider]; ok {

@@ -54,7 +54,7 @@ func computeCosts(cat *pricing.Catalog, r Result) costs {
 		if resp.Status != "success" {
 			continue // a failed call is not billed for output we never got
 		}
-		if resp.Transport != string(providers.TransportAPI) {
+		if !providers.IsMetered(resp.Transport) {
 			continue // subscription-billed (or unknown) transport: no dollars
 		}
 		v, ok := responseCost(cat, resp)
@@ -67,7 +67,7 @@ func computeCosts(cat *pricing.Catalog, r Result) costs {
 		known = true
 	}
 
-	if r.Verdict != nil && r.Verdict.JudgeTokens > 0 && r.Verdict.JudgeTransport == string(providers.TransportAPI) {
+	if r.Verdict != nil && r.Verdict.JudgeTokens > 0 && providers.IsMetered(r.Verdict.JudgeTransport) {
 		if v, ok := cat.JudgeCostOf(r.Verdict.JudgeProvider, r.Verdict.JudgeModel, r.Verdict.JudgeTokens); ok {
 			c.judge = &v
 			sum += v

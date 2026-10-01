@@ -19,6 +19,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/batch"
@@ -402,9 +403,7 @@ func runConclave(cmd *cobra.Command, args []string) error {
 	}
 	checked := withJudge(providerList, judgeProvider)
 
-	warnModelDrift(catalog, checked)
-	warnSubscriptionIdle(cmd, checked)
-	warnConfigTransportPins(cfg, append(append([]string{}, providerTokens...), flagJudge), checked)
+	warnBeforeRun(cmd, cfg, catalog, providerTokens, checked)
 
 	// Preflight auth checks (judge included, deduplicated by name)
 	if !flagSkipPreflight {
@@ -728,21 +727,19 @@ func loadCatalog(cmd *cobra.Command) *pricing.Catalog {
 	return catalog
 }
 
-// warnModelDrift prints one stderr line per provider whose configured model id
-// is absent from the OpenRouter catalog. The catalog is a proxy for the vendor
-// list, so this is advice, not a refusal: the query proceeds unchanged.
-//
-// Skipped when: no catalog; the model is a CLI alias with no version digits
-// ("sonnet", "opus") which OpenRouter cannot know about; or output is a
-// machine format where a stray line would be noise.
-// warnSubscriptionIdle prints one stderr line per provider that is about to be
-// billed by API key while its CLI holds a subscription login (codex on ChatGPT
-// Pro, claude on Claude Max). Decided per provider from its actual transport
-// (ADR-012), so a claude@cli beside a -g panel is never warned about. -q and
-// --raw silence it, --json does not, because the person running a --json
-// pipeline is exactly who needs to see that the metered key is being spent.
-// Advisory: the query proceeds. The remedy named is the per-provider suffix,
-// which fixes the one provider without moving the whole panel off the API.
+// warnBeforeRun prints every advisory that precedes a paid run: model drift,
+// an idle subscription, and a config transport pin that moved billing. The
+// single-query and batch paths both call this with the same inputs (the
+// typed provider tokens and the preflight set, judge included) so the two can
+// never warn about different things; batch used to pass only the panel, and a
+// config pin that moved the JUDGE between a subscription and a metered key
+// went unannounced there.
+func warnBeforeRun(cmd *cobra.Command, cfg *config.Config, catalog *pricing.Catalog, tokens []string, checked []providers.Provider) {
+	warnModelDrift(catalog, checked)
+	warnSubscriptionIdle(cmd, checked)
+	warnConfigTransportPins(cfg, append(append([]string{}, tokens...), flagJudge), checked)
+}
+
 // warnConfigTransportPins prints one stderr line per provider whose transport
 // was decided by config.yaml's transports map rather than by the invocation.
 // A config pin is the one input that can move billing between a subscription
@@ -788,11 +785,24 @@ func otherTransport(t string) string {
 	return string(providers.TransportCLI)
 }
 
+// warnSubscriptionIdle prints one stderr line per provider that is about to be
+// billed by API key while its CLI holds a subscription login (codex on ChatGPT
+// Pro, claude on Claude Max). Decided per provider from its actual transport
+// (ADR-012), so a claude@cli beside a -g panel is never warned about. -q and
+// --raw silence it, --json does not, because the person running a --json
+// pipeline is exactly who needs to see that the metered key is being spent.
+// Advisory: the query proceeds. The remedy named is the per-provider suffix,
+// which fixes the one provider without moving the whole panel off the API.
+//
+// The status probes run concurrently: each is a Node CLI cold start bounded
+// at 3s, and run one after another they put up to 6s of pure advice in front
+// of every -g run that names both openai and claude.
 func warnSubscriptionIdle(cmd *cobra.Command, providerList []providers.Provider) {
 	ctx := cmd.Context()
 	if flagQuiet || flagRaw {
 		return
 	}
+	var names []string
 	seen := map[string]bool{}
 	for _, p := range providerList {
 		name := p.Name()
@@ -803,7 +813,22 @@ func warnSubscriptionIdle(cmd *cobra.Command, providerList []providers.Provider)
 			continue
 		}
 		seen[name] = true
-		if !providers.SubscriptionLoggedIn(ctx, name) {
+		names = append(names, name)
+	}
+
+	loggedIn := make([]bool, len(names))
+	var wg sync.WaitGroup
+	for i, name := range names {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			loggedIn[i] = providers.SubscriptionLoggedIn(ctx, name)
+		}()
+	}
+	wg.Wait()
+
+	for i, name := range names {
+		if !loggedIn[i] {
 			continue
 		}
 		cli := map[string]string{"openai": "codex", "claude": "claude"}[name]
@@ -811,6 +836,13 @@ func warnSubscriptionIdle(cmd *cobra.Command, providerList []providers.Provider)
 	}
 }
 
+// warnModelDrift prints one stderr line per provider whose configured model id
+// is absent from the OpenRouter catalog. The catalog is a proxy for the vendor
+// list, so this is advice, not a refusal: the query proceeds unchanged.
+//
+// Skipped when: no catalog; the model is a CLI alias with no version digits
+// ("sonnet", "opus") which OpenRouter cannot know about; or output is a
+// machine format where a stray line would be noise.
 func warnModelDrift(catalog *pricing.Catalog, providerList []providers.Provider) {
 	if catalog == nil || flagQuiet || flagJSON || flagRaw {
 		return
@@ -882,9 +914,7 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		if err != nil {
 			return err
 		}
-		warnModelDrift(catalog, checked)
-		warnSubscriptionIdle(cmd, checked)
-		warnConfigTransportPins(cfg, providerNames, tempProviders)
+		warnBeforeRun(cmd, cfg, catalog, providerNames, checked)
 		if failures := providers.RunPreflight(cmd.Context(), checked); len(failures) > 0 {
 			printPreflightFailures(failures)
 			return fmt.Errorf("preflight auth check failed for %d provider(s)", len(failures))
@@ -990,18 +1020,36 @@ func runBatchMode(cmd *cobra.Command, cfg *config.Config, providerNames []string
 		return fmt.Errorf("budget cap $%.4f reached after %d item(s); %d not dispatched", stats.Budget, stats.Completed, stats.Skipped)
 	}
 
-	// An interrupted run leaves a PARTIAL output file. Exiting 0 here would let
-	// a pipeline treat a half-finished JSONL as the complete answer, which is
-	// the kind of silent truncation nobody notices until the numbers are wrong.
-	if stats.Skipped > 0 {
-		fmt.Fprintf(os.Stderr, "  Interrupted: %d item(s) not dispatched; the output is partial.\n", stats.Skipped)
-		if flagOutput != "" && flagOutput != "-" {
-			fmt.Fprintf(os.Stderr, "  Resume with: conclave ... --batch <input> -o %s --resume\n", flagOutput)
-		}
-		return fmt.Errorf("batch interrupted after %d of %d item(s); %d not dispatched", stats.Completed, stats.Total, stats.Skipped)
-	}
+	return batchInterruptedError(stats)
+}
 
-	return nil
+// batchInterruptedError reports an interrupted batch on stderr and returns
+// the error that makes it exit non-zero (130 via exitCodeFor), or nil for a
+// run that was not interrupted.
+//
+// Decided by stats.Cancelled, not by Skipped: exitCodeFor maps an interruption
+// to 130 only when the command returned an error, and a Ctrl-C after the last
+// item was dispatched leaves Skipped at 0, so gating on Skipped exited 0
+// (TestInterruptedBatchNeverExitsClean). An interrupted run always exits
+// non-zero; the summary says whether anything was actually lost.
+func batchInterruptedError(stats *batch.Stats) error {
+	if !stats.Cancelled && stats.Skipped == 0 {
+		return nil
+	}
+	// A PARTIAL output file must never look like a clean finish, or a pipeline
+	// treats a half-finished JSONL as the complete answer: the kind of silent
+	// truncation nobody notices until the numbers are wrong. Undispatched and
+	// cut-short items are both absent from the checkpoint, so --resume runs them.
+	lost := stats.Skipped + stats.CutShort
+	if lost == 0 {
+		fmt.Fprintln(os.Stderr, "  Interrupted after every item was dispatched; all in-flight items finished, so the output is complete.")
+		return fmt.Errorf("batch interrupted after all %d item(s) were dispatched; the output is complete", stats.Total)
+	}
+	fmt.Fprintf(os.Stderr, "  Interrupted: %d item(s) not dispatched and %d cut short in flight; the output is partial.\n", stats.Skipped, stats.CutShort)
+	if flagOutput != "" && flagOutput != "-" {
+		fmt.Fprintf(os.Stderr, "  Resume with: conclave ... --batch <input> -o %s --resume\n", flagOutput)
+	}
+	return fmt.Errorf("batch interrupted after %d of %d item(s); %d not dispatched, %d cut short", stats.Completed, stats.Total, stats.Skipped, stats.CutShort)
 }
 
 // === Response cache resolution ===

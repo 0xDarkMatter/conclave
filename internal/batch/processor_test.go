@@ -39,6 +39,11 @@ type fakeProvider struct {
 func (f *fakeProvider) Name() string         { return f.name }
 func (f *fakeProvider) DefaultModel() string { return f.model }
 func (f *fakeProvider) IsAvailable() bool    { return true }
+
+// Transport declares the API transport, as every registry-built provider
+// declares one (ADR-012). Batch prices only metered responses, so a fake with
+// no transport would make every budget test vacuous.
+func (f *fakeProvider) Transport() providers.Transport { return providers.TransportAPI }
 func (f *fakeProvider) Query(ctx context.Context, prompt, model string) (string, time.Duration, *providers.Metrics, error) {
 	n := f.calls.Add(1)
 	if f.delay > 0 {
@@ -353,7 +358,7 @@ func TestEstimateCostPrefersCatalogOverFallback(t *testing.T) {
 	p := &Processor{pricing: cat}
 
 	resp := []providers.Response{{
-		Provider: "openai", Model: "gpt-test", Status: "success",
+		Provider: "openai", Model: "gpt-test", Status: "success", Transport: "api",
 		Metrics: &providers.Metrics{InputTokens: 1_000_000, OutputTokens: 1_000_000},
 	}}
 	// Catalog: 1M * $2 + 1M * $4 = $6. The fallback table would say $0.45.
@@ -367,7 +372,7 @@ func TestEstimateCostFallsBackWhenCatalogMisses(t *testing.T) {
 	// a fully offline batch can be budgeted at all.
 	p := &Processor{pricing: nil}
 	resp := []providers.Response{{
-		Provider: "openai", Model: "gpt-5-nano", Status: "success",
+		Provider: "openai", Model: "gpt-5-nano", Status: "success", Transport: "api",
 		Metrics: &providers.Metrics{InputTokens: 1_000_000, OutputTokens: 1_000_000},
 	}}
 	want := fallbackCosts["openai"].in + fallbackCosts["openai"].out
@@ -380,7 +385,7 @@ func TestEstimateCostIgnoresCachedResponses(t *testing.T) {
 	cat := pricing.NewCatalog([]pricing.Model{{ID: "openai/gpt-test", InputPerM: 2, OutputPerM: 4}})
 	p := &Processor{pricing: cat}
 	resp := []providers.Response{{
-		Provider: "openai", Model: "gpt-test", Status: "success", Cached: true,
+		Provider: "openai", Model: "gpt-test", Status: "success", Cached: true, Transport: "api",
 		Metrics: &providers.Metrics{InputTokens: 1_000_000, OutputTokens: 1_000_000},
 	}}
 	if got := p.estimateCost(resp, nil); got != 0 {
@@ -388,10 +393,30 @@ func TestEstimateCostIgnoresCachedResponses(t *testing.T) {
 	}
 }
 
+// TestEstimateCostIgnoresUnknownTransport: ADR-012 prices a response only when
+// it ran on the API transport; "" means unknown and prices as nothing. Batch
+// used its own rule (skip only "cli"), so the same response counted toward
+// --budget and cost_usd here while output/cost.go showed no price for it.
+func TestEstimateCostIgnoresUnknownTransport(t *testing.T) {
+	cat := pricing.NewCatalog([]pricing.Model{
+		{ID: "openai/gpt-test", InputPerM: 2, OutputPerM: 4},
+		{ID: "anthropic/judge-test", InputPerM: 10, OutputPerM: 10},
+	})
+	p := &Processor{pricing: cat}
+	resp := []providers.Response{{
+		Provider: "openai", Model: "gpt-test", Status: "success",
+		Metrics: &providers.Metrics{InputTokens: 1_000_000, OutputTokens: 1_000_000},
+	}}
+	v := &judge.Verdict{JudgeProvider: "claude", JudgeModel: "judge-test", JudgeTokens: 1_000_000}
+	if got := p.estimateCost(resp, v); got != 0 {
+		t.Fatalf("estimateCost = %v for responses with no declared transport, want 0", got)
+	}
+}
+
 func TestEstimateCostIncludesTheJudge(t *testing.T) {
 	cat := pricing.NewCatalog([]pricing.Model{{ID: "anthropic/judge-test", InputPerM: 10, OutputPerM: 10}})
 	p := &Processor{pricing: cat}
-	v := &judge.Verdict{JudgeProvider: "claude", JudgeModel: "judge-test", JudgeTokens: 1_000_000}
+	v := &judge.Verdict{JudgeProvider: "claude", JudgeModel: "judge-test", JudgeTokens: 1_000_000, JudgeTransport: "api"}
 	// Flat $10/M both ways, so the 70/30 split is irrelevant: $10 total.
 	if got := p.estimateCost(nil, v); got < 9.99 || got > 10.01 {
 		t.Fatalf("judge cost = %v, want 10.00", got)
@@ -562,6 +587,63 @@ func TestCancellationMarksTheRunPartial(t *testing.T) {
 	}
 	if stats.Completed+stats.Skipped != stats.Total {
 		t.Fatalf("completed %d + skipped %d != total %d", stats.Completed, stats.Skipped, stats.Total)
+	}
+}
+
+// TestShutdownLetsInFlightItemsFinish: Ctrl-C prints "finishing in-flight
+// items", and that has to be true. The shutdown cancelled the very context
+// the in-flight queries ran on, so every paid-for call in flight was thrown
+// away and re-run on --resume. A shutdown stops dispatch; it does not abort
+// work already under way (a second Ctrl-C does that).
+func TestShutdownLetsInFlightItemsFinish(t *testing.T) {
+	prov := okProvider("openai")
+	prov.delay = 150 * time.Millisecond
+	outPath := filepath.Join(t.TempDir(), "out.jsonl")
+	p := newTestProcessor(t, Options{Workers: 2, OutputPath: outPath}, prov)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(40 * time.Millisecond) // both items are in flight by now
+		cancel()
+	}()
+
+	var out bytes.Buffer
+	stats, err := p.Process(ctx, strings.NewReader("{\"id\":\"a\",\"prompt\":\"q\"}\n{\"id\":\"b\",\"prompt\":\"q\"}\n"), &out, "")
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if !stats.Cancelled {
+		t.Fatalf("stats = %+v, want the shutdown recorded", stats)
+	}
+	if stats.Succeeded != 2 || stats.CutShort != 0 {
+		t.Fatalf("stats = %+v: in-flight items were aborted instead of finished\n%s", stats, out.String())
+	}
+	if got := prov.finished.Load(); got != 2 {
+		t.Fatalf("%d of 2 in-flight provider calls finished", got)
+	}
+}
+
+// TestCutShortItemsAreCounted: an item the shutdown interrupted (its retries
+// abandoned during backoff) is neither undispatched nor a real result, so
+// Skipped does not see it. It must be counted, or a run whose every item was
+// dispatched reports nothing lost while its output is partial.
+func TestCutShortItemsAreCounted(t *testing.T) {
+	prov := okProvider("openai")
+	prov.answer = func(int32, string) (string, error) { return "", errors.New("HTTP 500 upstream") }
+	p := newTestProcessor(t, Options{Workers: 1, Retries: 3}, prov)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(100 * time.Millisecond) // inside the first 1s backoff
+		cancel()
+	}()
+	var out bytes.Buffer
+	stats, err := p.Process(ctx, strings.NewReader("{\"id\":\"a\",\"prompt\":\"q\"}\n"), &out, "")
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if stats.Skipped != 0 || stats.CutShort != 1 {
+		t.Fatalf("stats = %+v, want the dispatched item counted as cut short", stats)
 	}
 }
 

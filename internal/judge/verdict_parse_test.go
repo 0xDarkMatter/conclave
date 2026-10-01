@@ -46,6 +46,22 @@ func TestParseVerdictRejectsAnEmptyVerdict(t *testing.T) {
 	}
 }
 
+// TestParseVerdictUnbalancedBracesStayLinear: every "{" is a candidate, and
+// the old matcher scanned from each one to the end of the text looking for
+// its partner, so a judge that echoed brace-heavy code (or truncated JSON)
+// before its verdict cost quadratic time per synthesis and per batch item.
+func TestParseVerdictUnbalancedBracesStayLinear(t *testing.T) {
+	resp := strings.Repeat("{", 100_000) + "\n" + `{"verdict": "A", "confidence": "high", "reasoning": "r"}`
+	start := time.Now()
+	v, err := parseVerdict(resp)
+	if err != nil || v.Result != "A" {
+		t.Fatalf("parseVerdict = %+v, %v; want verdict A", v, err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("parseVerdict took %v over 100k unbalanced braces; the scan is quadratic", elapsed)
+	}
+}
+
 type fixedJudge struct{ out string }
 
 func (f fixedJudge) Name() string         { return "fake" }

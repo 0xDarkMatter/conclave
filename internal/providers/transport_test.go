@@ -376,6 +376,26 @@ func TestInvalidConfigTransportNamesTheKey(t *testing.T) {
 	}
 }
 
+// TestConfigPinOnAMissingTransportBlamesTheConfig: when config.yaml (or
+// CONCLAVE_<P>_TRANSPORT) pins a provider to a transport it does not have, the
+// error must name the config key. Reporting it as "glm@api" blamed a suffix
+// the user never typed and hid the file that caused it.
+func TestConfigPinOnAMissingTransportBlamesTheConfig(t *testing.T) {
+	r := configRegistry(false, map[string]string{"glm": "api"})
+	_, err := r.GetProvider("glm", nil)
+	if err == nil {
+		t.Fatal("glm pinned to api resolved; glm has no API implementation")
+	}
+	for _, want := range []string{"transports.glm", "CONCLAVE_GLM_TRANSPORT", "ADR-006"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q; got: %s", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "glm@api") {
+		t.Errorf("error blames a glm@api suffix the user never typed: %s", err)
+	}
+}
+
 // TestConfigTransportCannotPutASlugOnTheCli mirrors the suffix rule.
 func TestConfigTransportCannotPutASlugOnTheCli(t *testing.T) {
 	t.Setenv(OpenRouterKeyEnv, "test-key")
