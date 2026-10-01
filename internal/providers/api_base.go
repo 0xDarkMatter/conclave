@@ -167,14 +167,20 @@ func (p *apiBaseProvider) httpClient() *http.Client {
 }
 
 // isRetryable returns true if the status code usually means a transient
-// error. A 429 is not always one: doRequest checks billingCode first.
+// error: 429 and every 5xx. A 429 is not always one: doRequest checks
+// billingCode first.
+//
+// The 5xx half is the status class, not a list, because vendors invent their
+// own transient 5xx. The old list (500, 502, 503, 504) missed Anthropic's 529
+// overloaded_error, so a load spike failed the call on its first attempt;
+// Cloudflare-fronted APIs send 520-524 the same way. Anthropic's SDKs retry
+// every 5xx too (platform.claude.com/docs/en/api/errors, checked 2026-10-01).
+// The cost is that a permanent 5xx (501, 505, which no provider here sends
+// for a well-formed request) spends ~7 s of backoff before failing, where a
+// transient 5xx left unretried loses the answer. Pinned by
+// TestRetryableIsTheStatusClassNotAList.
 func isRetryable(statusCode int) bool {
-	switch statusCode {
-	case 429, 500, 502, 503, 504:
-		return true
-	default:
-		return false
-	}
+	return statusCode == http.StatusTooManyRequests || (statusCode >= 500 && statusCode <= 599)
 }
 
 // calculateBackoff returns the delay for a given attempt with jitter

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- An API-mode Anthropic query (`-g claude`, `claude@api`) no longer fails on
+  the first HTTP 529 `overloaded_error`. The retry rule listed 429, 500, 502,
+  503 and 504, so Anthropic's "temporarily overloaded" status got no backoff.
+  Every 5xx now retries, as ADR-004 always described and Anthropic's own SDKs
+  do, which also covers Cloudflare's 520-524 for any API provider. Batch
+  `--retries` already retried a 529 item, but each attempt failed on its
+  first call.
+
 ## [1.5.0] - 2026-10-03
 
 ### Added
