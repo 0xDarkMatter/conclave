@@ -17,11 +17,13 @@ Conclave is a Go CLI that queries multiple LLM providers in parallel and synthes
 ```
 cmd/
   root.go          # Main CLI entry, flag parsing, orchestration
+  decide.go        # `conclave decide`: decision-model panel (ADR-016)
   init.go          # Interactive API key setup
 
 internal/
   config/          # Configuration loading (.env, config.yaml)
   context/         # File/stdin context building
+  decide/          # Decision models' non-provider half: question loader, consensus maths, --json/table render (ADR-016)
   judge/           # Verdict synthesis logic
   jsonscan/        # The one "find the JSON object in the prose" scanner (CLI stdout, judge verdicts)
   orchestrator/    # Parallel provider execution
@@ -36,6 +38,8 @@ internal/
     gemini.go      # CLI provider
     api_gemini.go  # API provider
     api_openrouter.go  # Slash-routed OpenRouter backend: any vendor/model token in -g mode (ADR-010)
+    decider.go     # Decider interface + typed Question/Answer (NOT a Provider, ADR-016)
+    decide_*.go    # System One wire client (decide_systemone.go), jev, clef/clef-flash
     ...
 ```
 
@@ -136,6 +140,11 @@ contract: [docs/CHECK_GATE.md](docs/CHECK_GATE.md).
 | `internal/providers/api_openrouter.go` | OpenRouter transport + `/auth/key` preflight; `IsOpenRouterModel` is the routing rule |
 | `docs/OPENROUTER.md` | User guide for slash-routed OpenRouter models: setup, slugs, cost, judge rule, error decoder |
 | `internal/pricing/catalog.go` | OpenRouter catalog cache, TTL, vendor-id → slug rewriter; advisory, nil-safe |
+| `cmd/decide.go` | `conclave decide`: decider resolution, state assembly, parallel run, cache, exit policy |
+| `internal/providers/decide_systemone.go` | Decider wire client: validation (`ValidateDecisionRequest`), request/response, Clef envelope unwrap |
+| `internal/decide/` | `questions.go` (loader, `--ask`, cache-key form), `consensus.go` (averaging, agreement), `render.go` (envelope, table, `-q`) |
+| `internal/pricing/deciders.go` | Hand-maintained decider price table with `as_of`; NOT gated by `models --check` |
+| `docs/PLAN-decision-models.md` | Decision-model build plan; Phase 0 probe status lives there |
 | `docs/adr/` | Architecture Decision Records (the directory is the index) |
 
 ## Code Style
@@ -168,3 +177,4 @@ contract: [docs/CHECK_GATE.md](docs/CHECK_GATE.md).
 12. **The transport suffix never reaches the provider name** (ADR-012): `claude@cli` resolves to a provider whose `Name()` is `claude`. `--json` keys, the progress line, the judge label, `-m` override keys and the pricing catalog all use the bare name; the transport travels separately (`Response.Transport`, `TransportOf`). Do not compare tokens to names (`p.Name() == flagJudge` breaks when the judge is `claude@cli`; use `providers.BareName`), and do not read `flagGeneral` to decide whether a response was billed: since one panel can mix transports, `output.Options.APIMode` no longer exists and any `Response` built outside the orchestrator must set `Transport` or it prices as nothing (pinned by `TestUnknownTransportIsNotPriced`). `glm@api` and `deepseek/x@cli` are errors by design, and so is the same bare name twice in one panel (`claude@cli,claude@api`): `Registry.GetProviders` refuses it because `--json` and the progress display would drop one leg. `withJudge` deduplicates by name AND transport for the same reason in reverse: a CLI panel member must not stand in for an API judge's preflight.
 13. **CLIs that promise JSON still print prose on stdout.** claude printed `Client.listTools() called but server does not advertise tools capability - returning empty list` ahead of its envelope (2026-09-13), and `claude auth status` is pretty-printed multi-line JSON. Every reader of claude or gemini stdout (`Query` in both, claude's `Preflight` and `SubscriptionLoggedIn`) therefore *locates* its object with `jsonscan.FindObject` (`internal/jsonscan`, the one shared scanner; the judge's verdict parser uses it too) instead of unmarshalling the whole buffer; do not "simplify" any of them back to `json.Unmarshal(output)`. On an API error claude exits 1 but the only readable message is in the envelope's `result`, so `Query` keeps stdout on failure (`cmdOptions.keepStdoutOnErr`) and surfaces it. Pinned by `TestClaudeCLIIgnoresLeadingNoiseBeforeJSON`, `TestGeminiCLIIgnoresStdoutNoiseAroundJSON` and siblings.
 14. **claude runs isolated from the caller's cwd and settings** (ADR-013): `--strict-mcp-config --setting-sources "" --no-session-persistence`, in an empty temp directory, so a panel answer is not shaped by whichever repo conclave was invoked from (a bare "hi" once described the caller's worktree and cited its startup hook) nor by the user's own persona (user settings alone added ~52k prompt tokens per query). The empty source list keeps OAuth; never swap this for `--bare`, which disables OAuth and breaks subscription auth (Gotcha 7). Context goes in via `-f`/stdin. Pinned by `TestClaudeCLIRunsIsolatedFromCallerContext`.
+15. **Deciders are not providers** (ADR-016): jev, clef and clef-flash implement `Decider`, are listed only by `AllDeciders()` (never `AllAPIProviders()`, so never in `--all`, a chat panel or the judge) and run only from `conclave decide`; `GetProvider` on a decider name points to `decide`, and a transport suffix on one is an error. Their cache key reuses the `system` slot: `cache.Key("api", decider, model, state, decide.CanonicalQuestions(qs))`, built once per run in `cmd/decide.go`. The clef backend accepts BOTH a bare `{model,answers}` success body and the Workers AI `{"result":{...},"success":true}` wrapper, because Phase 0 has only confirmed the error envelope; do not drop either branch of `decodeSystemOneResponse` until a live Workers AI token pins one (status in `docs/PLAN-decision-models.md`). `decide`'s `--cache`/`--no-cache` deliberately bind root's `flagCache`/`flagNoCache` so `resolveCache` serves both.

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `conclave decide [deciders] [state] --questions FILE | --ask TEXT`: a panel
+  of decision models (Typesafe `jev`, Cloudflare `clef` and `clef-flash`) over
+  one state (positional text, stdin, `-f`) and a typed question set (`noul`,
+  `choice`, `score`; YAML or JSON in the vendors' wire shape). Deciders run in
+  parallel under a per-decider `-t` (default 30 s); answers are combined per
+  question by equal-weight probability averaging, with `agreement`
+  (1 - Jensen-Shannon divergence), `votes` and `contested`. Questions are
+  validated before any network call. `--json` prints a `deciders` /
+  `consensus` / `meta` envelope (also on exit 1), `-q` prints `id=value`
+  lines, `--ask` is a single `noul` question with id `q`. Exit 0 when at least
+  one decider answered, 1 when all failed, 130 on Ctrl-C. `--cache` keys on
+  the state and the canonical question set; a hit reports `cached: true` and
+  costs $0. ADR-016.
+- `TYPESAFE_API_KEY`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
+  `conclave init` and `conclave keyring list`. Decider keys are saved without
+  a live check (no spend-free auth probe is known yet).
+- `conclave models` lists the decision-model price table with each row's
+  `as_of` date under "Decision models" (`conclave models jev` for one), and
+  `conclave models --json` gains an additive `deciders` array.
+
 ## [1.4.0] - 2026-10-01
 
 ### Added

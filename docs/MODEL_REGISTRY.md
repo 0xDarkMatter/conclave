@@ -278,6 +278,25 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 
 ---
 
+## Decision models
+
+Used only by `conclave decide` (ADR-016); never on a chat panel, never in `--all`, API-only.
+Prices are a hand-maintained table in `internal/pricing/deciders.go` (not the OpenRouter
+catalog, which does not list these models), so `conclave models --check` does **not** gate
+them: the as-of date is the staleness signal. `conclave models jev` prints the live table.
+
+| Decider | Default model | Endpoint | Auth | Price (USD / 1M tokens) | As of |
+|---|---|---|---|---|---|
+| `jev` | `jev-latest` (reports e.g. `jev-1.13.0`) | `POST https://api.typesafe.ai/v1/systemone` (override: `CONCLAVE_JEV_BASE_URL`, full URL) | `Bearer TYPESAFE_API_KEY` | $0.042 in, output free | 2026-10-02 |
+| `clef` | `clef` (`@cf/cloudflare/clef`) | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` (override: `CONCLAVE_CLEF_BASE_URL`, prefix through `/ai/run`) | `Bearer CLOUDFLARE_API_TOKEN` | $0.24 in, no published output price | 2026-10-02 |
+| `clef-flash` | `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | unpublished: reported unpriced | 2026-10-02 |
+
+Sources: [Typesafe launch post](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+[Workers AI Clef model page](https://developers.cloudflare.com/workers-ai/models/clef).
+Limits: 1-64 questions per call; Jev 32k context, Clef 64k.
+
+---
+
 ## Conclave Defaults
 
 Models used when no `-m` override is given. Source of truth: `internal/config/config.go` `Models` map and each provider's `defaultModel`.

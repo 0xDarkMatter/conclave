@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -32,7 +33,19 @@ var providerSetups = []providerSetup{
 	// Not a provider name: unlocks vendor/model tokens in -g mode (ADR-010).
 	// Listed here so `init` and `keyring list` know the env var.
 	{"openrouter", providers.OpenRouterKeyEnv, "https://openrouter.ai/settings/keys", ""},
+	// Decision models (ADR-016), used only by `conclave decide`. clef and
+	// clef-flash share the Cloudflare pair; the account id is not a secret but
+	// is required (the Workers AI URL is account-scoped), so it is prompted
+	// and keyring-listable like a key.
+	{"jev", "TYPESAFE_API_KEY", "https://typesafe.ai", ""},
+	{"clef", "CLOUDFLARE_API_TOKEN", "https://dash.cloudflare.com/profile/api-tokens (Workers AI permission)", ""},
+	{"clef-account", "CLOUDFLARE_ACCOUNT_ID", "https://dash.cloudflare.com (Account ID, account home sidebar)", ""},
 }
+
+// errUnverified marks a value that was saved without a live check because no
+// spend-free check exists for it yet (decision models: Phase 0 probe 4 in
+// docs/PLAN-decision-models.md is still open).
+var errUnverified = errors.New("saved without a live check")
 
 var initCmd = &cobra.Command{
 	Use:   "init",
@@ -106,12 +119,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 		// Validate the key
 		fmt.Print("  Validating... ")
-		if err := validateAPIKey(p.name, p.envVar, key); err != nil {
+		if err := validateAPIKey(p.name, p.envVar, key); errors.Is(err, errUnverified) {
+			fmt.Printf("⊘ %v\n", err)
+		} else if err != nil {
 			fmt.Printf("✗ %v\n", err)
 			fmt.Println("  Key not saved. You can try again with 'conclave init'")
 			continue
+		} else {
+			fmt.Println("✓ Valid")
 		}
-		fmt.Println("✓ Valid")
 
 		newKeys[p.envVar] = key
 		// Also set in current process so subsequent validations work
@@ -160,6 +176,8 @@ func validateAPIKey(provider, envVar, key string) error {
 		// CLI provider hits the Coding Plan endpoint (subscription, no
 		// pay-as-you-go balance) — the right validation target for a GLM key.
 		p = providers.NewGLMProvider()
+	case "jev", "clef", "clef-account":
+		return errUnverified
 	case "openrouter":
 		// No default model to query, and /auth/key validates the key without
 		// spending tokens, so preflight is the whole check.

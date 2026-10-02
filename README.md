@@ -25,6 +25,12 @@ Built with [Charm](https://charm.sh)'s Bubble Tea for a terminal UI that doesn't
 
 ## Recent Updates
 
+### Unreleased
+
+**🎯 Decision models: `conclave decide`**
+
+Typed questions in, typed answers with probabilities out. `conclave decide clef,jev -f ticket.txt --questions triage.yaml` runs Cloudflare Clef and Typesafe Jev in parallel and averages their probabilities per question, with no LLM judge in the loop. See [Decision models](#decision-models-conclave-decide).
+
 ### v1.4.0 — 2026-10-01
 
 **🔌 Subscriptions and API keys in one panel**
@@ -430,6 +436,66 @@ you the whole panel; `--skip-preflight` overrides that.
   request fields, and subscription billing in CLI mode. Use OpenRouter for models conclave has
   no direct provider for. Full guide (setup, finding slugs, costs, the judge rule, error decoder):
   [docs/OPENROUTER.md](docs/OPENROUTER.md); rationale in [ADR-010](docs/adr/ADR-010-openrouter-as-a-slash-routed-api-backend.md).
+
+## Decision models (`conclave decide`)
+
+Decision models (Typesafe **Jev**, Cloudflare **Clef** and **Clef-flash**) are not chat
+models. They take a *state* (any text) and a set of *typed questions*, and return typed
+answers with calibrated probabilities:
+
+| Type | Asks | Answer |
+|---|---|---|
+| `noul` | a 0-1 value ("is this urgent?") | `noul: 0.82` |
+| `choice` | one of named options | `choice`, plus a probability per option |
+| `score` | a point on an ordered scale (index = score) | `score`, plus a probability per index |
+
+`conclave decide` runs a panel of them in parallel and combines the answers per question
+by **averaging the probabilities with equal weight**, not by an LLM judge. Each question
+reports the consensus answer, `agreement` (1 minus the Jensen-Shannon divergence between
+the deciders, 1.0 = identical) and `contested` when the deciders' own picks differ.
+
+```bash
+# Every configured decider, a question file, the state from a file
+conclave decide -f ticket.txt --questions triage.yaml
+
+# Named deciders, JSON envelope (deciders / consensus / meta)
+conclave decide clef,jev -f ticket.txt --questions triage.yaml --json
+
+# One-question shorthand: a single noul question with id "q"
+conclave decide "Server down since 9am, customers locked out" --ask "Is this urgent?"
+
+# Scripting: one id=value line per question
+cat ticket.txt | conclave decide --questions triage.yaml -q
+```
+
+A questions file is YAML or JSON in the vendors' wire shape (`criteria` is a mapping for
+`choice`, an ordered list for `score`, absent for `noul`); 1-64 questions, ids matching
+`^[a-z][a-z0-9_]*$`. It is validated locally before anything is sent, so a malformed file
+costs nothing.
+
+```yaml
+department:
+  type: choice
+  instructions: Which team should handle this ticket?
+  criteria: {billing: Invoice or refund, technical: Bug or outage, sales: Plans and pricing}
+frustration:
+  type: score
+  instructions: How frustrated is the customer?
+  criteria: [Calm, Frustrated, Angry]
+is_urgent:
+  type: noul
+  instructions: Must this be answered within an hour?
+```
+
+**Setup.** `TYPESAFE_API_KEY` for `jev`; `CLOUDFLARE_API_TOKEN` (with Workers AI
+permission) and `CLOUDFLARE_ACCOUNT_ID` for `clef` and `clef-flash`. Environment,
+`~/.config/conclave/.env`, `conclave init`, or `conclave keyring set <VAR>`. Decision models
+are API-only (no `@cli`/`@api` suffix), are never part of `--all`, and are not accepted as a
+chat provider or judge. `--cache`, `-t` (default 30 s per decider) and `--json` behave as on a
+query; exit status is 0 when at least one decider answered, 1 when all failed, 130 on Ctrl-C.
+Prices come from a hand-maintained table (`conclave models jev`); Clef-flash is unpriced until
+Cloudflare publishes a rate. Design: [ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md),
+build plan: [docs/PLAN-decision-models.md](docs/PLAN-decision-models.md).
 
 ## Setup
 
