@@ -15,6 +15,7 @@ import (
 
 	"github.com/0xDarkMatter/conclave-cli/internal/config"
 	"github.com/0xDarkMatter/conclave-cli/internal/pricing"
+	"github.com/0xDarkMatter/conclave-cli/internal/providers"
 	"github.com/spf13/cobra"
 )
 
@@ -38,6 +39,7 @@ subscription and pays nothing per token.
 
   conclave models                 # every provider, newest models first
   conclave models claude          # one provider
+  conclave models clef            # one decision model (prices from a hand table, with as-of date)
   conclave models --check         # verify compiled defaults still exist (exit 2 on drift, 3 if the catalog is unreachable)
   conclave models --refresh       # force a fetch now
   conclave models --json          # machine-readable dump of the cache`,
@@ -91,7 +93,7 @@ func runModels(cmd *cobra.Command, args []string) error {
 	if flagModelsJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		return enc.Encode(cat)
+		return enc.Encode(modelsJSON{Catalog: cat, Deciders: pricing.DeciderPrices()})
 	}
 
 	if flagModelsCheck {
@@ -101,8 +103,14 @@ func runModels(cmd *cobra.Command, args []string) error {
 	}
 
 	providersToShow := pricing.Providers()
+	showDeciders := true
 	if len(args) == 1 {
 		p := strings.ToLower(strings.TrimSpace(args[0]))
+		if _, err := providers.GetDecider(p); err == nil {
+			printDeciderPrices(p)
+			return nil
+		}
+		showDeciders = false
 		if _, ok := pricing.VendorPrefix(p); !ok {
 			return fmt.Errorf("unknown provider %q (known: %s)", p, strings.Join(pricing.Providers(), ", "))
 		}
@@ -151,7 +159,45 @@ func runModels(cmd *cobra.Command, args []string) error {
 		}
 		tw.Flush()
 	}
+	if showDeciders {
+		printDeciderPrices("")
+	}
 	return nil
+}
+
+// modelsJSON is the --json document: the catalog's own fields at the top
+// level (embedded, so the pre-ADR-016 shape is unchanged) plus the additive
+// "deciders" array from the hand-maintained decision-model price table.
+type modelsJSON struct {
+	*pricing.Catalog
+	Deciders []pricing.DeciderPrice `json:"deciders"`
+}
+
+// printDeciderPrices lists the decision-model price rows (ADR-016) with their
+// as_of dates; only one decider when only is set. These rows are NOT in the
+// OpenRouter catalog and `--check` does not gate them, so the date is the
+// only staleness signal. A decider with no row prints as unpriced.
+func printDeciderPrices(only string) {
+	rows := pricing.DeciderPrices()
+	fmt.Fprintf(os.Stdout, "\nDECISION MODELS (conclave decide; hand-maintained prices, not checked by --check)\n")
+	tw := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
+	fmt.Fprintf(tw, "  DECIDER\tMODEL\tIN $/M\tOUT $/M\tAS OF\n")
+	for _, d := range providers.AllDeciders() {
+		if only != "" && d.Name() != only {
+			continue
+		}
+		priced := false
+		for _, r := range rows {
+			if r.Decider == d.Name() {
+				priced = true
+				fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", r.Decider, r.Model, fmtPrice(r.InPerM), fmtPrice(r.OutPerM), r.AsOf)
+			}
+		}
+		if !priced {
+			fmt.Fprintf(tw, "  %s\t%s\tunpriced\t\t\n", d.Name(), d.DefaultModel())
+		}
+	}
+	tw.Flush()
 }
 
 // checkDefaults is the drift gate: every compiled default and cheap model must

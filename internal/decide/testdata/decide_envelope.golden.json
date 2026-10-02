@@ -1,0 +1,96 @@
+{
+  "deciders": {
+    "clef": {
+      "model": "@cf/cloudflare/clef",
+      "status": "success",
+      "duration_ms": 212,
+      "answers": {
+        "department": {
+          "type": "choice",
+          "choice": "technical",
+          "confidence": 0.78,
+          "probabilities": {
+            "billing": 0.15,
+            "sales": 0,
+            "technical": 0.85
+          }
+        },
+        "frustration": {
+          "type": "score",
+          "score": 1,
+          "confidence": 1,
+          "probabilities": {
+            "0": 0,
+            "1": 1,
+            "2": 0
+          },
+          "legend": {
+            "0": "Calm",
+            "1": "Frustrated",
+            "2": "Angry"
+          }
+        },
+        "is_urgent": {
+          "type": "noul",
+          "noul": 1
+        }
+      },
+      "metrics": {
+        "input_tokens": 392,
+        "output_tokens": 65,
+        "cost_usd": 0.000094
+      }
+    },
+    "jev": {
+      "status": "error",
+      "duration_ms": 41,
+      "error": "HTTP 401: invalid key"
+    }
+  },
+  "consensus": {
+    "department": {
+      "type": "choice",
+      "choice": "technical",
+      "probabilities": {
+        "billing": 0.15,
+        "sales": 0,
+        "technical": 0.85
+      },
+      "votes": {
+        "technical": 1
+      },
+      "contested": false,
+      "succeeded": 1,
+      "requested": 2
+    },
+    "frustration": {
+      "type": "score",
+      "score": 1,
+      "expected": 1,
+      "probabilities": {
+        "0": 0,
+        "1": 1,
+        "2": 0
+      },
+      "votes": {
+        "1": 1
+      },
+      "contested": false,
+      "succeeded": 1,
+      "requested": 2
+    },
+    "is_urgent": {
+      "type": "noul",
+      "noul": 1,
+      "contested": false,
+      "succeeded": 1,
+      "requested": 2
+    }
+  },
+  "meta": {
+    "total_cost_usd": 0.000094,
+    "duration_ms": 215,
+    "requested": 2,
+    "succeeded": 1
+  }
+}

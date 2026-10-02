@@ -1,7 +1,7 @@
 # Plan: decision models (System One) as a panel class
 
-> Planned, not built. Branch `lane/decision-models`, 2026-10-02, written against `main`
-> at `2bc6cca` (v1.4.0). The architecture is decided in
+> Phase 1 built (2026-10-02); Phase 0 partly probed; Phases 2-4 planned. Branch
+> `lane/decision-models`, 2026-10-02, written against `main` at `2bc6cca` (v1.4.0). The architecture is decided in
 > [ADR-016](adr/ADR-016-decision-models-are-a-separate-provider-class.md); this file is
 > the build order. Mark phases done here as they land; history goes to CHANGELOG.
 
@@ -80,7 +80,22 @@ key may need to be added there first.
 
 Write the findings into this file under each probe.
 
-## Phase 1: deciders + `conclave decide` (about 1.5 days)
+**Status.** Probe 1 partial (2026-10-02): error responses use the Cloudflare envelope
+`{result:null, success:false, errors:[{code,message}]}`; no Keeper token carries Workers AI
+permission, so the success shape, probes 2-5 and the calibration eval are still open. Until
+probe 1 completes, the clef backend accepts both the bare and the `{"result":...}` success
+shape (AGENTS Gotcha 15).
+
+## Phase 1: deciders + `conclave decide` — DONE (2026-10-02)
+
+Shipped as below, with these resolutions: `--all-deciders` was not added (omitting the
+decider list means every configured decider; the open question is closed); a single
+positional argument is the decider list only when it is a comma list of decider or provider
+names, otherwise the state; `Decision` carries no `Raw` (answers are re-encoded through the
+typed `Answer`, which holds every wire field); `conclave init` saves decider keys without a
+live check until probe 4 finds a spend-free one; the human table lives in
+`internal/decide/render.go`, not `internal/output`. `TestClefAcceptsBareAndWorkersAIEnvelope`
+pins both shapes until probe 1 completes.
 
 **Interface** (`internal/providers/decider.go`). It lives in `providers` so it can
 embed `apiBaseProvider` (ADR-004 retry, `BillingError`, `NewKeyRotator`/keyring).
@@ -119,7 +134,7 @@ error, `GetProvider` checks `GetDecider` and says "clef is a decision model; use
 ```
 conclave decide [deciders] [state] --questions q.yaml [-f file] [--json] [-t secs] [--cache]
 conclave decide clef,jev -f ticket.txt --questions triage.yaml --json
-conclave decide --all-deciders "..." --ask "Is this urgent?"      # --ask = one noul named "q"
+conclave decide "..." --ask "Is this urgent?"      # no deciders = all configured; --ask = one noul named "q"
 ```
 
 Default deciders: every available one. The questions file is YAML or JSON in the wire
@@ -230,7 +245,7 @@ anything, as the slash-judge preflight does.
 
 ## Open questions
 
-- Does `--all-deciders` belong, or should `decide` with no names simply mean all available?
+- ~~Does `--all-deciders` belong?~~ Resolved in Phase 1: no; omitting the list means all available.
 - Should `conclave decide` accept a chat-model scorer in Phase 1 (an LLM asked the same
   questions, its answers marked `calibrated: false` and excluded from consensus) for
   side-by-side comparison? Useful for the Phase 0 eval; deferred unless that eval wants it.
