@@ -6,8 +6,9 @@
 // order because float addition is not associative; ties break by sorted key);
 // the provider contract in internal/providers/decider.go is imported, never
 // redefined; a decider is skipped per question when its answer is missing or
-// type-mismatched, and Succeeded counts only matches; Agreement = 1 - JSD
-// (equal weights, log base 2), nil under two usable distributions.
+// malformed, and Succeeded counts only validated payloads; Agreement uses
+// Lin's equal-weight generalised JSD normalised by log2(panel size), nil under
+// two usable distributions.
 //
 // Reasoning: docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md
 // and docs/PLAN-decision-models.md ("Consensus"). The package doc is NOT here:
@@ -35,9 +36,10 @@ type QuestionConsensus struct {
 	Noul          *float64           `json:"noul,omitempty"`          // noul: mean value
 	Probabilities map[string]float64 `json:"probabilities,omitempty"` // averaged distribution (choice/score)
 	Votes         map[string]int     `json:"votes,omitempty"`         // each decider's own argmax, counted
-	Agreement     *float64           `json:"agreement,omitempty"`     // 1 - JSD (base 2) across deciders; nil when <2 succeeded
+	Agreement     *float64           `json:"agreement,omitempty"`     // 1 - JSD/log2(n) across deciders; nil when <2 succeeded
 	Contested     bool               `json:"contested"`
 	Succeeded     int                `json:"succeeded"`
+	Invalid       int                `json:"invalid,omitempty"` // present answers rejected as malformed
 	Requested     int                `json:"requested"`
 }
 
@@ -53,17 +55,16 @@ func Consensus(questions map[string]providers.Question, decisions map[string]*pr
 	out := make(map[string]QuestionConsensus, len(questions))
 	for qid, q := range questions {
 		qc := QuestionConsensus{Type: q.Type, Requested: requested}
-		matched := matchedAnswers(qid, q.Type, decisions)
-		qc.Succeeded = len(matched)
+		answers := answersForQuestion(qid, decisions)
 
 		var dists [][]float64
 		switch q.Type {
 		case providers.QuestionChoice:
-			dists = aggregateChoice(&qc, matched)
+			dists = aggregateChoice(&qc, q, answers)
 		case providers.QuestionScore:
-			dists = aggregateScore(&qc, q, matched)
+			dists = aggregateScore(&qc, q, answers)
 		case providers.QuestionNoul:
-			dists = aggregateNoul(&qc, matched)
+			dists = aggregateNoul(&qc, answers)
 		default:
 			// Question validation rejects unknown types before any spend;
 			// degrading to a counts-only entry keeps this pure function total.
@@ -82,94 +83,76 @@ type namedAnswer struct {
 	answer providers.Answer
 }
 
-// matchedAnswers collects the answers that count for qid, sorted by decider
-// name. Sorting is not cosmetic: float addition is not associative, so an
-// unsorted accumulation could wobble the averages in the last ulp between
-// runs and break ADR-016's "reproducible" promise. A nil *Decision is
-// skipped defensively; callers should not produce one.
-func matchedAnswers(qid, qType string, decisions map[string]*providers.Decision) []namedAnswer {
-	var matched []namedAnswer
+// answersForQuestion collects present answers for qid, sorted by decider name.
+// Validation deliberately happens later: Invalid distinguishes malformed
+// vendor payloads from missing answers and nil decisions. Sorting is not
+// cosmetic because float addition is not associative and ADR-016 promises a
+// reproducible arithmetic consensus.
+func answersForQuestion(qid string, decisions map[string]*providers.Decision) []namedAnswer {
+	var answers []namedAnswer
 	for name, d := range decisions {
 		if d == nil {
 			continue
 		}
 		a, ok := d.Answers[qid]
-		if !ok || a.Type != qType {
-			// Missing or mismatched type: skipped for this question only —
-			// the decider's other answers still count there.
+		if !ok {
 			continue
 		}
-		matched = append(matched, namedAnswer{name: name, answer: a})
+		answers = append(answers, namedAnswer{name: name, answer: a})
 	}
-	sort.Slice(matched, func(i, j int) bool { return matched[i].name < matched[j].name })
-	return matched
+	sort.Slice(answers, func(i, j int) bool { return answers[i].name < answers[j].name })
+	return answers
 }
 
 // === SECTION: per-type aggregation ======================================
 // One aggregator per question type; each fills qc and returns the per-decider
 // distributions that the agreement section consumes.
 
-// aggregateChoice fills the choice fields of qc and returns the per-decider
-// distributions (over the sorted union label set) for Agreement.
-func aggregateChoice(qc *QuestionConsensus, matched []namedAnswer) [][]float64 {
-	// Label universe is the union of what deciders emitted, not q.Choices: a
-	// label nobody emitted carries no mass, and seeding it would only pad
-	// the output with 0.0 entries no decider ever spoke to.
-	labelSet := map[string]struct{}{}
-	for _, m := range matched {
-		for l := range m.answer.Probabilities {
-			labelSet[l] = struct{}{}
-		}
-	}
-	labels := make([]string, 0, len(labelSet))
-	for l := range labelSet {
+// aggregateChoice fills the choice fields of qc and returns the validated,
+// normalized per-decider distributions for Agreement. The question criteria
+// are the wire domain; accepting a vendor-created label would let it inject an
+// answer the caller never offered.
+func aggregateChoice(qc *QuestionConsensus, q providers.Question, answers []namedAnswer) [][]float64 {
+	labels := make([]string, 0, len(q.Choices))
+	for l := range q.Choices {
 		labels = append(labels, l)
 	}
 	sort.Strings(labels)
 
-	// ADR-016 average: each label's raw probability summed across deciders
-	// (a label absent from one decider's map counts 0 for it), then the
-	// average scaled to sum 1.
-	sums := make(map[string]float64, len(labels))
-	for _, m := range matched {
-		for l, p := range m.answer.Probabilities {
-			sums[l] += p
-		}
-	}
-	if avg, ok := scaleToUnit(sums); ok {
-		qc.Probabilities = avg
-		if c, ok := argmaxLabel(avg, labels); ok {
-			qc.Choice = c
-		}
-	}
-
-	var dists [][]float64
+	sums := make([]float64, len(labels))
+	dists := make([][]float64, 0, len(answers))
 	picks := map[string]struct{}{}
 	votes := map[string]int{}
-	for _, m := range matched {
-		a := m.answer
-		d, hasMass := scaleToUnit(a.Probabilities)
-		if hasMass {
-			// vector over the union label order, for the JSD computation
-			v := make([]float64, len(labels))
-			for i, l := range labels {
-				v[i] = d[l]
-			}
-			dists = append(dists, v)
+	for _, named := range answers {
+		a := named.answer
+		if a.Type != providers.QuestionChoice || (a.Choice != "" && !hasChoice(q.Choices, a.Choice)) {
+			qc.Invalid++
+			continue
 		}
-		// A decider's own pick: its declared Choice when it made one, else
-		// the argmax of its own distribution.
-		pick := a.Choice
-		if pick == "" && hasMass {
-			if c, ok := argmaxLabel(d, labels); ok {
-				pick = c
-			}
+		d, ok := normalizeChoiceDistribution(a.Probabilities, q.Choices, labels)
+		if !ok {
+			qc.Invalid++
+			continue
 		}
-		if pick == "" {
-			continue // no declared choice and no mass: no vote, no contested say
+		qc.Succeeded++
+		dists = append(dists, d)
+		for i, p := range d {
+			sums[i] += p
 		}
+		// Vendors may report a thresholded Choice that disagrees with their
+		// probability argmax. It remains valid, but voting follows normalized
+		// evidence so Votes, Contested and the aggregate share one basis.
+		pick := labels[argmaxVec(d)]
 		votes[pick]++
 		picks[pick] = struct{}{}
+	}
+	if qc.Succeeded > 0 {
+		avg := make(map[string]float64, len(labels))
+		for i, label := range labels {
+			avg[label] = sums[i] / float64(qc.Succeeded)
+		}
+		qc.Probabilities = avg
+		qc.Choice = labels[argmaxVec(sums)]
 	}
 	if len(votes) > 0 {
 		qc.Votes = votes
@@ -179,52 +162,45 @@ func aggregateChoice(qc *QuestionConsensus, matched []namedAnswer) [][]float64 {
 }
 
 // aggregateScore fills the score fields of qc and returns the per-decider
-// distributions over indices 0..len(q.Scale)-1 for Agreement. Index keys are
-// the wire's decimal strings ("0".."n-1"); an index outside the scale is
-// dropped — it is not a score this question asked for, and keeping it would
-// silently move mass off the reported distribution.
-func aggregateScore(qc *QuestionConsensus, q providers.Question, matched []namedAnswer) [][]float64 {
+// distributions over indices 0..len(q.Scale)-1 for Agreement. The wire key
+// grammar is exactly strconv.Itoa(index); accepting aliases such as "01"
+// makes map iteration decide which value overwrites index 1.
+func aggregateScore(qc *QuestionConsensus, q providers.Question, answers []namedAnswer) [][]float64 {
 	n := len(q.Scale) // index = score value, per the Question contract
 	sums := make([]float64, n)
-	var dists [][]float64
+	dists := make([][]float64, 0, len(answers))
 	var picks []int
 	votes := map[string]int{}
-	for _, m := range matched {
-		// p <= 0 is skipped at parse: zero adds nothing, and a negative
-		// probability would make log2 undefined inside the JSD entropies.
-		raw := make([]float64, n)
-		for k, p := range m.answer.Probabilities {
-			i, err := strconv.Atoi(k)
-			if err != nil || i < 0 || i >= n || p <= 0 {
-				continue
-			}
-			raw[i] = p
+	for _, named := range answers {
+		a := named.answer
+		if a.Type != providers.QuestionScore {
+			qc.Invalid++
+			continue
 		}
-		for i, p := range raw {
+		d, ok := normalizeScoreDistribution(a.Probabilities, n)
+		if !ok {
+			qc.Invalid++
+			continue
+		}
+		qc.Succeeded++
+		for i, p := range d {
 			sums[i] += p
 		}
-		if total := vecSum(raw); total > 0 {
-			// per-decider normalisation for JSD; the average above uses raw
-			// values, matching choice's averaging of declared probabilities.
-			v := make([]float64, n)
-			for i, p := range raw {
-				v[i] = p / total
-			}
-			dists = append(dists, v)
-			// A decider's own pick is the argmax of its own distribution —
-			// Answer.Score is ignored so votes, contested steps and the
-			// aggregate all read the same index scale.
-			idx := argmaxVec(v)
-			picks = append(picks, idx)
-			votes[strconv.Itoa(idx)]++
-		}
+		dists = append(dists, d)
+		// Score, like Choice, may be vendor-thresholded; its normalized
+		// distribution is the sole voting and aggregation authority.
+		idx := argmaxVec(d)
+		picks = append(picks, idx)
+		votes[strconv.Itoa(idx)]++
 	}
-	if avg, ok := scaleVecToUnit(sums); ok {
+	if qc.Succeeded > 0 {
 		// all n indices are emitted, zero-valued ones included: the averaged
 		// distribution is over the whole scale by construction
 		prob := make(map[string]float64, n)
-		for i, p := range avg {
-			prob[strconv.Itoa(i)] = p
+		avg := make([]float64, n)
+		for i, p := range sums {
+			avg[i] = p / float64(qc.Succeeded)
+			prob[strconv.Itoa(i)] = avg[i]
 		}
 		qc.Probabilities = prob
 		idx := argmaxVec(avg)
@@ -256,35 +232,28 @@ func aggregateScore(qc *QuestionConsensus, q providers.Question, matched []named
 
 // aggregateNoul fills the noul fields of qc and returns the per-decider
 // Bernoulli distributions, ordered [P(no), P(yes)], for Agreement.
-func aggregateNoul(qc *QuestionConsensus, matched []namedAnswer) [][]float64 {
-	var dists [][]float64
+func aggregateNoul(qc *QuestionConsensus, answers []namedAnswer) [][]float64 {
+	dists := make([][]float64, 0, len(answers))
 	var sum float64
-	count := 0
 	someYes, someNo := false, false
-	for _, m := range matched {
-		a := m.answer
-		if a.Noul == nil {
-			// Type matched but the vendor omitted the value: still
-			// Succeeded (the skip rule is type-based only) — it just adds
-			// no mass to the mean, the boundary check or the agreement.
+	for _, named := range answers {
+		a := named.answer
+		if a.Type != providers.QuestionNoul || a.Noul == nil || !finite(*a.Noul) || *a.Noul < 0 || *a.Noul > 1 {
+			qc.Invalid++
 			continue
 		}
 		v := *a.Noul
 		sum += v
-		count++
+		qc.Succeeded++
 		if v >= 0.5 {
 			someYes = true // 0.5 itself counts as yes — the pinned boundary
 		} else {
 			someNo = true
 		}
-		// Clamp into [0,1] for the Bernoulli only: an out-of-range vendor
-		// value would make P(no) negative and log2 undefined; the mean above
-		// still reports the raw value honestly.
-		p := math.Min(math.Max(v, 0), 1)
-		dists = append(dists, []float64{1 - p, p})
+		dists = append(dists, []float64{1 - v, v})
 	}
-	if count > 0 {
-		mean := sum / float64(count)
+	if qc.Succeeded > 0 {
+		mean := sum / float64(qc.Succeeded)
 		qc.Noul = &mean
 	}
 	qc.Contested = someYes && someNo
@@ -293,17 +262,16 @@ func aggregateNoul(qc *QuestionConsensus, matched []namedAnswer) [][]float64 {
 
 // === SECTION: agreement math ===========================================
 
-// agreement returns 1 - JSD(dists), where JSD is the generalised
+// agreement returns 1 - JSD(dists)/log2(n), where JSD is Lin's generalised
 // Jensen-Shannon divergence with equal weights and log base 2:
 //
 //	JSD(P_1..P_n) = H((1/n) * Σ P_i) - (1/n) * Σ H(P_i)
 //
 // (J. Lin, "Divergence measures based on the Shannon entropy",
-// IEEE Trans. Inf. Theory 37(1), 1991 — the equal-weight, base-2 form whose
-// two-distribution value is bounded to [0,1].) With n > 2 fully disjoint
-// distributions the value can reach log2(n), so the result is clamped:
-// Agreement 0 then simply reads "no overlap at all". nil when fewer than
-// two distributions — divergence needs two things to diverge.
+// IEEE Trans. Inf. Theory 37(1), 1991.) Generalised JSD reaches log2(n) for n
+// disjoint distributions, so dividing by that bound preserves partial-overlap
+// resolution while keeping Agreement in [0,1]. Only last-ulp noise is clamped;
+// nil means fewer than two distributions can diverge.
 func agreement(dists [][]float64) *float64 {
 	if len(dists) < 2 {
 		return nil
@@ -319,10 +287,11 @@ func agreement(dists [][]float64) *float64 {
 	for _, d := range dists {
 		jsd -= entropyBase2(d) / n
 	}
-	a := 1 - jsd
-	if a < 0 {
+	a := 1 - jsd/math.Log2(n)
+	const epsilon = 1e-12
+	if a < 0 && a > -epsilon {
 		a = 0
-	} else if a > 1 {
+	} else if a > 1 && a < 1+epsilon {
 		a = 1
 	}
 	return &a
@@ -344,57 +313,42 @@ func entropyBase2(p []float64) float64 {
 // Shared small utilities over label maps and index vectors. All tie-breaks
 // live here, in one place: sorted keys for labels, numeric order for indices.
 
-// scaleToUnit returns a copy of m scaled to sum 1, ok=false when m carries
-// no positive mass (an all-zero average has no argmax to report). Keys are
-// preserved at 0.0 — a label a decider emitted at zero still shows in the
-// averaged output, like "sales": 0.0 in the plan's --json example. Negative
-// values are clamped to 0: log2 of a negative probability is NaN inside the
-// JSD entropies, and no vendor legitimately emits one.
-func scaleToUnit(m map[string]float64) (map[string]float64, bool) {
-	total := 0.0
-	for _, v := range m {
-		if v > 0 {
-			total += v
+// normalizeChoiceDistribution validates the vendor map against the criteria
+// before normalizing it. Values are summed in sorted criteria order; map
+// iteration is used only for order-independent rejection of unknown keys.
+func normalizeChoiceDistribution(probabilities map[string]float64, choices map[string]string, labels []string) ([]float64, bool) {
+	for label, p := range probabilities {
+		if !hasChoice(choices, label) || !finite(p) || p < 0 {
+			return nil, false
 		}
 	}
-	if total <= 0 {
-		return nil, false
+	raw := make([]float64, len(labels))
+	for i, label := range labels {
+		raw[i] = probabilities[label]
 	}
-	out := make(map[string]float64, len(m))
-	for k, v := range m {
-		if v < 0 {
-			v = 0
-		}
-		out[k] = v / total
-	}
-	return out, true
+	return normalizeVector(raw)
 }
 
-// argmaxLabel returns the key with the highest value; keys must be pre-sorted
-// so ties resolve to the first in sort order — deterministic across runs and
-// immune to Go's randomised map iteration. ok=false when no key of keys is
-// present in m.
-func argmaxLabel(m map[string]float64, keys []string) (string, bool) {
-	best := ""
-	bestP := 0.0
-	found := false
-	for _, k := range keys {
-		p, ok := m[k]
-		if !ok {
-			continue
+// normalizeScoreDistribution enforces the score wire grammar where each key
+// is the canonical decimal spelling of an in-range index. Rejecting the whole
+// map prevents invalid mass from being silently discarded and amplified.
+func normalizeScoreDistribution(probabilities map[string]float64, n int) ([]float64, bool) {
+	raw := make([]float64, n)
+	for key, p := range probabilities {
+		i, err := strconv.Atoi(key)
+		if err != nil || i < 0 || i >= n || key != strconv.Itoa(i) || !finite(p) || p < 0 {
+			return nil, false
 		}
-		if !found || p > bestP {
-			best, bestP, found = k, p, true
-		}
+		raw[i] = p
 	}
-	return best, found
+	return normalizeVector(raw)
 }
 
-// scaleVecToUnit is scaleToUnit for score index vectors (negatives cannot
-// occur here: they are dropped when the wire map is read).
-func scaleVecToUnit(v []float64) ([]float64, bool) {
+// normalizeVector returns a fresh unit vector. Its index-order sum is the
+// deterministic path shared by choice output, score output and JSD input.
+func normalizeVector(v []float64) ([]float64, bool) {
 	total := vecSum(v)
-	if total <= 0 {
+	if !finite(total) || total <= 0 {
 		return nil, false
 	}
 	out := make([]float64, len(v))
@@ -404,15 +358,22 @@ func scaleVecToUnit(v []float64) ([]float64, bool) {
 	return out, true
 }
 
-// vecSum adds the positive components of v.
+// vecSum adds components in index order; callers reject negatives first.
 func vecSum(v []float64) float64 {
 	s := 0.0
 	for _, x := range v {
-		if x > 0 {
-			s += x
-		}
+		s += x
 	}
 	return s
+}
+
+func hasChoice(choices map[string]string, label string) bool {
+	_, ok := choices[label]
+	return ok
+}
+
+func finite(v float64) bool {
+	return !math.IsNaN(v) && !math.IsInf(v, 0)
 }
 
 // argmaxVec returns the index of the highest value. The ascending scan with a
