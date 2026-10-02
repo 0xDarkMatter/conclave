@@ -438,3 +438,47 @@ func TestQuestionUnmarshalRejectsNoulCriteria(t *testing.T) {
 		})
 	}
 }
+
+// TestDecideVendorEchoRedactsEverySecret: a vendor error body that echoes the
+// Authorization header, every rotator key and the account ids must reach the
+// caller with each value replaced by <redacted>, for jev and clef alike; a 402
+// echo must still classify as BillingError through the redacting wrapper.
+func TestDecideVendorEchoRedactsEverySecret(t *testing.T) {
+	for _, status := range []int{http.StatusBadRequest, http.StatusPaymentRequired} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte("rejected " + r.Header.Get("Authorization") + " KEY_ONE KEY_TWO ACCT_ONE ACCT_TWO"))
+		}))
+		t.Setenv("TYPESAFE_API_KEY", "KEY_ONE,KEY_TWO")
+		t.Setenv("CONCLAVE_JEV_BASE_URL", srv.URL)
+		t.Setenv("CLOUDFLARE_API_TOKEN", "KEY_ONE,KEY_TWO")
+		t.Setenv("CLOUDFLARE_ACCOUNT_ID", "ACCT_ONE,ACCT_TWO")
+		t.Setenv("CONCLAVE_CLEF_BASE_URL", srv.URL)
+
+		cases := map[string]*systemOneDecider{"jev": NewJevDecider(), "clef": NewClefDecider()}
+		for name, d := range cases {
+			_, _, _, err := d.Decide(context.Background(), validDecisionRequest(), "")
+			if err == nil {
+				t.Fatalf("%s %d: expected an error", name, status)
+			}
+			msg := err.Error()
+			secrets := []string{"KEY_ONE", "KEY_TWO"}
+			if name == "clef" {
+				secrets = append(secrets, "ACCT_ONE", "ACCT_TWO")
+			}
+			for _, s := range secrets {
+				if strings.Contains(msg, s) {
+					t.Errorf("%s %d: error leaks %s: %s", name, status, s, msg)
+				}
+			}
+			if !strings.Contains(msg, "<redacted>") {
+				t.Errorf("%s %d: no <redacted> marker: %s", name, status, msg)
+			}
+			var billing *BillingError
+			if status == http.StatusPaymentRequired && !errors.As(err, &billing) {
+				t.Errorf("%s: redaction hid the BillingError: %v", name, err)
+			}
+		}
+		srv.Close()
+	}
+}

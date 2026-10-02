@@ -231,7 +231,7 @@ func TestDecideRejectsProviderToken(t *testing.T) {
 	f, _ := newDecideFake(t)
 	flagDecideAsk = "Urgent?"
 
-	for _, args := range [][]string{{"gemini", "ticket text"}, {"gemini"}} {
+	for _, args := range [][]string{{"gemini", "ticket text"}, {"gemini,jev"}, {"claude@cli,clef", "ticket text"}} {
 		err := runDecide(decideCmd, args)
 		if err == nil || !strings.Contains(err.Error(), "jev") || !strings.Contains(err.Error(), "clef") {
 			t.Fatalf("args %q: got %v, want an error naming the deciders", args, err)
@@ -239,5 +239,143 @@ func TestDecideRejectsProviderToken(t *testing.T) {
 	}
 	if n := f.hits.Load(); n != 0 {
 		t.Fatalf("a provider token reached a vendor %d time(s)", n)
+	}
+}
+
+// decide_malformed_200_is_a_failed_decider: an HTTP 200 whose body is not a
+// usable decision (unparseable, or a Workers AI success:false envelope) must
+// count as that decider failing, so a panel of only such vendors exits 1.
+func TestDecideMalformed200IsAFailedDecider(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/clef") {
+			_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":7000,"message":"no route"}],"result":null}`))
+			return
+		}
+		_, _ = w.Write([]byte(`<html>gateway hiccup</html>`))
+	}))
+	t.Cleanup(srv.Close)
+	_, out := newDecideFake(t)
+	t.Setenv("CONCLAVE_JEV_BASE_URL", srv.URL+"/jev")
+	t.Setenv("CONCLAVE_CLEF_BASE_URL", srv.URL+"/clef")
+	flagDecideAsk = "Urgent?"
+
+	err := runDecide(decideCmd, []string{"jev,clef", "ticket text"})
+	if code := exitCodeFor(err, false); code != 1 {
+		t.Fatalf("exit code = %d (err %v), want 1", code, err)
+	}
+	env := decodeEnvelope(t, out)
+	for _, name := range []string{"jev", "clef"} {
+		if r := env.Deciders[name]; r.Status != decide.StatusError || r.Error == "" {
+			t.Errorf("%s = %+v, want an error entry", name, r)
+		}
+	}
+}
+
+// decide_vendor_echo_never_leaks_credentials: a vendor that echoes the request
+// (Authorization header, account id) into its error body must not carry a
+// configured secret into stdout, stderr or the returned error. Every key of a
+// comma-separated rotator counts, not only the one sent.
+func TestDecideVendorEchoNeverLeaksCredentials(t *testing.T) {
+	secrets := []string{"JEV_SENTINEL_A", "JEV_SENTINEL_B", "CF_SENTINEL_A", "CF_SENTINEL_B", "ACCT_SENTINEL_A", "ACCT_SENTINEL_B"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		// Echo what a careless vendor might: the header in use plus that
+		// vendor's own credential context (every rotator key, and for clef the
+		// account ids). A decider can only redact secrets it holds.
+		echo := "request rejected: " + r.Header.Get("Authorization")
+		if strings.HasPrefix(r.URL.Path, "/clef") {
+			echo += " keys=CF_SENTINEL_A,CF_SENTINEL_B account=ACCT_SENTINEL_A,ACCT_SENTINEL_B"
+		} else {
+			echo += " keys=JEV_SENTINEL_A,JEV_SENTINEL_B"
+		}
+		_, _ = w.Write([]byte(echo))
+	}))
+	t.Cleanup(srv.Close)
+	_, out := newDecideFake(t)
+	t.Setenv("TYPESAFE_API_KEY", "JEV_SENTINEL_A, JEV_SENTINEL_B")
+	t.Setenv("CLOUDFLARE_API_TOKEN", "CF_SENTINEL_A,CF_SENTINEL_B")
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "ACCT_SENTINEL_A,ACCT_SENTINEL_B")
+	t.Setenv("CONCLAVE_JEV_BASE_URL", srv.URL+"/jev")
+	t.Setenv("CONCLAVE_CLEF_BASE_URL", srv.URL+"/clef")
+	flagDecideAsk = "Urgent?"
+
+	var runErr error
+	stderr := captureStderr(t, func() {
+		runErr = runDecide(decideCmd, []string{"jev,clef", "ticket text"})
+	})
+	if runErr == nil {
+		t.Fatal("every vendor returned 400, but the run succeeded")
+	}
+	all := out.String() + "\n" + stderr + "\n" + runErr.Error()
+	for _, s := range secrets {
+		if strings.Contains(all, s) {
+			t.Errorf("credential %s leaked:\n%s", s, all)
+		}
+	}
+	// Decoded, because the envelope's JSON escapes "<" as <.
+	for name, r := range decodeEnvelope(t, out).Deciders {
+		if !strings.Contains(r.Error, "Bearer <redacted>") {
+			t.Errorf("%s: echoed error lost its shape; want <redacted> in place of the secret: %q", name, r.Error)
+		}
+	}
+}
+
+// decide_typo_in_decider_list_is_rejected: a comma list with a misspelt entry
+// must be refused, naming the bad entry and the valid ones, never decided on as
+// state nor run with the entries that happen to resolve.
+func TestDecideTypoInDeciderListIsRejected(t *testing.T) {
+	f, out := newDecideFake(t)
+	flagDecideAsk = "Urgent?"
+
+	for _, args := range [][]string{{"jev,typo"}, {"jev,typo", "ticket text"}, {"jev,typo,clef-flsh", "ticket text"}} {
+		err := runDecide(decideCmd, args)
+		if err == nil || !strings.Contains(err.Error(), "typo") || !strings.Contains(err.Error(), "clef-flash") {
+			t.Fatalf("args %q: got %v, want an error naming typo and the valid deciders", args, err)
+		}
+	}
+	if n := f.hits.Load(); n != 0 || out.Len() != 0 {
+		t.Fatalf("a bad decider list reached a vendor %d time(s): %s", n, out.String())
+	}
+}
+
+// decide_single_word_state_is_state: one positional without a comma is the
+// state, even when it spells a decider or a chat provider, and every
+// configured decider answers it.
+func TestDecideSingleWordStateIsState(t *testing.T) {
+	f, out := newDecideFake(t)
+	flagDecideAsk = "Urgent?"
+
+	for _, word := range []string{"jev", "gemini"} {
+		out.Reset()
+		if err := runDecide(decideCmd, []string{word}); err != nil {
+			t.Fatalf("decide %q: %v", word, err)
+		}
+		var sent struct {
+			State string `json:"state"`
+		}
+		if err := json.Unmarshal([]byte(f.lastBody.Load().(string)), &sent); err != nil {
+			t.Fatal(err)
+		}
+		if sent.State != word {
+			t.Fatalf("decide %q sent state %q", word, sent.State)
+		}
+		if env := decodeEnvelope(t, out); env.Meta.Requested != 3 {
+			t.Fatalf("decide %q ran %d decider(s), want all 3", word, env.Meta.Requested)
+		}
+	}
+}
+
+// decide_comma_list_alone_needs_state: a lone comma list is the decider list,
+// so with no stdin and no -f there is nothing to decide on.
+func TestDecideCommaListAloneNeedsState(t *testing.T) {
+	f, _ := newDecideFake(t)
+	flagDecideAsk = "Urgent?"
+
+	err := runDecide(decideCmd, []string{"jev,clef"})
+	if err == nil || !strings.Contains(err.Error(), "no state") {
+		t.Fatalf("got %v, want the no-state error", err)
+	}
+	if n := f.hits.Load(); n != 0 {
+		t.Fatalf("reached a vendor %d time(s) with no state", n)
 	}
 }

@@ -12,6 +12,9 @@ package cmd
 //     any network call or cache lookup, so a malformed set spends nothing.
 //   - Never prompts: this command never calls RunInitIfNeeded (AGENTS Gotcha
 //     9). No deciders configured is an exit-1 error naming the env vars.
+//   - Positionals: two = deciders + state; one = deciders only when it is a
+//     comma list of 2+ entries (deciderListPattern), else state. Every entry
+//     of a decider list must resolve (resolveDeciders) before any spend.
 //   - State comes from the positional argument, stdin and -f files, assembled
 //     by internal/context exactly as the chat path does (Gotcha 8: nothing
 //     sensitive ever has to sit on the command line).
@@ -27,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -67,10 +71,15 @@ a typed question set, then averages their answer probabilities per question
 (equal weight). Decision models are not chat providers: they answer only
 noul (0-1), choice and score questions, and they run only from this command.
 
-The state is the positional text plus piped stdin plus each -f file. With a
-single positional argument, it is read as the decider list when it is a
-comma list of decider (or provider) names, otherwise as the state. Omit the
-deciders to use every configured one.
+The state is the positional text plus piped stdin plus each -f file.
+Positional grammar:
+  two arguments   the first is the decider list, the second the state
+  one argument    a comma list of two or more names (clef,jev) is the
+                  decider list, and the state then comes from stdin or -f;
+                  anything else, including one word like "jev", is the state
+Every entry of a decider list must be jev, clef or clef-flash. Omit the list
+to use every configured decider; for a single decider give two arguments
+(conclave decide jev "state text").
 
 Setup: TYPESAFE_API_KEY (jev); CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 (clef, clef-flash). Environment, ~/.config/conclave/.env or the OS keyring.
@@ -192,45 +201,30 @@ func runDecide(cmd *cobra.Command, args []string) error {
 
 var errDecideInterrupted = errors.New("interrupted: decisions above are partial")
 
-// splitDecideArgs separates the optional decider list from the state. Two
-// args: deciders then state. One arg is the decider list only when it looks
-// like one (see looksLikeDeciderList); otherwise it is the state.
+// deciderListPattern is the ONLY shape a lone positional may have to be read
+// as a decider list: a comma list of at least two whitespace-free entries.
+// Anything else alone (including a single word such as "jev" or "gemini") is
+// state. The grammar is purely syntactic on purpose: the earlier "every token
+// is a known name" heuristic made `decide jev,typo` silently become state and
+// `decide jev --ask ...` fail for lack of state. Validation of the entries is
+// resolveDeciders' job, and it is strict.
+var deciderListPattern = regexp.MustCompile(`^[^\s,]+(,[^\s,]+)+$`)
+
+// splitDecideArgs separates the optional decider list from the state:
+//   - two positionals: the first is the decider list, the second the state;
+//   - one positional: the decider list when it matches deciderListPattern
+//     (the state must then come from stdin or -f), otherwise the state.
 func splitDecideArgs(args []string) (deciders, state string) {
 	switch len(args) {
 	case 2:
 		return args[0], args[1]
 	case 1:
-		if looksLikeDeciderList(args[0]) {
+		if deciderListPattern.MatchString(args[0]) {
 			return args[0], ""
 		}
 		return "", args[0]
 	}
 	return "", ""
-}
-
-// looksLikeDeciderList is true for a whitespace-free comma list whose every
-// token is a decider name, a chat provider name, or carries "@" or "/". The
-// provider cases are deliberate: `conclave decide gemini ...` must reach
-// resolveDeciders and be refused with the decider list, not be silently
-// decided on as the one-word state "gemini".
-func looksLikeDeciderList(arg string) bool {
-	if arg == "" || strings.ContainsAny(arg, " \t\r\n") {
-		return false
-	}
-	known := map[string]bool{}
-	for _, d := range providers.AllDeciders() {
-		known[d.Name()] = true
-	}
-	for _, p := range pricing.Providers() {
-		known[p] = true
-	}
-	for _, tok := range strings.Split(arg, ",") {
-		tok = strings.TrimSpace(tok)
-		if !known[tok] && !strings.ContainsAny(tok, "@/") {
-			return false
-		}
-	}
-	return true
 }
 
 // resolveDeciders turns the comma list into deciders, or picks every
@@ -250,7 +244,12 @@ func resolveDeciders(list string) ([]providers.Decider, error) {
 		return out, nil
 	}
 
+	// Strict: every entry must resolve, so a typo is refused rather than the
+	// panel quietly running with the entries that happened to match. A chat
+	// provider or a transport-suffixed decider keeps its specific message;
+	// plain unknowns are collected and named together.
 	var out []providers.Decider
+	var unknown []string
 	seen := map[string]bool{}
 	for _, tok := range strings.Split(list, ",") {
 		if tok = strings.TrimSpace(tok); tok == "" {
@@ -258,19 +257,33 @@ func resolveDeciders(list string) ([]providers.Decider, error) {
 		}
 		d, err := providers.GetDecider(tok)
 		if err != nil {
-			if _, ok := pricing.VendorPrefix(providers.BareName(tok)); ok {
+			bare := providers.BareName(tok)
+			if _, ok := pricing.VendorPrefix(bare); ok {
 				return nil, fmt.Errorf("%s is a chat provider, not a decision model; `conclave decide` takes jev, clef or clef-flash (ask chat providers with `conclave %s \"...\"`)", tok, tok)
 			}
-			return nil, err
+			if _, derr := providers.GetDecider(bare); derr == nil {
+				return nil, err // a decider with a transport suffix: GetDecider says why
+			}
+			unknown = append(unknown, tok)
+			continue
 		}
 		if seen[d.Name()] {
 			continue
 		}
 		seen[d.Name()] = true
+		out = append(out, d)
+	}
+	if len(unknown) > 0 {
+		var valid []string
+		for _, d := range providers.AllDeciders() {
+			valid = append(valid, d.Name())
+		}
+		return nil, fmt.Errorf("unknown decision model(s): %s; valid decision models: %s", strings.Join(unknown, ", "), strings.Join(valid, ", "))
+	}
+	for _, d := range out {
 		if !d.IsAvailable() {
 			return nil, fmt.Errorf("decision model %s is not configured: set %s", d.Name(), strings.Join(deciderEnv[d.Name()], " and "))
 		}
-		out = append(out, d)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no deciders given")

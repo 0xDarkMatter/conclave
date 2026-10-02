@@ -283,7 +283,8 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 Used only by `conclave decide` (ADR-016); never on a chat panel, never in `--all`, API-only.
 Prices are a hand-maintained table in `internal/pricing/deciders.go` (not the OpenRouter
 catalog, which does not list these models), so `conclave models --check` does **not** gate
-them: the as-of date is the staleness signal. `conclave models jev` prints the live table.
+them: the as-of date is the staleness signal. `conclave models jev` prints the live table; it needs no catalog, so it
+works offline and under `CONCLAVE_NO_PRICING=1`.
 
 | Decider | Default model | Endpoint | Auth | Price (USD / 1M tokens) | As of |
 |---|---|---|---|---|---|
