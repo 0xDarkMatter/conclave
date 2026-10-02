@@ -286,6 +286,12 @@ carry `scores`). Config `rubric` (default path). Two modes:
 - With `--no-judge`: each *provider* scores the input against the rubric. This is
   Praxis's shape, and Conclave computes the per-criterion majority.
 
+**Decision-model scorer (2026-10-02).** Keep the criteria schema mappable onto System
+One questions (`pass_fail` → `noul`, numeric scales → `score` with per-criterion
+`anchors`, enums → `choice`), so `--scorer decide:clef,jev` can score with calibrated
+probabilities instead of LLM votes. See ADR-016 and `docs/PLAN-decision-models.md`
+Phase 3.
+
 **Rubric file.** Markdown with YAML front matter; the body is free prose shown before
 the criteria. Prompt order in `--no-judge` mode: rubric body, criteria block, context
 (stdin and files), then the positional prompt as the task statement.
