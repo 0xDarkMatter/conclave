@@ -313,3 +313,25 @@ func TestCanonicalQuestionsIgnoresMapOrder(t *testing.T) {
 		t.Fatal("changing one instruction left the canonical form unchanged: different decisions would share a cache key")
 	}
 }
+
+// Clef's schema allows noul criteria {"true","false"} (probed 2026-10-03); the
+// loader must carry them, and the cache key must change when they change.
+func TestLoadQuestionsNoulTrueFalseCriteriaReachTheKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "q.yaml")
+	if err := os.WriteFile(path, []byte("spam:\n  type: noul\n  instructions: Is this spam?\n  criteria:\n    true: unsolicited bulk mail\n    false: anything a person wrote to me\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	qs, err := LoadQuestions(path)
+	if err != nil {
+		t.Fatalf("LoadQuestions: %v", err)
+	}
+	got := qs["spam"].NoulCriteria
+	if got["true"] != "unsolicited bulk mail" || got["false"] != "anything a person wrote to me" {
+		t.Fatalf("NoulCriteria = %#v", got)
+	}
+	bare := map[string]providers.Question{"spam": {Type: providers.QuestionNoul, Instructions: "Is this spam?"}}
+	if CanonicalQuestions(qs) == CanonicalQuestions(bare) {
+		t.Fatal("noul criteria do not reach the cache key")
+	}
+}

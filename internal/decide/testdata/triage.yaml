@@ -1,7 +1,7 @@
 # Sample question set for `conclave decide` — the triage example from
 # docs/PLAN-decision-models.md, in the System One wire shape: `criteria` is a
 # mapping for choice questions, an ordered list for score (index = score
-# value), and absent for noul. Used by the internal/decide loader tests.
+# value), and an optional true/false mapping for noul. Used by the internal/decide loader tests.
 department:
   type: choice
   instructions: Which team should handle this ticket?

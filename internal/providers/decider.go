@@ -28,22 +28,35 @@ const (
 	QuestionScore  = "score"
 )
 
-// Wire limits from the Clef model page (2026-10-02). Validation enforces them
-// locally so a malformed question set fails before any spend.
+// Wire limits from Clef's published input schema (GET .../ai/models/schema,
+// probed live 2026-10-03). Validation enforces them locally so a malformed
+// question set fails before any spend.
 const (
-	MaxQuestions = 64
-	MaxImages    = 4
+	MaxQuestions     = 64
+	MaxQuestionIDLen = 100
+	MaxChoices       = 255
+	MaxScaleLevels   = 10
+	MaxImages        = 4
+)
+
+// Noul criteria keys, as the schema spells them: what a yes (value near 1)
+// and a no (value near 0) mean. Both optional.
+const (
+	NoulCriterionTrue  = "true"
+	NoulCriterionFalse = "false"
 )
 
 // Question is one typed question. Criteria is polymorphic on the wire: a
 // map[label]description for choice, an ordered []string for score (index =
-// score value), absent for noul. The two typed fields keep that explicit;
-// MarshalJSON in decide_systemone.go emits whichever one the type uses.
+// score value), and an optional {"true": ..., "false": ...} object for noul.
+// The typed fields keep that explicit; MarshalJSON in decide_systemone.go
+// emits whichever one the type uses.
 type Question struct {
 	Type         string            `json:"type"`
 	Instructions string            `json:"instructions"`
 	Choices      map[string]string `json:"-"` // choice criteria
 	Scale        []string          `json:"-"` // score criteria, ordinal
+	NoulCriteria map[string]string `json:"-"` // noul criteria; keys NoulCriterionTrue/False only
 }
 
 // DecisionRequest is a backend-neutral request. State is a string or any

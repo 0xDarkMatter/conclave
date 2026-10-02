@@ -134,10 +134,14 @@ func toQuestion(w wireQuestion) (providers.Question, error) {
 	q := providers.Question{Type: w.Type, Instructions: w.Instructions}
 	switch w.Type {
 	case providers.QuestionNoul:
-		if w.Criteria != nil && !isNullNode(w.Criteria) {
-			// Nowhere to carry it: accepting would silently drop user input.
-			return q, fmt.Errorf("noul takes no criteria, got a %s", nodeKind(resolveAlias(w.Criteria)))
+		// Optional {"true": ..., "false": ...} meanings (Clef schema, probed
+		// 2026-10-03). Key names are checked by ValidateDecisionRequest; only
+		// the mapping shape is a parse concern here.
+		m, err := criteriaMapping(w.Criteria)
+		if err != nil {
+			return q, fmt.Errorf("noul criteria must be a mapping with true/false keys: %w", err)
 		}
+		q.NoulCriteria = m
 		return q, nil
 	case providers.QuestionChoice:
 		m, err := criteriaMapping(w.Criteria)
@@ -271,6 +275,7 @@ type canonicalQuestion struct {
 	Instructions string            `json:"instructions"`
 	Choices      map[string]string `json:"choices,omitempty"`
 	Scale        []string          `json:"scale,omitempty"`
+	NoulCriteria map[string]string `json:"noul_criteria,omitempty"`
 }
 
 // CanonicalQuestions renders a question set as the deterministic JSON that
@@ -292,8 +297,10 @@ type canonicalQuestion struct {
 //	    wire, so any order in the key would be a fiction;
 //	  - scale anchors keep their file order — index IS the score value, so
 //	    order is semantic and MUST shape the key;
-//	  - criteria is omitted for noul (and for criteria that parsed as absent;
-//	    structurally invalid sets never get this far — LoadQuestions errors).
+//	  - noul criteria render as "noul_criteria" (keys sorted), a field name no
+//	    other type uses, so a noul and a choice with the same labels differ;
+//	  - criteria is omitted when it parsed as absent (structurally invalid
+//	    sets never get this far — LoadQuestions errors).
 //
 // Changing this grammar silently orphans every cached decision (new string ->
 // new sha256 -> miss), which is safe; the unsafe direction is making two
@@ -309,6 +316,7 @@ func CanonicalQuestions(qs map[string]providers.Question) string {
 			Instructions: q.Instructions,
 			Choices:      q.Choices,
 			Scale:        q.Scale,
+			NoulCriteria: q.NoulCriteria,
 		}
 	}
 	b, err := json.Marshal(out)

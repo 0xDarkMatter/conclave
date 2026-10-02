@@ -35,7 +35,10 @@ const (
 	systemOneClef
 )
 
-var questionIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+// questionIDPattern is the published schema's id rule (letters, digits, '_',
+// '.', '-'; at most MaxQuestionIDLen), probed live 2026-10-03. Stricter would
+// refuse question files the vendor accepts.
+var questionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 // modelIDPattern bounds model ids before they are joined into the Clef request
 // path: the id is concatenated unescaped, so a "?" or "#" would silently turn
@@ -73,7 +76,8 @@ type systemOneResponse struct {
 }
 
 // MarshalJSON builds the polymorphic criteria wire field where its shape is
-// part of the protocol: object for choice, array for score, absent for noul.
+// part of the protocol: object for choice, array for score, and for noul an
+// optional {"true","false"} object (omitted when empty).
 func (q Question) MarshalJSON() ([]byte, error) {
 	type wireQuestion struct {
 		Type         string          `json:"type"`
@@ -87,6 +91,10 @@ func (q Question) MarshalJSON() ([]byte, error) {
 		wire.Criteria, err = json.Marshal(q.Choices)
 	case QuestionScore:
 		wire.Criteria, err = json.Marshal(q.Scale)
+	case QuestionNoul:
+		if len(q.NoulCriteria) > 0 {
+			wire.Criteria, err = json.Marshal(q.NoulCriteria)
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("marshal %s criteria: %w", q.Type, err)
@@ -112,8 +120,21 @@ func (q *Question) UnmarshalJSON(data []byte) error {
 	q.Instructions = wire.Instructions
 	q.Choices = nil
 	q.Scale = nil
+	q.NoulCriteria = nil
 	criteria := bytes.TrimSpace(wire.Criteria)
 	if len(criteria) == 0 || bytes.Equal(criteria, []byte("null")) {
+		return nil
+	}
+
+	// Noul criteria is its own object shape ({"true","false"}); routing it into
+	// Choices would make a yes/no question look like a malformed choice.
+	if q.Type == QuestionNoul {
+		if criteria[0] != '{' {
+			return fmt.Errorf("noul criteria must be an object with \"true\"/\"false\" keys")
+		}
+		if err := json.Unmarshal(criteria, &q.NoulCriteria); err != nil {
+			return fmt.Errorf("decode noul criteria: %w", err)
+		}
 		return nil
 	}
 
@@ -128,13 +149,6 @@ func (q *Question) UnmarshalJSON(data []byte) error {
 		}
 	default:
 		return fmt.Errorf("question criteria must be an object or array")
-	}
-	// Reached only when criteria was present and non-null: ANY criteria on a
-	// noul question is invalid, including {} and [], which decode into
-	// empty-but-non-nil fields a len() check would treat as absence. This is
-	// the wire-side partner of the non-nil check in ValidateDecisionRequest.
-	if q.Type == QuestionNoul {
-		return fmt.Errorf("noul question must not define criteria")
 	}
 	if q.Type == QuestionChoice && q.Choices == nil {
 		return fmt.Errorf("choice question criteria must be an object")
@@ -177,16 +191,16 @@ func ValidateDecisionRequest(req DecisionRequest) error {
 	sort.Strings(ids)
 	for _, id := range ids {
 		question := req.Questions[id]
-		if !questionIDPattern.MatchString(id) {
-			return fmt.Errorf("question %q: id must match ^[a-z][a-z0-9_]*$", id)
+		if len(id) > MaxQuestionIDLen || !questionIDPattern.MatchString(id) {
+			return fmt.Errorf("question %q: id must be 1..%d of letters, digits, '_', '.', '-'", id, MaxQuestionIDLen)
 		}
 		if strings.TrimSpace(question.Instructions) == "" {
 			return fmt.Errorf("question %q: instructions must not be empty", id)
 		}
 		switch question.Type {
 		case QuestionChoice:
-			if len(question.Choices) < 2 {
-				return fmt.Errorf("question %q: choice requires at least 2 choices", id)
+			if len(question.Choices) < 2 || len(question.Choices) > MaxChoices {
+				return fmt.Errorf("question %q: choice requires 2..%d choices, got %d", id, MaxChoices, len(question.Choices))
 			}
 			// Labels are the answer vocabulary (probabilities key on them), so
 			// a blank label is unusable output, not a style problem.
@@ -199,8 +213,8 @@ func ValidateDecisionRequest(req DecisionRequest) error {
 				return fmt.Errorf("question %q: choice must not define a score scale", id)
 			}
 		case QuestionScore:
-			if len(question.Scale) < 2 {
-				return fmt.Errorf("question %q: score requires at least 2 scale entries", id)
+			if len(question.Scale) < 2 || len(question.Scale) > MaxScaleLevels {
+				return fmt.Errorf("question %q: score requires 2..%d scale entries, got %d", id, MaxScaleLevels, len(question.Scale))
 			}
 			// Scale entries are ordinal answer values; a blank one is an
 			// unusable answer, not a style problem.
@@ -213,11 +227,18 @@ func ValidateDecisionRequest(req DecisionRequest) error {
 				return fmt.Errorf("question %q: score must not define choices", id)
 			}
 		case QuestionNoul:
-			// Non-nil, not merely non-empty: ANY criteria on noul is invalid,
-			// including the empty {} / [] the wire decoder materializes, so an
-			// empty map must not pass for absence.
+			// Noul's only criteria shape is NoulCriteria; choices or a scale on
+			// a yes/no question would be silently dropped on the wire.
 			if question.Choices != nil || question.Scale != nil {
-				return fmt.Errorf("question %q: noul must not define criteria", id)
+				return fmt.Errorf("question %q: noul criteria may only define %q and %q", id, NoulCriterionTrue, NoulCriterionFalse)
+			}
+			for key, meaning := range question.NoulCriteria {
+				if key != NoulCriterionTrue && key != NoulCriterionFalse {
+					return fmt.Errorf("question %q: noul criteria may only define %q and %q, got %q", id, NoulCriterionTrue, NoulCriterionFalse, key)
+				}
+				if strings.TrimSpace(meaning) == "" {
+					return fmt.Errorf("question %q: noul criterion %q must not be empty", id, key)
+				}
 			}
 		default:
 			return fmt.Errorf("question %q: type %q is invalid; want noul, choice, or score", id, question.Type)
@@ -322,12 +343,15 @@ func decodeSystemOneResponse(body []byte, allowWorkersAIEnvelope bool) (*systemO
 				return nil, parseAPIError(http.StatusOK, body)
 			}
 			result := bytes.TrimSpace(envelope.Result)
-			// Phase 0's 2026-10-02 live probe confirmed only the error wrapper;
-			// keep both success shapes until a Workers AI token verifies which one
-			// Clef actually returns, then this compatibility branch can be removed.
-			if len(result) > 0 && result[0] == '{' {
-				payload = result
+			if len(result) == 0 || result[0] != '{' {
+				return nil, fmt.Errorf("parse System One response: Workers AI envelope has no result object")
 			}
+			payload = result
+		} else {
+			// Phase 0 (live, 2026-10-03): every Clef success came wrapped as
+			// {"result":{...},"success":true,...}. A bare body means the endpoint
+			// is not Workers AI, so refuse it rather than guess.
+			return nil, fmt.Errorf("parse System One response: expected the Workers AI {\"result\",\"success\"} envelope")
 		}
 	}
 

@@ -55,7 +55,12 @@ func newDecideFake(t *testing.T) (*decideFake, *bytes.Buffer) {
 			_, _ = w.Write([]byte(`{"error":{"message":"invalid key"}}`))
 			return
 		}
-		_, _ = w.Write([]byte(strings.Replace(decideTestAnswer, "%s", model, 1)))
+		answer := strings.Replace(decideTestAnswer, "%s", model, 1)
+		if strings.HasPrefix(r.URL.Path, "/clef") {
+			// Workers AI always wraps successes (Phase 0, live 2026-10-03).
+			answer = `{"result":` + answer + `,"success":true,"errors":[],"messages":[]}`
+		}
+		_, _ = w.Write([]byte(answer))
 	}))
 	t.Cleanup(srv.Close)
 

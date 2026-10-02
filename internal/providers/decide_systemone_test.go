@@ -70,18 +70,23 @@ func TestDecideJevDecodesTypedAnswers(t *testing.T) {
 	}
 }
 
-func TestClefAcceptsBareAndWorkersAIEnvelope(t *testing.T) {
-	cases := map[string]string{
-		"bare":     systemOneTestResponse,
-		"envelope": `{"result":` + systemOneTestResponse + `,"success":true,"errors":[],"messages":[]}`,
+// Phase 0 (live, 2026-10-03): Clef successes always arrive in the Workers AI
+// envelope, so a bare body is a wrong endpoint, not a second valid shape.
+func TestClefRequiresWorkersAIEnvelope(t *testing.T) {
+	cases := map[string]struct {
+		response string
+		wantErr  bool
+	}{
+		"envelope": {`{"result":` + systemOneTestResponse + `,"success":true,"errors":[],"messages":[]}`, false},
+		"bare":     {systemOneTestResponse, true},
 	}
-	for name, response := range cases {
+	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/@cf/cloudflare/clef" {
 					t.Errorf("path = %q", r.URL.Path)
 				}
-				_, _ = w.Write([]byte(response))
+				_, _ = w.Write([]byte(tc.response))
 			}))
 			defer srv.Close()
 
@@ -89,6 +94,12 @@ func TestClefAcceptsBareAndWorkersAIEnvelope(t *testing.T) {
 			t.Setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
 			t.Setenv("CONCLAVE_CLEF_BASE_URL", srv.URL)
 			decision, _, metrics, err := NewClefDecider().Decide(context.Background(), validDecisionRequest(), "")
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "envelope") {
+					t.Fatalf("err = %v; want an envelope error", err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("Decide: %v", err)
 			}
@@ -142,8 +153,11 @@ func TestInvalidQuestionsRejectedBeforeNetwork(t *testing.T) {
 		"nil state":    {DecisionRequest{Questions: noul()}, "state"},
 		"blank state":  {DecisionRequest{State: "   ", Questions: noul()}, "state"},
 		"bad id": {DecisionRequest{State: "state", Questions: map[string]Question{
-			"Bad-ID": {Type: QuestionNoul, Instructions: "Decide."},
-		}}, "question \"Bad-ID\""},
+			"bad id!": {Type: QuestionNoul, Instructions: "Decide."},
+		}}, "question \"bad id!\""},
+		"id too long": {DecisionRequest{State: "state", Questions: map[string]Question{
+			strings.Repeat("q", MaxQuestionIDLen+1): {Type: QuestionNoul, Instructions: "Decide."},
+		}}, "id must be"},
 		"missing instructions": {DecisionRequest{State: "state", Questions: map[string]Question{
 			"q": {Type: QuestionNoul},
 		}}, "instructions"},
@@ -152,7 +166,7 @@ func TestInvalidQuestionsRejectedBeforeNetwork(t *testing.T) {
 		}}, "type"},
 		"choice too small": {DecisionRequest{State: "state", Questions: map[string]Question{
 			"q": {Type: QuestionChoice, Instructions: "Choose.", Choices: map[string]string{"a": "A"}},
-		}}, "at least 2 choices"},
+		}}, "2..255 choices"},
 		"empty choice label": {DecisionRequest{State: "state", Questions: map[string]Question{
 			"q": {Type: QuestionChoice, Instructions: "Choose.", Choices: map[string]string{"": "A", "a": "B"}},
 		}}, "labels must not be empty"},
@@ -161,7 +175,10 @@ func TestInvalidQuestionsRejectedBeforeNetwork(t *testing.T) {
 		}}, "score scale"},
 		"score too small": {DecisionRequest{State: "state", Questions: map[string]Question{
 			"q": {Type: QuestionScore, Instructions: "Score.", Scale: []string{"A"}},
-		}}, "at least 2 scale entries"},
+		}}, "2..10 scale entries"},
+		"score too large": {DecisionRequest{State: "state", Questions: map[string]Question{
+			"q": {Type: QuestionScore, Instructions: "Score.", Scale: []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}},
+		}}, "2..10 scale entries"},
 		"empty scale entry": {DecisionRequest{State: "state", Questions: map[string]Question{
 			"q": {Type: QuestionScore, Instructions: "Score.", Scale: []string{"Low", " "}},
 		}}, "scale entries must not be empty"},
@@ -170,10 +187,16 @@ func TestInvalidQuestionsRejectedBeforeNetwork(t *testing.T) {
 		}}, "define choices"},
 		"noul with criteria": {DecisionRequest{State: "state", Questions: map[string]Question{
 			"q": {Type: QuestionNoul, Instructions: "Decide.", Scale: []string{"No", "Yes"}},
-		}}, "noul must not define criteria"},
+		}}, "noul criteria may only define"},
+		"noul with unknown criterion": {DecisionRequest{State: "state", Questions: map[string]Question{
+			"q": {Type: QuestionNoul, Instructions: "Decide.", NoulCriteria: map[string]string{"maybe": "x"}},
+		}}, "got \"maybe\""},
+		"noul with blank criterion": {DecisionRequest{State: "state", Questions: map[string]Question{
+			"q": {Type: QuestionNoul, Instructions: "Decide.", NoulCriteria: map[string]string{"true": " "}},
+		}}, "must not be empty"},
 		"noul with empty criteria object": {DecisionRequest{State: "state", Questions: map[string]Question{
 			"q": {Type: QuestionNoul, Instructions: "Decide.", Choices: map[string]string{}},
-		}}, "noul must not define criteria"},
+		}}, "noul criteria may only define"},
 	}
 
 	for name, tc := range cases {
@@ -315,7 +338,6 @@ func TestDecideAnswerlessBodyIsAnError(t *testing.T) {
 	}{
 		"jev empty object":  {"jev", `{}`},
 		"clef empty result": {"clef", `{"result":{},"success":true,"errors":[],"messages":[]}`},
-		"clef bare empty":   {"clef", `{}`},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -350,8 +372,12 @@ func TestDecideMissingOrMismatchedAnswersAreErrors(t *testing.T) {
 	for _, backend := range []string{"jev", "clef"} {
 		for name, tc := range cases {
 			t.Run(backend+"/"+name, func(t *testing.T) {
+				body := tc.body
+				if backend == "clef" {
+					body = `{"result":` + body + `,"success":true,"errors":[],"messages":[]}`
+				}
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					_, _ = w.Write([]byte(tc.body))
+					_, _ = w.Write([]byte(body))
 				}))
 				defer srv.Close()
 
@@ -423,19 +449,35 @@ func TestDecideRejectsUnsafeModelID(t *testing.T) {
 	}
 }
 
-func TestQuestionUnmarshalRejectsNoulCriteria(t *testing.T) {
-	cases := map[string]string{
-		"empty object":  `{"type":"noul","instructions":"Decide.","criteria":{}}`,
-		"empty array":   `{"type":"noul","instructions":"Decide.","criteria":[]}`,
-		"filled object": `{"type":"noul","instructions":"Decide.","criteria":{"a":"b"}}`,
+// Clef's published schema gives noul an optional {"true","false"} criteria
+// object (probed 2026-10-03); any other shape is still an error.
+func TestQuestionUnmarshalNoulCriteriaShapes(t *testing.T) {
+	var ok Question
+	if err := json.Unmarshal([]byte(`{"type":"noul","instructions":"Decide.","criteria":{"true":"spam","false":"not spam"}}`), &ok); err != nil {
+		t.Fatalf("true/false criteria: %v", err)
 	}
-	for name, body := range cases {
+	if ok.NoulCriteria["true"] != "spam" || ok.NoulCriteria["false"] != "not spam" || ok.Choices != nil {
+		t.Fatalf("decoded %#v", ok)
+	}
+	out, err := json.Marshal(ok)
+	if err != nil || !strings.Contains(string(out), `"criteria":{"false":"not spam","true":"spam"}`) {
+		t.Fatalf("round trip = %s, %v", out, err)
+	}
+	for name, body := range map[string]string{
+		"array":  `{"type":"noul","instructions":"Decide.","criteria":[]}`,
+		"string": `{"type":"noul","instructions":"Decide.","criteria":"yes"}`,
+	} {
 		t.Run(name, func(t *testing.T) {
 			var q Question
 			if err := json.Unmarshal([]byte(body), &q); err == nil {
-				t.Fatalf("decoded %#v; want criteria on noul to be an error", q)
+				t.Fatalf("decoded %#v; want non-object noul criteria to be an error", q)
 			}
 		})
+	}
+	var bad Question
+	_ = json.Unmarshal([]byte(`{"type":"noul","instructions":"Decide.","criteria":{"a":"b"}}`), &bad)
+	if err := ValidateDecisionRequest(DecisionRequest{State: "s", Questions: map[string]Question{"q": bad}}); err == nil {
+		t.Fatal("noul criteria key \"a\" passed validation")
 	}
 }
 

@@ -294,7 +294,9 @@ works offline and under `CONCLAVE_NO_PRICING=1`.
 
 Sources: [Typesafe launch post](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
 [Workers AI Clef model page](https://developers.cloudflare.com/workers-ai/models/clef).
-Limits: 1-64 questions per call; Jev 32k context, Clef 64k.
+Limits: 1-64 questions per call, 2-255 choice options, 2-10 score levels; Jev 32k context, Clef 64k
+(an oversized Clef state is a 413, code 5021). Clef successes arrive in the Workers AI
+`{"result":...,"success":true}` envelope (probed live 2026-10-03).
 
 ---
 

@@ -53,7 +53,7 @@ Response:
 | `clef` | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` | `Bearer CLOUDFLARE_API_TOKEN` | `clef` | 64k | $0.24/M in |
 | `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | `clef-flash` | 64k | | 64k | unpublished at 2026-10-02; confirm |.09/M in (pricing page, updated 2026-10-01) |
 
-Limits from the Clef model page: 1-64 questions per call; up to 4 images (PNG/JPEG/WebP,
+Limits from the Clef model page and schema: 1-64 questions per call, 2-255 choice options, 2-10 score levels; up to 4 images (PNG/JPEG/WebP,
 4 MiB, 16 MP each).
 
 ## Phase 0: live probes (about 2 h, before any code)
@@ -72,7 +72,7 @@ key may need to be added there first.
 4. **Preflight.** Is there a cheap auth check? Cloudflare has
    `GET /client/v4/user/tokens/verify`; Typesafe has none documented. A one-question
    call with a 1-word state may be the fallback, so measure its cost.
-5. **Clef-flash price** from the Workers AI pricing page. DONE 2026-10-02: 5. **Clef-flash price** from the Workers AI pricing page..090/M input, no output price (https://developers.cloudflare.com/workers-ai/platform/pricing/, updated 2026-10-01).
+5. **Clef-flash price** from the Workers AI pricing page.
 6. **Calibration eval.** On 30-50 Praxis questions that already have a gold grade,
    compare per-criterion `noul` from clef and jev against the current gemini/openai/
    claude majority. Record agreement and the probability spread on disagreements.
@@ -80,14 +80,37 @@ key may need to be added there first.
 
 Write the findings into this file under each probe.
 
-**Status.** Probe 1 partial (2026-10-02): error responses use the Cloudflare envelope
-`{result:null, success:false, errors:[{code,message}]}`; no Keeper token carries Workers AI
-permission, so the success shape, probes 2-4 and the calibration eval are still open (probe 5
-is done). Probe 2 also decides billing: a Workers AI quota 429 (suspected `errors[].code`
-3036) is retried today, not returned as a `BillingError`; see `TODO(phase0-probe2)` at
-`billingCode` in `api_base.go`. Until
-probe 1 completes, the clef backend accepts both the bare and the `{"result":...}` success
-shape (AGENTS Gotcha 15).
+**Findings (live against Clef and Clef-flash on Workers AI, 2026-10-03; Jev untested, no key).**
+
+1. *Wrapper:* every success is `{"result":{model,answers,usage},"success":true,"errors":[],"messages":[]}`.
+   The clef backend now REQUIRES it and refuses a bare body; Jev stays bare (Typesafe docs).
+   `result.model` is the selector (`clef`, `clef-flash`), not a version id.
+2. *Errors:* bad token -> 401 `{"result":null,...,"errors":[{"code":10000,"message":"Authentication error"}]}`;
+   malformed question -> 400 code 5006 (the message is the vendor's generic "required properties"
+   text, not the actual defect - local validation stays the useful error); 65 questions -> 422
+   (`at most 64 items`); ~80k-token state -> 413 code 5021 (`exceeded this model context window
+   limit (65536)`). None of these are retried (isRetryable is 429 + 5xx only). The quota 429
+   (suspected code 3036) could not be triggered cheaply, so `TODO(phase0-probe2)` at `billingCode`
+   stays open.
+3. *Answer fields:* noul returns `noul` only (no `confidence`); choice and score return
+   `confidence`; `score` is the probability-WEIGHTED value (e.g. 2.9573 on a 0-3 scale), not an
+   index - consensus already works from `probabilities`. `usage.output_tokens` is 0 (input-only
+   billing confirmed).
+4. *Preflight:* the ev7 token is user-scoped: `GET /client/v4/user/tokens/verify` -> 200, while
+   `/accounts/{id}/tokens/verify` -> 401 "Invalid API Token". A preflight must try the user
+   endpoint and fall back to the account one; neither proves Workers AI permission (a valid
+   R2-only token also verifies), so a one-noul call on a 1-word state (142 input tokens, about
+   $0.00003 on clef) is the only real check. Not built yet.
+5. *Clef-flash price:* $0.090/M input, no output price (https://developers.cloudflare.com/workers-ai/platform/pricing/,
+   updated 2026-10-01).
+6. *Calibration eval:* open.
+
+The published input schema (`GET /accounts/{id}/ai/models/schema?model=@cf/cloudflare/clef`)
+corrected four local rules, now enforced: question ids are 1-100 of `[A-Za-z0-9_.-]`; noul takes
+OPTIONAL criteria `{"true": ..., "false": ...}`; choice takes 2-255 options; score takes 2-10
+levels. `model` defaults to `clef` when omitted; `state` may be a string or structured data.
+Not yet supported locally: criteria descriptions and `instructions` given as objects/arrays (the
+schema allows them; ours are strings), and `images`.
 
 ## Phase 1: deciders + `conclave decide` — DONE (2026-10-02)
 
@@ -143,10 +166,10 @@ conclave decide "..." --ask "Is this urgent?"      # no deciders = all configure
 Default deciders: every available one. The questions file is YAML or JSON in the wire
 shape (`criteria` stays a map for choice and a list for score). Local validation
 before any spend:
-- 1-64 questions, ids match `^[a-z][a-z0-9_]*$`
-- choice criteria: map of 2 or more entries
-- score criteria: list of 2 or more entries
-- noul: no criteria
+- 1-64 questions, ids 1-100 of `[A-Za-z0-9_.-]` (schema, 2026-10-03)
+- choice criteria: map of 2-255 entries
+- score criteria: list of 2-10 entries
+- noul: optional criteria `{"true": ..., "false": ...}` only
 - a missing `instructions` is an error
 
 **Consensus** (`internal/decide/consensus.go`). Pure functions over successful

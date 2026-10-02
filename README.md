@@ -479,8 +479,9 @@ must be `jev`, `clef` or `clef-flash`; a typo or a chat provider is refused befo
 is sent.
 
 A questions file is YAML or JSON in the vendors' wire shape (`criteria` is a mapping for
-`choice`, an ordered list for `score`, absent for `noul`); 1-64 questions, ids matching
-`^[a-z][a-z0-9_]*$`. It is validated locally before anything is sent, so a malformed file
+`choice` (2-255 options), an ordered list for `score` (2-10 levels), and for `noul` an optional
+mapping of `true`/`false` to what yes and no mean); 1-64 questions, ids of 1-100 letters, digits,
+`_`, `.` or `-`. It is validated locally before anything is sent, so a malformed file
 costs nothing.
 
 ```yaml
