@@ -39,7 +39,7 @@ subscription and pays nothing per token.
 
   conclave models                 # every provider, newest models first
   conclave models claude          # one provider
-  conclave models clef            # one decision model (prices from a hand table, with as-of date)
+  conclave models clef            # one decision model (hand price table with as-of date; needs no catalog)
   conclave models --check         # verify compiled defaults still exist (exit 2 on drift, 3 if the catalog is unreachable)
   conclave models --refresh       # force a fetch now
   conclave models --json          # machine-readable dump of the cache`,
@@ -72,9 +72,26 @@ func runModels(cmd *cobra.Command, args []string) error {
 	if err := validateModelsFlags(args); err != nil {
 		return err
 	}
+	// Decider rows come from the hand table (ADR-016), never the OpenRouter
+	// catalog, so a decider filter resolves BEFORE the catalog loads: with
+	// CONCLAVE_NO_PRICING or no network it must still print and exit 0.
+	// validateModelsFlags already refused a filter with --json/--check.
+	if len(args) == 1 {
+		p := strings.ToLower(strings.TrimSpace(args[0]))
+		if _, err := providers.GetDecider(p); err == nil {
+			printDeciderPrices(p)
+			return nil
+		}
+	}
 	// Both of these mean "unknown", not "wrong", so they exit distinctly from
-	// real drift and must never fail a build.
+	// real drift and must never fail a build. Only the chat-provider rows need
+	// the catalog: the unfiltered listing still prints the decider section
+	// first, then reports the catalog as unavailable (exit 3).
+	listing := !flagModelsJSON && !flagModelsCheck && len(args) == 0
 	if pricing.Disabled() {
+		if listing {
+			printDeciderPrices("")
+		}
 		return withExitCode(ExitCatalogUnavailable,
 			fmt.Errorf("pricing catalog is disabled (CONCLAVE_NO_PRICING is set)"))
 	}
@@ -82,6 +99,9 @@ func runModels(cmd *cobra.Command, args []string) error {
 	if cat == nil {
 		if err == nil {
 			err = fmt.Errorf("no catalog available")
+		}
+		if listing {
+			printDeciderPrices("")
 		}
 		return withExitCode(ExitCatalogUnavailable, err)
 	}
@@ -106,10 +126,6 @@ func runModels(cmd *cobra.Command, args []string) error {
 	showDeciders := true
 	if len(args) == 1 {
 		p := strings.ToLower(strings.TrimSpace(args[0]))
-		if _, err := providers.GetDecider(p); err == nil {
-			printDeciderPrices(p)
-			return nil
-		}
 		showDeciders = false
 		if _, ok := pricing.VendorPrefix(p); !ok {
 			return fmt.Errorf("unknown provider %q (known: %s)", p, strings.Join(pricing.Providers(), ", "))

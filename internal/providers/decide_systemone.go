@@ -7,8 +7,11 @@
 //   - A 2xx body is verified, not trusted: a success:false envelope, an
 //     answerless body, a missing question id or a type-mismatched answer is
 //     an error, never an empty Decision consensus would count as a success.
-//   - Errors returned to callers never contain the Cloudflare account id or
-//     the API token; transport errors embed the request URL, so it is redacted.
+//   - Errors returned to callers never contain a configured secret VALUE of
+//     this decider (every API key and Cloudflare account id in its rotators):
+//     transport errors embed the request URL (account redacted to <account>),
+//     and a vendor may echo the Authorization header or the account into its
+//     error body, so Decide's every error passes through redactSecrets.
 package providers
 
 import (
@@ -224,8 +227,17 @@ func ValidateDecisionRequest(req DecisionRequest) error {
 }
 
 // Decide sends the shared wire format through apiBaseProvider.doRequest, which
-// is deliberately the only retry and BillingError classification path.
+// is deliberately the only retry and BillingError classification path. Every
+// error it returns is scrubbed of this decider's secret values (redactSecrets).
 func (p *systemOneDecider) Decide(ctx context.Context, req DecisionRequest, model string) (*Decision, time.Duration, *Metrics, error) {
+	decision, duration, metrics, err := p.decide(ctx, req, model)
+	if err != nil {
+		return nil, duration, nil, p.redactSecrets(err)
+	}
+	return decision, duration, metrics, nil
+}
+
+func (p *systemOneDecider) decide(ctx context.Context, req DecisionRequest, model string) (*Decision, time.Duration, *Metrics, error) {
 	if err := ValidateDecisionRequest(req); err != nil {
 		return nil, 0, nil, err
 	}
@@ -249,8 +261,8 @@ func (p *systemOneDecider) Decide(ctx context.Context, req DecisionRequest, mode
 	if err != nil {
 		// Transport failures embed the full request URL (Go's *url.Error), and
 		// Clef's URL carries the account id in its path; redact before the
-		// error reaches stderr or the --json "error" field. The token is a
-		// header and never appears in these errors.
+		// error reaches stderr or the --json "error" field. A vendor echoing
+		// the token or account into its body is covered by redactSecrets.
 		return nil, duration, nil, redactAccountID(err)
 	}
 
@@ -416,3 +428,57 @@ func redactAccountInURL(rawURL string) string {
 	}
 	return parsed.String()
 }
+
+// redactSecrets replaces every secret value this decider holds (each key of
+// its API-key rotator and, for Clef, each account id) with "<redacted>" in the
+// error's rendered text. It is the second layer after redactAccountID: that one
+// fixes the URL Go's transport embeds; this one catches a vendor that echoes the
+// request (Authorization header, account path) back into its error body, which
+// parseAPIError then copies verbatim. Only this decider's secrets are known
+// here, so another vendor's credentials are out of scope by construction.
+func (p *systemOneDecider) redactSecrets(err error) error {
+	var secrets []string
+	for _, r := range []*KeyRotator{p.keyRotator, p.accountRotator} {
+		if r != nil {
+			secrets = append(secrets, r.keys...)
+		}
+	}
+	if len(secrets) == 0 {
+		return err
+	}
+	// Longest first, so a secret that contains another as a substring is
+	// replaced whole rather than leaving its remainder in the text.
+	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
+	if !containsAny(err.Error(), secrets) {
+		return err
+	}
+	return &secretRedactedError{err: err, secrets: secrets}
+}
+
+func containsAny(s string, subs []string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// secretRedactedError renders its chain with each secret replaced. Unwrap keeps
+// errors.Is/As working (BillingError classification in batch, ADR-004); a
+// caller that renders an unwrapped inner error sees it unredacted, so nothing
+// outside Decide's callers should format the inner chain directly.
+type secretRedactedError struct {
+	err     error
+	secrets []string
+}
+
+func (e *secretRedactedError) Error() string {
+	msg := e.err.Error()
+	for _, s := range e.secrets {
+		msg = strings.ReplaceAll(msg, s, "<redacted>")
+	}
+	return msg
+}
+
+func (e *secretRedactedError) Unwrap() error { return e.err }

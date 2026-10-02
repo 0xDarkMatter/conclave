@@ -466,7 +466,17 @@ conclave decide "Server down since 9am, customers locked out" --ask "Is this urg
 
 # Scripting: one id=value line per question
 cat ticket.txt | conclave decide --questions triage.yaml -q
+
+# One named decider: give the state as a second argument
+conclave decide jev "Server down since 9am" --ask "Is this urgent?"
 ```
+
+**Positional arguments.** Two arguments are the decider list then the state. A single
+argument is the decider list only when it is a comma list of two or more names
+(`clef,jev`, state then from stdin or `-f`); anything else, including one word such as
+`jev`, is the state and every configured decider answers it. Every entry of a decider list
+must be `jev`, `clef` or `clef-flash`; a typo or a chat provider is refused before anything
+is sent.
 
 A questions file is YAML or JSON in the vendors' wire shape (`criteria` is a mapping for
 `choice`, an ordered list for `score`, absent for `noul`); 1-64 questions, ids matching
@@ -493,7 +503,9 @@ permission) and `CLOUDFLARE_ACCOUNT_ID` for `clef` and `clef-flash`. Environment
 are API-only (no `@cli`/`@api` suffix), are never part of `--all`, and are not accepted as a
 chat provider or judge. `--cache`, `-t` (default 30 s per decider) and `--json` behave as on a
 query; exit status is 0 when at least one decider answered, 1 when all failed, 130 on Ctrl-C.
-Prices come from a hand-maintained table (`conclave models jev`), input tokens only. Design: [ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md),
+Prices come from a hand-maintained table (`conclave models jev`, which works offline and
+with `CONCLAVE_NO_PRICING=1`), input tokens only. Any secret a vendor echoes back in an error
+(API key, account id) is shown as `<redacted>`. Design: [ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md),
 build plan: [docs/PLAN-decision-models.md](docs/PLAN-decision-models.md).
 
 ## Setup
