@@ -107,6 +107,9 @@ func BuildEnvelope(questions map[string]providers.Question, results map[string]D
 func RenderJSON(w io.Writer, env Envelope) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
+	// Vendor text and the "<redacted>" credential marker must reach callers
+	// verbatim; this is machine output, never embedded in HTML.
+	enc.SetEscapeHTML(false)
 	return enc.Encode(env)
 }
 
