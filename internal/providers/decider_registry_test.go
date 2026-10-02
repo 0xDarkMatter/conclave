@@ -67,3 +67,16 @@ func TestGetDeciderUnknownListsValidNames(t *testing.T) {
 		}
 	}
 }
+
+// TestAllDecidersNamesRecognisedBySharedTable pins the finding-5 fix: a
+// decider added to AllDeciders but missing from the shared name table would
+// pass that list yet fall through GetProvider to "unknown provider". Walking
+// the real constructors (not a literal name map, as the older tests above do)
+// keeps the list and the table in step.
+func TestAllDecidersNamesRecognisedBySharedTable(t *testing.T) {
+	for _, decider := range AllDeciders() {
+		if !isDeciderName(decider.Name()) {
+			t.Errorf("isDeciderName(%q) = false; add it to deciderRegistry in registry.go", decider.Name())
+		}
+	}
+}
