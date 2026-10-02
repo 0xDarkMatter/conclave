@@ -93,6 +93,45 @@ func AllAPIProviders() []Provider {
 	}
 }
 
+// AllDeciders returns API-only decision models. ADR-016 keeps this list
+// separate from AllAPIProviders so ordinary --all panels never receive typed
+// decision requests and decider answers never enter the LLM judge path.
+func AllDeciders() []Decider {
+	return []Decider{
+		NewJevDecider(),
+		NewClefDecider(),
+		NewClefFlashDecider(),
+	}
+}
+
+// GetDecider resolves a bare decision-model token. ParseProviderToken remains
+// the only suffix parser (ADR-012), but deciders reject every transport suffix
+// because their class is API-only and has no transport selection grammar.
+func GetDecider(token string) (Decider, error) {
+	name, transport, err := ParseProviderToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if transport != TransportDefault {
+		return nil, fmt.Errorf("%s: decision models are API-only and take no transport suffix", strings.TrimSpace(token))
+	}
+	for _, decider := range AllDeciders() {
+		if decider.Name() == name {
+			return decider, nil
+		}
+	}
+	return nil, fmt.Errorf("unknown decision model %q; valid decision models: jev, clef, clef-flash", name)
+}
+
+func isDeciderName(name string) bool {
+	switch name {
+	case "jev", "clef", "clef-flash":
+		return true
+	default:
+		return false
+	}
+}
+
 // OpenRouterListing returns the non-routable "openrouter" placeholder row for
 // --list-providers (API column only). Ready iff OPENROUTER_API_KEY resolves.
 func OpenRouterListing() Provider {
@@ -126,6 +165,9 @@ func (r *Registry) GetProvider(token string, modelOverrides map[string]string) (
 	name, transport, err := ParseProviderToken(token)
 	if err != nil {
 		return nil, err
+	}
+	if isDeciderName(name) {
+		return nil, fmt.Errorf("%s is a decision model; use \"conclave decide %s ...\"", name, name)
 	}
 	// Precedence: suffix > config transports > global mode. The config layer
 	// is a per-provider default, so it sits above the panel-wide -g/-c and

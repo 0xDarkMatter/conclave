@@ -401,6 +401,26 @@ func parseAPIError(statusCode int, body []byte) error {
 		}
 	}
 
+	var cloudflareResp struct {
+		Success *bool `json:"success"`
+		Errors  []struct {
+			Code    json.RawMessage `json:"code"`
+			Message string          `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &cloudflareResp); err == nil && cloudflareResp.Success != nil && len(cloudflareResp.Errors) > 0 {
+		first := cloudflareResp.Errors[0]
+		if first.Message != "" {
+			details := first.Message
+			// Cloudflare's code is a JSON number, unlike the string codes in the
+			// established OpenAI envelope parsed above.
+			if code := strings.TrimSpace(string(first.Code)); code != "" && code != "null" {
+				details += fmt.Sprintf(" [code: %s]", strings.Trim(code, `"`))
+			}
+			return fmt.Errorf("HTTP %d: %s", statusCode, details)
+		}
+	}
+
 	// No parseable JSON — surface the raw body so the user can see what came back.
 	rawBody := strings.TrimSpace(string(body))
 	if len(rawBody) > 500 {
