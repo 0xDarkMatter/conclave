@@ -1,18 +1,11 @@
-// Decision-model prices (Jev, Clef, Clef-flash), kept apart from the
-// OpenRouter catalog on purpose (ADR-016): the catalog does not list these
-// models, so pricing them through CostOf would report "unpriced" forever.
-// This table is the authority for decider costs; nothing else prices them.
-//
-// GUARD — this table is hand-maintained and can go stale silently:
-// `conclave models --check` gates OpenRouter drift only and does NOT cover
-// these rows. Every row carries AsOf + Source so a stale price is at least
-// visible; re-checking a price means updating those two fields together.
-//
-// Advisory and nil-safe like everything in this package (ADR-009): a decider
-// missing from the table is "unpriced" (ok=false), never an error. And per
-// AGENTS.md Gotcha 6, do NOT extend batch's fallbackCosts instead of adding a
-// row here — that table exists only for catalog-outage fallbacks.
+// Decision-model prices stay outside the OpenRouter catalog under ADR-016.
+// This dated table alone prices deciders; unknown model ids remain unpriced.
+// GUARD: models --check cannot detect drift here, so update AsOf and Source
+// together, and never route these rows through batch fallbackCosts.
+// Costs are advisory and nil-safe under ADR-009: absence means ok=false.
 package pricing
+
+import "regexp"
 
 // DeciderPrice is one row of the hand-maintained decision-model price table.
 // AsOf is the date the price was verified and Source the page it came from;
@@ -23,21 +16,17 @@ type DeciderPrice struct {
 	InPerM  float64 `json:"in_per_m"`
 	OutPerM float64 `json:"out_per_m"`
 	AsOf    string  `json:"as_of"`
-	Source  string  `json:"source"`
+	Source  string  `json:"source_url"`
 }
 
 // deciderPrices is the table. Prices are USD per million tokens, input-only
 // for every listed row: decision models bill the state+questions tokens and
 // emit a few dozen answer tokens.
 //
-// clef's OutPerM is 0 because Cloudflare had published NO output price as of
-// 2026-10-02 (model page verified) — 0 here means "no known output charge",
+// Clef rows' OutPerM is 0 because Cloudflare had published NO output price as
+// of 2026-10-02 — 0 here means "no known output charge",
 // not "verified free"; revisit with AsOf if Workers AI pricing gains one.
 // jev's 0 is verified: Typesafe states output is FREE.
-//
-// clef-flash has NO row on purpose: its price was unpublished at 2026-10-02.
-// Phase 0 probe 5 (docs/PLAN-decision-models.md) fills it; until then
-// DeciderCost reports it unpriced, which ADR-009 defines as the honest state.
 var deciderPrices = []DeciderPrice{
 	{
 		Decider: "jev", Model: "jev-latest",
@@ -49,19 +38,23 @@ var deciderPrices = []DeciderPrice{
 		Decider: "clef", Model: "clef",
 		InPerM: 0.24, OutPerM: 0,
 		AsOf:   "2026-10-02",
-		Source: "https://developers.cloudflare.com/workers-ai/models/clef",
+		Source: "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+	},
+	{
+		Decider: "clef-flash", Model: "clef-flash",
+		InPerM: 0.090, OutPerM: 0,
+		AsOf:   "2026-10-02",
+		Source: "https://developers.cloudflare.com/workers-ai/platform/pricing/",
 	},
 }
+
+var jevVersionID = regexp.MustCompile(`^jev-\d+\.\d+(\.\d+)?$`)
 
 // DeciderCost prices one decision call from the table. Matching, in order:
 //
 //  1. the exact (decider, model) row;
-//  2. otherwise the decider's DEFAULT row — the row whose Model is
-//     "<decider>-latest" or the decider's own name. Vendors report
-//     version-specific model ids in responses ("jev-1.13.0"), and Cloudflare
-//     spells clef "@cf/cloudflare/clef"; none of those have their own row,
-//     and they must still price, because a decider has one price per model
-//     family in this table.
+//  2. an explicit vendor alias: @cf/cloudflare/<decider> for either Clef row,
+//     or jev-latest / a numeric jev-X.Y[.Z] version for Jev.
 //
 // Anything else is unpriced: ok=false, never an error (ADR-009). A cost of 0
 // with ok=true means the table knows the price and it is genuinely zero
@@ -74,19 +67,27 @@ func DeciderCost(decider, model string, inTokens, outTokens int) (cost float64, 
 	return float64(inTokens)*row.InPerM/1_000_000 + float64(outTokens)*row.OutPerM/1_000_000, true
 }
 
-// deciderRow finds the pricing row for (decider, model) under the matching
-// rule documented on DeciderCost. Exact match first so a future second model
-// row for one decider (a cheaper tier, say) is honoured when asked for by id.
+// deciderRow keeps alias acceptance deliberately enumerated. A prefix or
+// decider-only fallback would fabricate a cost for future, differently priced
+// models and can even cross-price clef-flash as clef.
 func deciderRow(decider, model string) *DeciderPrice {
 	for i := range deciderPrices {
 		if r := &deciderPrices[i]; r.Decider == decider && r.Model == model {
 			return r
 		}
 	}
-	for i := range deciderPrices {
-		r := &deciderPrices[i]
-		if r.Decider == decider && (r.Model == decider+"-latest" || r.Model == decider) {
-			return r
+	alias := false
+	switch decider {
+	case "jev":
+		alias = model == "jev-latest" || jevVersionID.MatchString(model)
+	case "clef", "clef-flash":
+		alias = model == "@cf/cloudflare/"+decider
+	}
+	if alias {
+		for i := range deciderPrices {
+			if r := &deciderPrices[i]; r.Decider == decider {
+				return r
+			}
 		}
 	}
 	return nil
