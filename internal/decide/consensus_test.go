@@ -8,7 +8,9 @@
 package decide
 
 import (
+	"encoding/json"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/0xDarkMatter/conclave-cli/internal/providers"
@@ -30,6 +32,26 @@ func mustGet(t *testing.T, got map[string]QuestionConsensus, qid string) Questio
 	}
 	return qc
 }
+
+// invalidCount reads the JSON contract rather than the Go field so the
+// regression tests fail semantically against the pre-fix struct instead of
+// stopping at compile time before exercising the old aggregation paths.
+func invalidCount(t *testing.T, qc QuestionConsensus) int {
+	t.Helper()
+	b, err := json.Marshal(qc)
+	if err != nil {
+		t.Fatalf("marshal consensus: %v", err)
+	}
+	var wire struct {
+		Invalid int `json:"invalid"`
+	}
+	if err := json.Unmarshal(b, &wire); err != nil {
+		t.Fatalf("unmarshal consensus: %v", err)
+	}
+	return wire.Invalid
+}
+
+// === SECTION: baseline aggregation contracts ============================
 
 // TestConsensusChoiceAveragesNotVotes: A votes x with 0.9/0.1, B votes y
 // with 0.4/0.6. A vote count would call this a 1-1 tie; ADR-016's
@@ -295,15 +317,15 @@ func TestConsensusMissingAnswerLowersSucceeded(t *testing.T) {
 
 	got := Consensus(questions, decisions, 3)
 
-	if qc := mustGet(t, got, "triage"); qc.Succeeded != 2 {
-		t.Fatalf("triage succeeded = %d, want 2 (a and c; b's noul-typed answer is skipped)", qc.Succeeded)
+	if qc := mustGet(t, got, "triage"); qc.Succeeded != 2 || invalidCount(t, qc) != 1 {
+		t.Fatalf("triage succeeded/invalid = %d/%d, want 2/1 (a and c valid; b's noul-typed answer is malformed)", qc.Succeeded, invalidCount(t, qc))
 	}
-	if qc := mustGet(t, got, "urgency"); qc.Succeeded != 1 {
-		t.Fatalf("urgency succeeded = %d, want 1 (a only)", qc.Succeeded)
+	if qc := mustGet(t, got, "urgency"); qc.Succeeded != 1 || invalidCount(t, qc) != 0 {
+		t.Fatalf("urgency succeeded/invalid = %d/%d, want 1/0 (a only; missing answers are not malformed)", qc.Succeeded, invalidCount(t, qc))
 	}
 	qc := mustGet(t, got, "routing")
-	if qc.Succeeded != 0 {
-		t.Fatalf("routing succeeded = %d, want 0 (nobody answered)", qc.Succeeded)
+	if qc.Succeeded != 0 || invalidCount(t, qc) != 0 {
+		t.Fatalf("routing succeeded/invalid = %d/%d, want 0/0 (nobody answered)", qc.Succeeded, invalidCount(t, qc))
 	}
 	if qc.Contested || qc.Agreement != nil || qc.Choice != "" {
 		t.Fatalf("unanswered question carries aggregates: %+v", qc)
@@ -389,5 +411,213 @@ func TestConsensusTieBreaksDeterministically(t *testing.T) {
 				t.Fatalf("score = %v, want %d (tie broken by numeric index)", qc.Score, c.wantScore)
 			}
 		})
+	}
+}
+
+// === SECTION: adversarial validation regressions ========================
+
+// TestConsensusThreeDeciderAgreementNormalizesGeneralizedJSD pins Lin's
+// n-way upper bound: generalized JSD is divided by log2(n), preserving useful
+// resolution between partial overlap and fully disjoint support.
+func TestConsensusThreeDeciderAgreementNormalizesGeneralizedJSD(t *testing.T) {
+	questions := map[string]providers.Question{
+		"q": {Type: providers.QuestionChoice, Choices: map[string]string{"x": "ex", "y": "why", "z": "zee"}},
+	}
+	decisions := map[string]*providers.Decision{
+		"a": dec(map[string]providers.Answer{"q": {Type: providers.QuestionChoice, Probabilities: map[string]float64{"x": 1, "y": 0, "z": 0}}}),
+		"b": dec(map[string]providers.Answer{"q": {Type: providers.QuestionChoice, Probabilities: map[string]float64{"x": 0, "y": 1, "z": 0}}}),
+		"c": dec(map[string]providers.Answer{"q": {Type: providers.QuestionChoice, Probabilities: map[string]float64{"x": 0.5, "y": 0, "z": 0.5}}}),
+	}
+
+	qc := mustGet(t, Consensus(questions, decisions, 3), "q")
+	const want = 0.289690082143
+	if qc.Agreement == nil || math.Abs(*qc.Agreement-want) > 1e-12 {
+		t.Fatalf("agreement = %v, want %.12f (1 - JSD/log2(3))", qc.Agreement, want)
+	}
+}
+
+// TestConsensusRejectsUnknownChoiceLabels ensures the question criteria,
+// rather than vendor output, define the only labels eligible for consensus.
+func TestConsensusRejectsUnknownChoiceLabels(t *testing.T) {
+	question := providers.Question{Type: providers.QuestionChoice, Choices: map[string]string{"x": "ex", "y": "why"}}
+	cases := []struct {
+		name string
+		bad  providers.Answer
+	}{
+		{
+			name: "probability label",
+			bad: providers.Answer{Type: providers.QuestionChoice, Choice: "x",
+				Probabilities: map[string]float64{"x": 0.5, "injected": 0.5}},
+		},
+		{
+			name: "declared choice",
+			bad: providers.Answer{Type: providers.QuestionChoice, Choice: "injected",
+				Probabilities: map[string]float64{"x": 1, "y": 0}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			decisions := map[string]*providers.Decision{
+				"bad":  dec(map[string]providers.Answer{"q": tc.bad}),
+				"good": dec(map[string]providers.Answer{"q": {Type: providers.QuestionChoice, Choice: "y", Probabilities: map[string]float64{"x": 0, "y": 1}}}),
+			}
+			qc := mustGet(t, Consensus(map[string]providers.Question{"q": question}, decisions, 2), "q")
+			if qc.Succeeded != 1 || invalidCount(t, qc) != 1 {
+				t.Fatalf("succeeded/invalid = %d/%d, want 1/1", qc.Succeeded, invalidCount(t, qc))
+			}
+			if qc.Choice != "y" || qc.Probabilities["injected"] != 0 {
+				t.Fatalf("choice/probabilities = %q/%v, want criteria-only y consensus", qc.Choice, qc.Probabilities)
+			}
+		})
+	}
+}
+
+// TestConsensusNormalizesEachDeciderBeforeEqualWeightAverage distinguishes
+// equal decider weight from pooling raw vendor mass.
+func TestConsensusNormalizesEachDeciderBeforeEqualWeightAverage(t *testing.T) {
+	questions := map[string]providers.Question{
+		"q": {Type: providers.QuestionChoice, Choices: map[string]string{"x": "ex", "y": "why"}},
+	}
+	decisions := map[string]*providers.Decision{
+		"a": dec(map[string]providers.Answer{"q": {Type: providers.QuestionChoice, Probabilities: map[string]float64{"x": 9, "y": 1}}}),
+		"b": dec(map[string]providers.Answer{"q": {Type: providers.QuestionChoice, Probabilities: map[string]float64{"x": 0, "y": 1}}}),
+	}
+
+	qc := mustGet(t, Consensus(questions, decisions, 2), "q")
+	if qc.Choice != "y" || !almostEqual(qc.Probabilities["x"], 0.45) || !almostEqual(qc.Probabilities["y"], 0.55) {
+		t.Fatalf("choice/probabilities = %q/%v, want y with {x:0.45 y:0.55}", qc.Choice, qc.Probabilities)
+	}
+}
+
+// TestConsensusRejectsMalformedScoreKeys prevents aliases and invalid mass
+// from being partially retained and renormalized into false certainty.
+func TestConsensusRejectsMalformedScoreKeys(t *testing.T) {
+	cases := []struct {
+		name string
+		key  string
+	}{
+		{name: "noncanonical", key: "01"},
+		{name: "nonnumeric", key: "low"},
+		{name: "out of range", key: "2"},
+	}
+	questions := map[string]providers.Question{
+		"q": {Type: providers.QuestionScore, Scale: []string{"low", "high"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			answer := providers.Answer{Type: providers.QuestionScore, Probabilities: map[string]float64{"0": 0.1, tc.key: 0.9}}
+			qc := mustGet(t, Consensus(questions, map[string]*providers.Decision{
+				"bad": dec(map[string]providers.Answer{"q": answer}),
+			}, 1), "q")
+			if qc.Succeeded != 0 || invalidCount(t, qc) != 1 {
+				t.Fatalf("succeeded/invalid = %d/%d, want 0/1", qc.Succeeded, invalidCount(t, qc))
+			}
+			if qc.Score != nil || qc.Probabilities != nil {
+				t.Fatalf("malformed score contributed aggregate: %+v", qc)
+			}
+		})
+	}
+}
+
+// TestConsensusRejectsMasslessAnswers ensures Succeeded means the answer
+// actually supplied type-specific probability mass or a noul value.
+func TestConsensusRejectsMasslessAnswers(t *testing.T) {
+	questions := map[string]providers.Question{
+		"choice": {Type: providers.QuestionChoice, Choices: map[string]string{"x": "ex", "y": "why"}},
+		"score":  {Type: providers.QuestionScore, Scale: []string{"low", "high"}},
+		"noul":   {Type: providers.QuestionNoul},
+	}
+	decisions := map[string]*providers.Decision{
+		"bad": dec(map[string]providers.Answer{
+			"choice": {Type: providers.QuestionChoice, Choice: "x", Probabilities: map[string]float64{}},
+			"score":  {Type: providers.QuestionScore, Probabilities: map[string]float64{"0": 0, "1": 0}},
+			"noul":   {Type: providers.QuestionNoul, Noul: nil},
+		}),
+	}
+	got := Consensus(questions, decisions, 1)
+	for _, qid := range []string{"choice", "score", "noul"} {
+		qc := mustGet(t, got, qid)
+		if qc.Succeeded != 0 || invalidCount(t, qc) != 1 {
+			t.Errorf("%s succeeded/invalid = %d/%d, want 0/1", qid, qc.Succeeded, invalidCount(t, qc))
+		}
+	}
+}
+
+// TestConsensusChoiceVotesUseDistributionArgmax pins voting to the same
+// normalized evidence that drives the aggregate, not a vendor threshold.
+func TestConsensusChoiceVotesUseDistributionArgmax(t *testing.T) {
+	questions := map[string]providers.Question{
+		"q": {Type: providers.QuestionChoice, Choices: map[string]string{"x": "ex", "y": "why"}},
+	}
+	answer := providers.Answer{Type: providers.QuestionChoice, Choice: "x", Probabilities: map[string]float64{"x": 0.1, "y": 0.9}}
+	decisions := map[string]*providers.Decision{
+		"a": dec(map[string]providers.Answer{"q": answer}),
+		"b": dec(map[string]providers.Answer{"q": answer}),
+	}
+
+	qc := mustGet(t, Consensus(questions, decisions, 2), "q")
+	if qc.Votes["y"] != 2 || qc.Votes["x"] != 0 || qc.Contested {
+		t.Fatalf("votes/contested = %v/%v, want {y:2}/false", qc.Votes, qc.Contested)
+	}
+}
+
+// TestConsensusRejectsInvalidNumericValues protects JSON output and all
+// probability math from NaN, infinities, negatives and out-of-range nouls.
+func TestConsensusRejectsInvalidNumericValues(t *testing.T) {
+	cases := []struct {
+		name     string
+		question providers.Question
+		answer   providers.Answer
+	}{
+		{name: "choice NaN", question: providers.Question{Type: providers.QuestionChoice, Choices: map[string]string{"x": "ex"}}, answer: providers.Answer{Type: providers.QuestionChoice, Probabilities: map[string]float64{"x": math.NaN()}}},
+		{name: "choice negative", question: providers.Question{Type: providers.QuestionChoice, Choices: map[string]string{"x": "ex"}}, answer: providers.Answer{Type: providers.QuestionChoice, Probabilities: map[string]float64{"x": -0.1}}},
+		{name: "score infinity", question: providers.Question{Type: providers.QuestionScore, Scale: []string{"low"}}, answer: providers.Answer{Type: providers.QuestionScore, Probabilities: map[string]float64{"0": math.Inf(1)}}},
+		{name: "score negative", question: providers.Question{Type: providers.QuestionScore, Scale: []string{"low"}}, answer: providers.Answer{Type: providers.QuestionScore, Probabilities: map[string]float64{"0": -0.1}}},
+		{name: "noul NaN", question: providers.Question{Type: providers.QuestionNoul}, answer: providers.Answer{Type: providers.QuestionNoul, Noul: fp(math.NaN())}},
+		{name: "noul below zero", question: providers.Question{Type: providers.QuestionNoul}, answer: providers.Answer{Type: providers.QuestionNoul, Noul: fp(-0.1)}},
+		{name: "noul above one", question: providers.Question{Type: providers.QuestionNoul}, answer: providers.Answer{Type: providers.QuestionNoul, Noul: fp(1.1)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			qc := mustGet(t, Consensus(map[string]providers.Question{"q": tc.question}, map[string]*providers.Decision{
+				"bad": dec(map[string]providers.Answer{"q": tc.answer}),
+			}, 1), "q")
+			if qc.Succeeded != 0 || invalidCount(t, qc) != 1 {
+				t.Fatalf("succeeded/invalid = %d/%d, want 0/1", qc.Succeeded, invalidCount(t, qc))
+			}
+		})
+	}
+}
+
+// TestConsensusNormalizationIsByteDeterministic reconstructs the same map in
+// shuffled insertion orders and requires the complete JSON output to match.
+func TestConsensusNormalizationIsByteDeterministic(t *testing.T) {
+	questions := map[string]providers.Question{
+		"q": {Type: providers.QuestionChoice, Choices: map[string]string{"a": "a", "b": "b", "c": "c", "d": "d"}},
+	}
+	labels := []string{"a", "b", "c", "d"}
+	values := map[string]float64{"a": 0.7, "b": 0.1, "c": 0.1, "d": 0.1}
+	rng := rand.New(rand.NewSource(1))
+	var baseline []byte
+	for i := 0; i < 1000; i++ {
+		order := append([]string(nil), labels...)
+		rng.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+		probabilities := make(map[string]float64, len(order))
+		for _, label := range order {
+			probabilities[label] = values[label]
+		}
+		got, err := json.Marshal(Consensus(questions, map[string]*providers.Decision{
+			"a": dec(map[string]providers.Answer{"q": {Type: providers.QuestionChoice, Probabilities: probabilities}}),
+		}, 1))
+		if err != nil {
+			t.Fatalf("iteration %d marshal: %v", i, err)
+		}
+		if i == 0 {
+			baseline = got
+			continue
+		}
+		if string(got) != string(baseline) {
+			t.Fatalf("iteration %d output differs\nfirst: %s\n got: %s", i, baseline, got)
+		}
 	}
 }
