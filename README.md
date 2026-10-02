@@ -493,8 +493,7 @@ permission) and `CLOUDFLARE_ACCOUNT_ID` for `clef` and `clef-flash`. Environment
 are API-only (no `@cli`/`@api` suffix), are never part of `--all`, and are not accepted as a
 chat provider or judge. `--cache`, `-t` (default 30 s per decider) and `--json` behave as on a
 query; exit status is 0 when at least one decider answered, 1 when all failed, 130 on Ctrl-C.
-Prices come from a hand-maintained table (`conclave models jev`); Clef-flash is unpriced until
-Cloudflare publishes a rate. Design: [ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md),
+Prices come from a hand-maintained table (`conclave models jev`), input tokens only. Design: [ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md),
 build plan: [docs/PLAN-decision-models.md](docs/PLAN-decision-models.md).
 
 ## Setup

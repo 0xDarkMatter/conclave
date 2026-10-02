@@ -51,7 +51,7 @@ Response:
 |---|---|---|---|---|---|
 | `jev` | `POST https://api.typesafe.ai/v1/systemone` | `Bearer TYPESAFE_API_KEY` | `jev-latest` | 32k | $0.042/M in, output free |
 | `clef` | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` | `Bearer CLOUDFLARE_API_TOKEN` | `clef` | 64k | $0.24/M in |
-| `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | `clef-flash` | 64k | unpublished at 2026-10-02; confirm |
+| `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | `clef-flash` | 64k | | 64k | unpublished at 2026-10-02; confirm |.09/M in (pricing page, updated 2026-10-01) |
 
 Limits from the Clef model page: 1-64 questions per call; up to 4 images (PNG/JPEG/WebP,
 4 MiB, 16 MP each).
@@ -72,7 +72,7 @@ key may need to be added there first.
 4. **Preflight.** Is there a cheap auth check? Cloudflare has
    `GET /client/v4/user/tokens/verify`; Typesafe has none documented. A one-question
    call with a 1-word state may be the fallback, so measure its cost.
-5. **Clef-flash price** from the Workers AI pricing page.
+5. **Clef-flash price** from the Workers AI pricing page. DONE 2026-10-02: 5. **Clef-flash price** from the Workers AI pricing page..090/M input, no output price (https://developers.cloudflare.com/workers-ai/platform/pricing/, updated 2026-10-01).
 6. **Calibration eval.** On 30-50 Praxis questions that already have a gold grade,
    compare per-criterion `noul` from clef and jev against the current gemini/openai/
    claude majority. Record agreement and the probability spread on disagreements.
@@ -82,7 +82,10 @@ Write the findings into this file under each probe.
 
 **Status.** Probe 1 partial (2026-10-02): error responses use the Cloudflare envelope
 `{result:null, success:false, errors:[{code,message}]}`; no Keeper token carries Workers AI
-permission, so the success shape, probes 2-5 and the calibration eval are still open. Until
+permission, so the success shape, probes 2-4 and the calibration eval are still open (probe 5
+is done). Probe 2 also decides billing: a Workers AI quota 429 (suspected `errors[].code`
+3036) is retried today, not returned as a `BillingError`; see `TODO(phase0-probe2)` at
+`billingCode` in `api_base.go`. Until
 probe 1 completes, the clef backend accepts both the bare and the `{"result":...}` success
 shape (AGENTS Gotcha 15).
 
@@ -154,7 +157,7 @@ decisions, so they can be table-tested:
 - `score`: averaged distribution, plus `expected` (probability-weighted mean index) and
   `score` = argmax of the averaged distribution. `contested` = argmaxes differ by 1
   step or more.
-- `noul`: mean value. `contested` = some deciders above 0.5 and some below.
+- `noul`: mean value. `contested` = at least one decider >= 0.5 and at least one below (0.5 counts as yes).
 - `agreement` per question = 1 - Jensen-Shannon divergence of the decider
   distributions (`noul` as a Bernoulli distribution). 1.0 means identical. This is
   reported, not thresholded; callers decide what is "too contested".
@@ -168,7 +171,7 @@ decisions, so they can be table-tested:
     "jev":  {"status": "error", "error": "HTTP 401 ..."} },
   "consensus": {
     "department": {"type": "choice", "choice": "technical", "probabilities": {"technical": 0.83, "billing": 0.17, "sales": 0.0},
-                   "votes": {"technical": 2}, "agreement": 0.97, "contested": false, "succeeded": 2, "requested": 2} },
+                   "votes": {"technical": 1}, "contested": false, "succeeded": 1, "requested": 2} },
   "meta": {"total_cost_usd": 0.00011, "duration_ms": 215} }
 ```
 
@@ -178,7 +181,7 @@ Human output is a per-question table: question, consensus answer, probability,
 agreement, and each decider's pick.
 
 **Pricing** (`internal/pricing/deciders.go`): `{decider, model, in_per_m, out_per_m,
-as_of, source_url}` rows. `CostOf` falls back to this table for decider names only.
+as_of, source_url}` rows. `conclave decide` prices through `pricing.DeciderCost` directly; `Catalog.CostOf` never sees deciders (ADR-016 keeps them out of the provider cost paths).
 `conclave models` lists the rows with their `as_of`.
 
 **Cache.** `cache.Key("api", decider, model, state, canonicalJSON(questions))`, with

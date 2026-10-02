@@ -289,7 +289,7 @@ them: the as-of date is the staleness signal. `conclave models jev` prints the l
 |---|---|---|---|---|---|
 | `jev` | `jev-latest` (reports e.g. `jev-1.13.0`) | `POST https://api.typesafe.ai/v1/systemone` (override: `CONCLAVE_JEV_BASE_URL`, full URL) | `Bearer TYPESAFE_API_KEY` | $0.042 in, output free | 2026-10-02 |
 | `clef` | `clef` (`@cf/cloudflare/clef`) | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` (override: `CONCLAVE_CLEF_BASE_URL`, prefix through `/ai/run`) | `Bearer CLOUDFLARE_API_TOKEN` | $0.24 in, no published output price | 2026-10-02 |
-| `clef-flash` | `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | unpublished: reported unpriced | 2026-10-02 |
+| `clef-flash` | `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | | unpublished: reported unpriced | 2026-10-02 |.09 in, no published output price | 2026-10-02 |
 
 Sources: [Typesafe launch post](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
 [Workers AI Clef model page](https://developers.cloudflare.com/workers-ai/models/clef).
