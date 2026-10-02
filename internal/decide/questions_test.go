@@ -1,3 +1,7 @@
+// Tests for the ADR-016 question-file boundary and its cache-key canonical form.
+// They pin source-text preservation for YAML labels, duplicate-member rejection
+// in both accepted syntaxes, and error context precise enough to identify the
+// offending file and question without weakening semantic validation ownership.
 package decide
 
 import (
@@ -166,6 +170,98 @@ func TestLoadQuestionsBadFileNamesQuestion(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestLoadQuestionsYAMLScalarLabelsKeepSourceTextAndRejectCollisions pins the
+// source-spelling contract: YAML's implicit typing must not merge 1 and 1.0,
+// while two scalar nodes that both spell "1" must be rejected before a map can
+// overwrite either description.
+func TestLoadQuestionsYAMLScalarLabelsKeepSourceTextAndRejectCollisions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "numeric-labels.yaml")
+	content := "question_id:\n  type: choice\n  instructions: x\n  criteria:\n    1: integer\n    1.0: float\n    yes: affirmative\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	qs, err := LoadQuestions(path)
+	if err != nil {
+		t.Fatalf("loading distinct scalar spellings: %v", err)
+	}
+	want := map[string]string{"1": "integer", "1.0": "float", "yes": "affirmative"}
+	if got := qs["question_id"].Choices; !reflect.DeepEqual(got, want) {
+		t.Fatalf("choice labels lost their YAML source spelling: got %#v, want %#v", got, want)
+	}
+
+	collisionPath := filepath.Join(t.TempDir(), "collision.yaml")
+	collision := "question_id:\n  type: choice\n  instructions: x\n  criteria:\n    1: integer\n    !!str 1: string\n"
+	if err := os.WriteFile(collisionPath, []byte(collision), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadQuestions(collisionPath)
+	if err == nil {
+		t.Fatal("scalar labels with the same source text were silently collapsed")
+	}
+	for _, sub := range []string{"collision.yaml", "question_id", "1", "duplicate"} {
+		if !strings.Contains(err.Error(), sub) {
+			t.Errorf("collision error %q does not mention %q", err.Error(), sub)
+		}
+	}
+}
+
+// TestLoadQuestionsRejectsJSONDuplicateMembers prevents encoding/json's usual
+// last-value-wins behaviour from changing outbound questions and cache keys.
+func TestLoadQuestionsRejectsJSONDuplicateMembers(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{
+			name:    "question id",
+			content: `{"question_id":{"type":"noul","instructions":"first"},"question_id":{"type":"noul","instructions":"second"}}`,
+			want:    []string{"duplicates.json", "question_id", "duplicate"},
+		},
+		{
+			name:    "choice label",
+			content: `{"question_id":{"type":"choice","instructions":"x","criteria":{"a":"first","a":"second","b":"other"}}}`,
+			want:    []string{"duplicates.json", "question_id", "a", "duplicate"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "duplicates.json")
+			if err := os.WriteFile(path, []byte(tc.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadQuestions(path)
+			if err == nil {
+				t.Fatal("duplicate JSON member was silently overwritten")
+			}
+			for _, sub := range tc.want {
+				if !strings.Contains(err.Error(), sub) {
+					t.Errorf("duplicate error %q does not mention %q", err.Error(), sub)
+				}
+			}
+		})
+	}
+}
+
+// TestLoadQuestionsYAMLDuplicateCriterionNamesQuestion ensures node-level YAML
+// validation retains enough structure to report the owning question id.
+func TestLoadQuestionsYAMLDuplicateCriterionNamesQuestion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "duplicate.yaml")
+	content := "question_id:\n  type: choice\n  instructions: x\n  criteria:\n    a: first\n    a: second\n"
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadQuestions(path)
+	if err == nil {
+		t.Fatal("duplicate YAML criterion was silently accepted")
+	}
+	for _, sub := range []string{"duplicate.yaml", "question_id", "a", "duplicate"} {
+		if !strings.Contains(err.Error(), sub) {
+			t.Errorf("duplicate error %q does not mention %q", err.Error(), sub)
+		}
 	}
 }
 

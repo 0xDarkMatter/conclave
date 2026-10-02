@@ -1,22 +1,9 @@
-// Package decide holds the decision-model support code that is NOT a provider
-// (ADR-016): loading question files in the System One wire shape, the --ask
-// shorthand, the canonical JSON that keys the response cache, and — in
-// consensus.go, same package — the equal-weight probability averaging over a
-// decider panel.
-//
-// Contract:
-//   - Question SEMANTICS (1-64 questions, id syntax, >=2 criteria, non-empty
-//     instructions) are validated by providers.ValidateDecisionRequest, never
-//     here. This file only parses: a criteria shape that cannot be decoded
-//     into the typed providers.Question fails here, naming the file and the
-//     question id. The split is not stylistic — a question whose criteria
-//     cannot be routed to Choices or Scale has nowhere to live in the typed
-//     struct, so dropping it silently is the only alternative to failing here.
-//   - A questions FILE is the questions mapping itself (question id ->
-//     question), in the wire shape. State does not belong in it; it comes from
-//     the positional argument / -f / stdin, exactly as for a chat prompt.
-//   - CanonicalQuestions output is a cache-key input, not a wire format; its
-//     grammar is documented at the function.
+// Package decide loads ADR-016 question files and builds their cache-key form.
+// Contract: parsing preserves scalar source text and rejects duplicate ids or
+// labels before Go maps can erase them; every question-local error identifies
+// the file and question. Request semantics remain owned by provider validation.
+// A file contains only the question mapping; state arrives through CLI input.
+// CanonicalQuestions is a cache-key input whose grammar is fixed at its builder.
 package decide
 
 import (
@@ -30,18 +17,12 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// wireQuestion mirrors one question as it appears in a questions file: the
-// System One wire shape (docs/PLAN-decision-models.md), where `criteria` is
-// polymorphic — a mapping for choice, a sequence for score, absent for noul.
-//
-// Decoding deliberately goes through this struct rather than
-// providers.Question: Question's criteria fields are typed and tagged `json:"-"`
-// on the wire, and its Marshal/UnmarshalJSON are another lane's concern. This
-// lane stands alone (packet constraint), so it owns its own decode.
+// wireQuestion retains the criteria node because decoding into any would
+// coerce YAML scalars and collapse distinct source labels before validation.
 type wireQuestion struct {
-	Type         string `json:"type" yaml:"type"`
-	Instructions string `json:"instructions" yaml:"instructions"`
-	Criteria     any    `json:"criteria" yaml:"criteria"`
+	Type         string
+	Instructions string
+	Criteria     *yaml.Node
 }
 
 // LoadQuestions reads a questions file: YAML (.yaml/.yml) or JSON (.json).
@@ -51,30 +32,56 @@ type wireQuestion struct {
 func LoadQuestions(path string) (map[string]providers.Question, error) {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".yaml", ".yml":
-		return decodeQuestionsFile(path, yaml.Unmarshal)
+		return decodeQuestionsFile(path, false)
 	case ".json":
-		return decodeQuestionsFile(path, json.Unmarshal)
+		return decodeQuestionsFile(path, true)
 	default:
 		return nil, fmt.Errorf("%s: unsupported questions file extension %q (want .yaml, .yml or .json)", path, filepath.Ext(path))
 	}
 }
 
-// decodeQuestionsFile is the one reader behind both formats; yaml.Unmarshal
-// and json.Unmarshal share the signature, and both decode into any as
-// map[string]any / []any / scalars, so the criteria routing in toQuestion is
-// shared verbatim.
-func decodeQuestionsFile(path string, unmarshal func([]byte, any) error) (map[string]providers.Question, error) {
+// decodeQuestionsFile parses both syntaxes into yaml.Node, whose mapping
+// entries preserve order, duplicates and scalar source spelling. JSON gets an
+// encoding/json syntax pass first so YAML's broader grammar cannot leak into a
+// .json file; its duplicate members remain visible in the node pass.
+func decodeQuestionsFile(path string, jsonFile bool) (map[string]providers.Question, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err // os errors already carry the path
 	}
-	var raw map[string]wireQuestion
-	if err := unmarshal(b, &raw); err != nil {
+	if jsonFile {
+		var syntaxOnly any
+		if err := json.Unmarshal(b, &syntaxOnly); err != nil {
+			return nil, fmt.Errorf("%s: not a questions file (want a JSON object of question id to question): %w", path, err)
+		}
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		// Parser-level failures such as excessive aliasing occur before a safe
+		// owning question can be identified; the file is the narrowest truthful
+		// context for those errors.
 		return nil, fmt.Errorf("%s: not a questions file (want a mapping of question id to question): %w", path, err)
 	}
-	qs := make(map[string]providers.Question, len(raw))
-	// Map order is randomised; errors surface the same regardless of order.
-	for id, w := range raw {
+	if len(doc.Content) == 0 {
+		return map[string]providers.Question{}, nil
+	}
+	root := resolveAlias(doc.Content[0])
+	if root.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("%s: not a questions file (want a mapping of question id to question), got a %s", path, nodeKind(root))
+	}
+	qs := make(map[string]providers.Question, len(root.Content)/2)
+	for i := 0; i < len(root.Content); i += 2 {
+		id, err := scalarNodeString(root.Content[i])
+		if err != nil {
+			return nil, fmt.Errorf("%s: question id: %w", path, err)
+		}
+		if _, exists := qs[id]; exists {
+			return nil, fmt.Errorf("%s: question %q: duplicate question id %q", path, id, id)
+		}
+		w, err := decodeWireQuestion(root.Content[i+1])
+		if err != nil {
+			return nil, fmt.Errorf("%s: question %q: %w", path, id, err)
+		}
 		q, err := toQuestion(w)
 		if err != nil {
 			return nil, fmt.Errorf("%s: question %q: %w", path, id, err)
@@ -82,6 +89,40 @@ func decodeQuestionsFile(path string, unmarshal func([]byte, any) error) (map[st
 		qs[id] = q
 	}
 	return qs, nil
+}
+
+// decodeWireQuestion rejects repeated members while the mapping still retains
+// them. Unknown fields remain ignored for compatibility with struct decoding.
+func decodeWireQuestion(n *yaml.Node) (wireQuestion, error) {
+	n = resolveAlias(n)
+	if n.Kind != yaml.MappingNode {
+		return wireQuestion{}, fmt.Errorf("question must be a mapping, got a %s", nodeKind(n))
+	}
+	var w wireQuestion
+	seen := make(map[string]struct{}, len(n.Content)/2)
+	for i := 0; i < len(n.Content); i += 2 {
+		field, err := scalarNodeString(n.Content[i])
+		if err != nil {
+			return w, fmt.Errorf("question field: %w", err)
+		}
+		if _, exists := seen[field]; exists {
+			return w, fmt.Errorf("duplicate question field %q", field)
+		}
+		seen[field] = struct{}{}
+		value := n.Content[i+1]
+		switch field {
+		case "type":
+			w.Type, err = scalarNodeString(value)
+		case "instructions":
+			w.Instructions, err = scalarNodeString(value)
+		case "criteria":
+			w.Criteria = value
+		}
+		if err != nil {
+			return w, fmt.Errorf("field %q: %w", field, err)
+		}
+	}
+	return w, nil
 }
 
 // toQuestion routes the polymorphic criteria into the typed fields, based on
@@ -93,9 +134,9 @@ func toQuestion(w wireQuestion) (providers.Question, error) {
 	q := providers.Question{Type: w.Type, Instructions: w.Instructions}
 	switch w.Type {
 	case providers.QuestionNoul:
-		if w.Criteria != nil {
+		if w.Criteria != nil && !isNullNode(w.Criteria) {
 			// Nowhere to carry it: accepting would silently drop user input.
-			return q, fmt.Errorf("noul takes no criteria, got a %s", kindOf(w.Criteria))
+			return q, fmt.Errorf("noul takes no criteria, got a %s", nodeKind(resolveAlias(w.Criteria)))
 		}
 		return q, nil
 	case providers.QuestionChoice:
@@ -120,30 +161,24 @@ func toQuestion(w wireQuestion) (providers.Question, error) {
 
 // criteriaMapping converts a decoded criteria node into choice criteria.
 // nil (absent) decodes to nil without error — validation owns the minimum.
-func criteriaMapping(v any) (map[string]string, error) {
-	var raw map[any]any
-	switch c := v.(type) {
-	case nil:
+func criteriaMapping(n *yaml.Node) (map[string]string, error) {
+	if n == nil || isNullNode(n) {
 		return nil, nil
-	case map[string]any:
-		raw = make(map[any]any, len(c))
-		for k, val := range c {
-			raw[k] = val
-		}
-	case map[any]any:
-		// yaml.v3 emits map[any]any when any key is not a string (e.g. an
-		// unquoted numeric label); JSON always gives map[string]any.
-		raw = c
-	default:
-		return nil, fmt.Errorf("got a %s", kindOf(v))
 	}
-	out := make(map[string]string, len(raw))
-	for k, val := range raw {
-		key, err := scalarString(k)
+	n = resolveAlias(n)
+	if n.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("got a %s", nodeKind(n))
+	}
+	out := make(map[string]string, len(n.Content)/2)
+	for i := 0; i < len(n.Content); i += 2 {
+		key, err := scalarNodeString(n.Content[i])
 		if err != nil {
 			return nil, fmt.Errorf("label: %w", err)
 		}
-		desc, err := scalarString(val)
+		if _, exists := out[key]; exists {
+			return nil, fmt.Errorf("duplicate criterion label %q", key)
+		}
+		desc, err := scalarNodeString(n.Content[i+1])
 		if err != nil {
 			return nil, fmt.Errorf("criterion %q: %w", key, err)
 		}
@@ -154,50 +189,67 @@ func criteriaMapping(v any) (map[string]string, error) {
 
 // criteriaSequence converts a decoded criteria node into score anchors,
 // preserving order — the index IS the score value on the wire.
-func criteriaSequence(v any) ([]string, error) {
-	switch c := v.(type) {
-	case nil:
+func criteriaSequence(n *yaml.Node) ([]string, error) {
+	if n == nil || isNullNode(n) {
 		return nil, nil
-	case []any:
-		out := make([]string, 0, len(c))
-		for i, item := range c {
-			s, err := scalarString(item)
-			if err != nil {
-				return nil, fmt.Errorf("anchor %d: %w", i, err)
-			}
-			out = append(out, s)
+	}
+	n = resolveAlias(n)
+	if n.Kind != yaml.SequenceNode {
+		return nil, fmt.Errorf("got a %s", nodeKind(n))
+	}
+	out := make([]string, 0, len(n.Content))
+	for i, item := range n.Content {
+		s, err := scalarNodeString(item)
+		if err != nil {
+			return nil, fmt.Errorf("anchor %d: %w", i, err)
 		}
-		return out, nil
-	default:
-		return nil, fmt.Errorf("got a %s", kindOf(v))
+		out = append(out, s)
 	}
+	return out, nil
 }
 
-// scalarString stringifies one criteria scalar. YAML allows unquoted scalars,
-// so `2` and `"2"` are the same label; nested containers have no string form
-// a vendor could use, so they error instead of rendering Go's "%!v(...)".
-func scalarString(v any) (string, error) {
-	switch v.(type) {
-	case map[string]any, map[any]any, []any:
-		return "", fmt.Errorf("want plain text, got a nested %s", kindOf(v))
-	case nil:
-		return "", nil // `key:` with no value parses as an empty description
-	default:
-		return fmt.Sprint(v), nil
+// scalarNodeString returns source spelling rather than a decoded Go value.
+// That keeps YAML labels `1`, `1.0` and `yes` distinct and stable in cache keys.
+func scalarNodeString(n *yaml.Node) (string, error) {
+	n = resolveAlias(n)
+	if n.Kind != yaml.ScalarNode {
+		return "", fmt.Errorf("want plain text, got a nested %s", nodeKind(n))
 	}
+	if n.Tag == "!!null" {
+		return "", nil // `key:` retains the historical empty-description form
+	}
+	return n.Value, nil
 }
 
-// kindOf names a decoded node for error messages.
-func kindOf(v any) string {
-	switch v.(type) {
-	case nil:
+func resolveAlias(n *yaml.Node) *yaml.Node {
+	for n != nil && n.Kind == yaml.AliasNode {
+		n = n.Alias
+	}
+	return n
+}
+
+func isNullNode(n *yaml.Node) bool {
+	n = resolveAlias(n)
+	return n != nil && n.Kind == yaml.ScalarNode && n.Tag == "!!null"
+}
+
+// nodeKind names syntax nodes without exposing yaml.v3 internals to users.
+func nodeKind(n *yaml.Node) string {
+	if n == nil {
 		return "null"
-	case map[string]any, map[any]any:
+	}
+	switch n.Kind {
+	case yaml.MappingNode:
 		return "mapping"
-	case []any:
+	case yaml.SequenceNode:
 		return "list"
-	default:
+	case yaml.ScalarNode:
+		if n.Tag == "!!null" {
+			return "null"
+		}
 		return "scalar"
+	default:
+		return "node"
 	}
 }
 
