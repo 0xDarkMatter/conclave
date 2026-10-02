@@ -1,0 +1,18 @@
+# Sample question set for `conclave decide` — the triage example from
+# docs/PLAN-decision-models.md, in the System One wire shape: `criteria` is a
+# mapping for choice questions, an ordered list for score (index = score
+# value), and absent for noul. Used by the internal/decide loader tests.
+department:
+  type: choice
+  instructions: Which team should handle this ticket?
+  criteria:
+    billing: Invoice, refund or payment dispute
+    technical: Bug, outage or integration failure
+    sales: Plan and pricing questions
+frustration:
+  type: score
+  instructions: How frustrated is the customer?
+  criteria: [Calm, Frustrated, Angry]
+is_urgent:
+  type: noul
+  instructions: Must this be answered within an hour?
