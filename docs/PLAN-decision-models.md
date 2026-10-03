@@ -145,6 +145,33 @@ Artificial Analysis indexes no decision models. Frontier: Kev 4B (3.6 micro-$, 3
 (14.9, 29.2), Clef-flash (31.2, 57.1; but 39 ms median vs Jev's 524). D1, Solar Decide, Mercury
 Decide and Span-01 are unscored: the frontier is incomplete until we score them ourselves.
 
+## Frontier view (`conclave models --frontier`) - DONE 2026-10-03
+
+Built per [ADR-018](adr/ADR-018-frontier-from-external-edition-pinned-sources.md): external
+quality sources only, never Conclave-run evals.
+
+- Chat models: Artificial Analysis indices plus OpenRouter's own evals from the keyed
+  `GET /api/v1/benchmarks` feed (`internal/benchmarks/openrouter`). Cost is the `blend`
+  (3:1 list price, default), `input`, or `task` (OpenRouter evals' `avg_cost_per_task`, which
+  mixes benchmark types).
+- Decision models: the Decision Index recomputed from the upstream Space's v0.2.1 files with the
+  published methodology (`internal/benchmarks/decisionindex`), pinned by file name, validated
+  before caching, and cross-checked one-to-one by `engine` against the Cloudflare mirror, which
+  also supplies the self-reported Clef rows. Live 2026-10-03: 71/71 rows reproduce upstream
+  `balanced_skill` within 0.0056; mirror 0 mismatches. Prices: OpenRouter's decision-model
+  catalog (explicit `Priced`), then the decider table. List price per million input tokens only.
+- `internal/frontier`: per-kind Pareto (chat and decision never compared), BuildChat and
+  BuildDecision, the hand board-name map (`decidermap.go`), terminal and JSON render, and a
+  self-contained offline `--html` report (inline SVG, no external requests).
+- Every source is advisory: one source down leaves its models unscored or unpriced with a
+  warning; only nothing loading at all exits 3.
+
+Live decision frontier (2026-10-03): Jev ($0.042, 57.91) and Clef ($0.24, 61.21, self-reported);
+dominated: Clef-flash, Kev 4B, Tev1-4B; unscored: D1, Solar Decide, Mercury Decide, Span-01.
+
+Open: a live chat-mode run (needs `OPENROUTER_API_KEY`; covered by a golden test so far); the
+board-name map covers 5 of 73 board models (most are not on OpenRouter).
+
 ## Phase 1: deciders + `conclave decide` — DONE (2026-10-02)
 
 Shipped as below, with these resolutions: `--all-deciders` was not added (omitting the
