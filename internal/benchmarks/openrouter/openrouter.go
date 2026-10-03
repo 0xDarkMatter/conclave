@@ -46,17 +46,25 @@ type EvalScore struct {
 type Feed struct {
 	AA        []AAScore
 	Evals     []EvalScore
-	AAAsOf    string // meta.as_of for source=artificial-analysis
+	AAAsOf    string // meta.as_of for source=artificial-analysis; empty when upstream's meta.source named another scope
 	EvalsAsOf string
 	Citation  string // meta.citation for Artificial Analysis
 }
 
 // DecisionModel is one catalog entry with output modality "decisions".
 type DecisionModel struct {
-	Slug          string // canonical id as listed, e.g. "liquid/d1"
-	Name          string
-	InputPerM     float64
-	OutputPerM    float64
+	Slug string // canonical id as listed, e.g. "liquid/d1"
+	Name string
+	// Priced MUST be checked before the price fields are read. It is true only
+	// when both the prompt and completion prices parsed to finite, non-negative
+	// plain decimals. When it is false the row is unpriced — null, missing,
+	// empty, OpenRouter's "-1" dynamic-price sentinels, NaN/Inf or hex syntax —
+	// and InputPerM/OutputPerM carry 0 as "unknown", never as a price (ADR-018:
+	// never estimate). InputPerM == 0 with Priced true means genuinely free
+	// (e.g. "inception/mercury-decide:free").
+	Priced        bool
+	InputPerM     float64 // USD per million input tokens; meaningful only when Priced
+	OutputPerM    float64 // USD per million output tokens; meaningful only when Priced
 	ContextLength int
 	AliasTarget   string // for "~" aliases, the slug they point to
 }

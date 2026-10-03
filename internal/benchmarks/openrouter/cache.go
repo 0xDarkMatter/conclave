@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,6 +21,17 @@ import (
 const (
 	feedCacheFile   = "feed.json"
 	modelsCacheFile = "decision-models.json"
+
+	// TTL bounds (adjudication 8 on the refuted defects): the env TTL is
+	// parsed as float hours, and a huge or "Inf" value overflows
+	// time.Duration to a negative number, silently disabling the cache.
+	// Every resolved TTL is clamped into this window instead.
+	minTTL = time.Minute
+	maxTTL = 30 * 24 * time.Hour
+
+	// maxClockSkew is how far ahead of now a cache stamp may lie before it
+	// counts as stale: a future-dated fetched_at would otherwise never expire.
+	maxClockSkew = 5 * time.Minute
 )
 
 type feedCache struct {
@@ -63,6 +75,10 @@ func resolveSettings(opts Options) (settings, error) {
 	if ttl == 0 {
 		ttl = ttlFromEnv()
 	}
+	// Clamp every resolved TTL (opts and env alike) into [minTTL, maxTTL]:
+	// an out-of-range value must degrade to the bound, never to the negative
+	// duration that silently disabled the cache (adjudication 8).
+	ttl = clampTTL(ttl)
 	client := &http.Client{Timeout: fetchTimeout}
 	if opts.HTTPClient != nil {
 		var ok bool
@@ -72,6 +88,17 @@ func resolveSettings(opts Options) (settings, error) {
 		}
 	}
 	return settings{cacheDir: cacheDir, ttl: ttl, client: client}, nil
+}
+
+// clampTTL pins a TTL into the [minTTL, maxTTL] window.
+func clampTTL(ttl time.Duration) time.Duration {
+	if ttl < minTTL {
+		return minTTL
+	}
+	if ttl > maxTTL {
+		return maxTTL
+	}
+	return ttl
 }
 
 func readFeedCache(path string) (*feedCache, error) {
@@ -146,7 +173,16 @@ func writeJSONCache(path string, value any) error {
 }
 
 func cacheFresh(fetchedAt time.Time, ttl time.Duration) bool {
-	return !fetchedAt.IsZero() && time.Since(fetchedAt) <= ttl
+	if fetchedAt.IsZero() {
+		return false
+	}
+	// A stamp from the future (clock skew, or a hand-edited cache file) must
+	// not make an entry immortal: further ahead than maxClockSkew is stale
+	// (adjudication 8).
+	if fetchedAt.After(time.Now().Add(maxClockSkew)) {
+		return false
+	}
+	return time.Since(fetchedAt) <= ttl
 }
 
 func disabled() bool {
@@ -156,8 +192,14 @@ func disabled() bool {
 
 func ttlFromEnv() time.Duration {
 	if value := strings.TrimSpace(os.Getenv("CONCLAVE_BENCHMARKS_TTL")); value != "" {
+		// NaN fails the hours > 0 comparison on its own; "Inf" and "1e300"
+		// clamp to the max like any oversized value. The cap is applied to the
+		// float BEFORE the float→Duration conversion — converting an
+		// out-of-range float is exactly how "1e300" and "Inf" used to become
+		// a negative, cache-disabling duration (adjudication 8).
 		if hours, err := strconv.ParseFloat(value, 64); err == nil && hours > 0 {
-			return time.Duration(hours * float64(time.Hour))
+			hours = math.Min(hours, maxTTL.Hours())
+			return clampTTL(time.Duration(hours * float64(time.Hour)))
 		}
 	}
 	return defaultTTL
