@@ -23,6 +23,31 @@ Built with [Charm](https://charm.sh)'s Bubble Tea for a terminal UI that doesn't
 - **Know what it cost** - API legs print the real dollar figure per response from a daily-refreshed price catalog, which also warns when a configured model id has vanished
 - **Beautiful TUI** - Animated progress with [Charm](https://charm.sh) (Bubble Tea)
 
+## How It Works
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/how-it-works-dark.svg">
+  <img alt="Architecture: a prompt with context goes to the orchestrator, which fans out in parallel to Gemini, OpenAI and Claude; their responses go to a judge that synthesizes one verdict" src="docs/diagrams/how-it-works.svg" width="100%">
+</picture>
+
+1. **Query Phase** - Prompt sent to all providers in parallel, each under its own timeout
+2. **Judge Phase** - Designated LLM synthesizes the responses (skipped for a single provider)
+3. **Output Phase** - Formatted result with confidence and reasoning, priced in API mode
+
+### Multi-model judging
+
+The judge does not average the panel. It sorts what the models said into what they agree
+on and what they contest, turns the consensus into a reasoned verdict, and surfaces the
+contested material as disagreements and blind spots rather than discarding it. `--blind`
+hides which model said what so the sorting cannot favour a brand.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/judging-flow-dark.svg">
+  <img alt="Sankey: token shares from Gemini, OpenAI and Claude flow into consensus and contested pools; consensus becomes the verdict, contested content is surfaced as disagreements and blind spots, and a small remainder is dropped" src="docs/diagrams/judging-flow.svg" width="100%">
+</picture>
+
+Diagram sources live in [`docs/diagrams/src/`](docs/diagrams/src/); `python docs/diagrams/export.py` regenerates the light and dark SVGs.
+
 ## Recent Updates
 
 ### v1.5.0 — 2026-10-03
@@ -93,65 +118,8 @@ Google retired gemini-cli's free OAuth tier, so CLI-mode gemini now needs `GEMIN
 
 ---
 
-### v1.2.0 — 2026-06-18
-
-**🚀 GPT-5.5 and GLM-5.2 support**
-
-Conclave now defaults to the latest flagship models out of the box — OpenAI **GPT-5.5** and Z.ai **GLM-5.2**. Other defaults were refreshed too: gemini `gemini-3-pro-preview` (shut down) → `gemini-3.1-pro-preview`, claude → `claude-opus-4-8`, and grok's CLI default `grok-code-fast-1` (retiring 2026-08-15) → `grok-4-1-fast-reasoning`. Override any of them with `-m provider:model`.
-
-**🔑 OS keyring for API keys**
-
-Keys can now live in the OS keyring (Windows Credential Manager / macOS Keychain / Linux Secret Service) instead of a plaintext env var or `.env`. When a provider's `*_API_KEY` is unset, Conclave reads it from the keyring automatically — resolution order is env → `~/.config/conclave/.env` → `./.env` → keyring. Manage entries with the new `conclave keyring set|list|rm <ENV_VAR>` command.
-
-```bash
-conclave keyring set GLM_API_KEY      # hidden prompt; loads automatically thereafter
-```
-
-**🔌 GLM drops the `opencode` dependency**
-
-CLI-mode `glm` no longer shells out to the `opencode` binary — it calls the Z.ai GLM Coding Plan directly over OpenAI-compatible HTTP (`api.z.ai/api/coding/paas/v4`), using your flat Coding Plan subscription. GLM now needs only an API key, like every other provider.
-
-**📐 Architecture Decision Records**
-
-Added [`docs/adr/`](docs/adr/) — eight ADRs capturing the foundational design (dual provider modes, LLM-as-judge, parallel/per-provider timeouts, the shared HTTP client, credential precedence) plus this release's decisions.
-
----
-
-### v1.1.0 — 2026-05-22
-
-**🐛 Production bug fixes**
-
-Six fixes for pain points hit running Conclave heavily against gpt-5.x reasoning models. Most importantly: `conclave -g openai -m openai:gpt-5.5` now works — previously the call would silently fail or return empty responses because OpenAI rejects `max_tokens` for the reasoning model family and needs `max_completion_tokens` instead. Error visibility is dramatically improved across the board: HTTP status codes, provider error codes and params, and full diagnostic bodies are surfaced instead of truncated. When all providers fail, you now see each provider's full error in the styled output instead of just a clipped spinner line.
-
-**✨ `--raw` output mode**
-
-New flag emits sentinel-separated provider blocks for clean piping into downstream parsers. Implies `--no-judge`, mutually exclusive with `--json`.
-
-```bash
-conclave -g gemini,claude "classify" --raw -f items.txt | my-extractor
-```
-
-**🎨 Styled output with Lipgloss**
-
-New header panel with metadata, adaptive colors for light/dark terminals, and a refreshed cool-tones palette. The output now actually looks like the tagline promises.
-
-**🛡 Preflight auth checks**
-
-Catches missing or invalid credentials before burning the parallel-query timeout. Bypass with `--skip-preflight`.
-
-**👀 `--list-providers` shows both modes**
-
-The CLI and API columns now print side-by-side by default. The surprising divergences (glm is CLI-only, grok uses different defaults per mode) are visible at a glance. Use `-g` to get the single-column format for scripts that parse this output.
-
----
-
-### v1.0.0 — 2026-01-08
-
-**🎉 Initial release**
-
-Multi-provider parallel querying across Gemini, OpenAI, Claude, Grok, Perplexity, and GLM — in CLI mode (wrapping each provider's CLI) or API mode (`-g`). A judge model synthesizes the responses into a single verdict, with `--blind` for unbiased judging. Plus cheap mode (`-c`), batch mode (`--batch`) with parallel workers and resume, and a Charm Bubble Tea TUI with live progress.
-
----
+Older releases (v1.2.0 keyring and GLM-5.2, v1.1.0 `--raw` and preflight, v1.0.0 initial
+release): see the [CHANGELOG](CHANGELOG.md).
 
 ## Terminal UI
 
@@ -301,16 +269,8 @@ conclave -c gemini,claude "Classify as spam/ham" -f message.txt --json
 conclave -c --all "Summarize" -f doc.md --brief
 ```
 
-**Cheap mode models:**
+Each provider's cheap model is in the [Providers](#providers) table.
 
-| Provider | Default Model | Cheap Model |
-|----------|---------------|-------------|
-| gemini | gemini-3.1-pro-preview | gemini-3-flash-preview |
-| openai | gpt-6.1-sol | gpt-6-luna |
-| claude | claude-opus-5-5 | claude-sonnet-5-5 |
-| perplexity | sonar-pro | sonar |
-| grok | grok-4.7 | grok-build-0.1 |
-| glm | glm-5.3 | glm-5.3-flash |
 
 ### Mixed transports (`<provider>@cli` / `<provider>@api`)
 
@@ -403,30 +363,34 @@ See [docs/BATCH_MODE.md](docs/BATCH_MODE.md) for full documentation and [docs/BA
 
 ## Providers
 
-| Provider | CLI Mode | API Mode (`-g`) | Env Variable |
-|----------|----------|-----------------|--------------|
-| gemini | `gemini` CLI | Gemini API | `GEMINI_API_KEY` |
-| openai | `codex` CLI | OpenAI API | `OPENAI_API_KEY` |
-| claude | `claude` CLI | Anthropic API | `ANTHROPIC_API_KEY` |
-| perplexity | `perplexity` CLI | Perplexity API | `PERPLEXITY_API_KEY` |
-| grok | `grok` CLI | xAI API | `XAI_API_KEY` |
-| glm | Coding Plan API (direct HTTP) | Zhipu API | `GLM_API_KEY` / `ZAI_API_KEY` |
-| `vendor/model` | — | OpenRouter (any model) | `OPENROUTER_API_KEY` |
+**Chat models**, queried as a panel and judged (or one at a time with no judge):
 
-### Default Models
+| Provider | CLI mode | API mode (`-g`) | Default model | Cheap model (`-c`) | Key |
+|---|---|---|---|---|---|
+| gemini | `gemini` CLI | Gemini API | `gemini-3.1-pro-preview` | `gemini-3-flash-preview` | `GEMINI_API_KEY` (needed in both modes) |
+| openai | `codex` CLI (ChatGPT plan) | OpenAI API | `gpt-6.1-sol` | `gpt-6-luna` | `OPENAI_API_KEY` (API only) |
+| claude | `claude` CLI (Claude Max) | Anthropic API | `claude-opus-5-5` | `claude-sonnet-5-5` | `ANTHROPIC_API_KEY` (API only) |
+| grok | `grok` CLI | xAI API | `grok-4.7` | `grok-build-0.1` | `XAI_API_KEY` |
+| perplexity | `perplexity` CLI | Perplexity API | `sonar-pro` | `sonar` | `PERPLEXITY_API_KEY` |
+| glm | Coding Plan API (direct HTTP) | disabled ([ADR-006](docs/adr/ADR-006-glm-api-mode-disabled-for-latency.md)) | `glm-5.3` | `glm-5.3-flash` | `GLM_API_KEY` / `ZAI_API_KEY` |
+| `vendor/model` | - | [OpenRouter](#openrouter-any-model) | the slug itself | - | `OPENROUTER_API_KEY` |
 
-| Provider | CLI Mode | API Mode |
-|----------|----------|----------|
-| gemini | gemini-3.1-pro-preview | gemini-3.1-pro-preview |
-| openai | gpt-6.1-sol | gpt-6.1-sol |
-| claude | claude-opus-5-5 | claude-opus-5-5 |
-| perplexity | sonar-pro | sonar-pro |
-| grok | grok-4.7 | grok-4.7 |
+Default models are the same on both transports. Override one with `-m provider:model`
+(`-m openai:gpt-6-luna`), or permanently in [`config.yaml`](#config-file) or with
+`CONCLAVE_<PROVIDER>_MODEL`. `conclave models --check` tells you when a default has been
+retired.
 
-Override with `-m provider:model`:
-```bash
-conclave gemini,claude "Review this" -m gemini:gemini-2.5-flash -m claude:sonnet
-```
+**Decision models**, asked typed questions with `conclave decide` (see [below](#decision-models-conclave-decide)):
+
+| Decider | Runs on | Default model | Price | Key |
+|---|---|---|---|---|
+| jev | TypeSafe API, or OpenRouter's Decisions API | `jev-latest` | $0.042 / M input | `TYPESAFE_API_KEY`, or `OPENROUTER_API_KEY` |
+| clef | Cloudflare Workers AI | `clef` | $0.24 / M input | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
+| clef-flash | Cloudflare Workers AI | `clef-flash` | $0.09 / M input | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
+| `vendor/model` | OpenRouter's Decisions API | the slug itself | as OpenRouter reports | `OPENROUTER_API_KEY` |
+
+Output tokens are free for decision models. [docs/MODEL_REGISTRY.md](docs/MODEL_REGISTRY.md)
+is the full reference for every id, price and verification date.
 
 ### OpenRouter (any model)
 
@@ -507,9 +471,7 @@ on quality and price, see [Price-performance frontiers](#price-performance-front
 
 ### Using `conclave decide`
 
-Decision models (Typesafe **Jev**, Cloudflare **Clef** and **Clef-flash**, plus any decision
-model on OpenRouter) are not chat models. They take a *state* (any text) and a set of *typed questions*, and return typed
-answers with calibrated probabilities:
+Every question has one of three types:
 
 | Type | Asks | Answer |
 |---|---|---|
@@ -517,7 +479,7 @@ answers with calibrated probabilities:
 | `choice` | one of named options | `choice`, plus a probability per option |
 | `score` | a point on an ordered scale (index = score) | `score`, plus a probability per index |
 
-`conclave decide` runs a panel of them in parallel and combines the answers per question
+`conclave decide` runs a panel of decision models in parallel and combines the answers per question
 by **averaging the probabilities with equal weight**, not by an LLM judge. Each question
 reports the consensus answer, `agreement` (1 minus the Jensen-Shannon divergence between
 the deciders, 1.0 = identical) and `contested` when the deciders' own picks differ.
@@ -576,17 +538,20 @@ conclave decide jev,liquid/d1,upstage/solar-decide,inception/mercury-decide:free
 
 Find them at openrouter.ai (output modality "decisions"). Design: [ADR-017](docs/adr/ADR-017-slash-routed-decision-models-via-openrouter.md).
 
-**Setup.** `TYPESAFE_API_KEY` for `jev`, or just `OPENROUTER_API_KEY` (jev is also served by
-OpenRouter's Decisions API at the same price; a Typesafe key wins when both are set); `CLOUDFLARE_API_TOKEN` (with Workers AI
-permission) and `CLOUDFLARE_ACCOUNT_ID` for `clef` and `clef-flash`. Environment,
-`~/.config/conclave/.env`, `conclave init`, or `conclave keyring set <VAR>`. Decision models
-are API-only (no `@cli`/`@api` suffix), are never part of `--all`, and are not accepted as a
-chat provider or judge. `--cache`, `-t` (default 30 s per decider) and `--json` behave as on a
-query; exit status is 0 when at least one decider answered, 1 when all failed, 130 on Ctrl-C.
-Cost is the vendor's own reported figure where one exists (OpenRouter's `usage.cost`, which
-covers every `vendor/model` decider and jev on that route); otherwise a hand-maintained table
-(`conclave models jev`, which works offline and with `CONCLAVE_NO_PRICING=1`), input tokens only. Any secret a vendor echoes back in an error
-(API key, account id) is shown as `<redacted>`. Design: [ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md),
+**Setup and behaviour:**
+
+- **Keys:** see the [Providers](#providers) table. Set them in the environment,
+  `~/.config/conclave/.env`, `conclave init`, or `conclave keyring set <VAR>`.
+- **Not chat providers:** decision models are API-only (no `@cli`/`@api` suffix), never part of
+  `--all`, and never accepted as a chat panel member or judge.
+- **Flags:** `--cache`, `-t` (default 30 s per decider) and `--json` behave as on a query.
+- **Exit status:** 0 when at least one decider answered, 1 when all failed, 130 on Ctrl-C.
+- **Cost:** the vendor's own reported figure where one exists (OpenRouter's `usage.cost`, which
+  covers every `vendor/model` decider and jev on that route); otherwise a hand-maintained table
+  (`conclave models jev`, which works offline and with `CONCLAVE_NO_PRICING=1`). Input tokens only.
+- **Secrets:** any API key or account id a vendor echoes back in an error is shown as `<redacted>`.
+
+Design: [ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md),
 build plan: [docs/PLAN-decision-models.md](docs/PLAN-decision-models.md).
 
 ## Setup
@@ -629,16 +594,6 @@ conclave keyring rm  GLM_API_KEY
 
 Resolution order is environment variable → `~/.config/conclave/.env` → `./.env` →
 OS keyring. See [ADR-008](docs/adr/ADR-008-api-keys-resolve-from-environment-then-os-keyring.md).
-
-### Check Available Providers
-
-```bash
-# CLI mode
-conclave --list-providers
-
-# API mode
-conclave --list-providers -g
-```
 
 ### Model Catalog and Prices
 
@@ -735,9 +690,13 @@ conclave --all "Should we use microservices or monolith for this use case?" \
 
 ## Output Formats
 
-### Human-Readable (Default)
+By default the result is a styled display: verdict, confidence, reasoning, agreements,
+disagreements and recommendations. The other formats:
 
-Shows verdict, confidence, reasoning, agreements, disagreements, and recommendations in a formatted display.
+- `--json`: structured output for scripts and CI (below).
+- `--brief`: one line with the verdict, confidence and key recommendation.
+- `-q` / `--quiet`: the verdict only, for scripts that just need the answer.
+- `--raw`: sentinel-separated provider blocks with no judge or styling (below).
 
 ### JSON (`--json`)
 
@@ -801,14 +760,6 @@ conclave cache clear   # delete every cached response
 
 Entries are plain JSON under `$XDG_CACHE_HOME/conclave/responses/`. Leave the
 cache off for anything sensitive.
-
-### Brief (`--brief`)
-
-One-line summary: verdict, confidence, and key recommendation.
-
-### Quiet (`-q`)
-
-Verdict only - for scripts that just need the answer.
 
 ### Raw (`--raw`)
 
@@ -961,47 +912,6 @@ CONCLAVE_EXCLUDE=glm,grok         # Exclude providers from --all
 CONCLAVE_PRICING_TTL=24           # Hours between OpenRouter catalog refreshes
 CONCLAVE_NO_PRICING=1             # Disable the catalog (no network, no drift warnings)
 ```
-
-## How It Works
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/how-it-works-dark.svg">
-  <img alt="Architecture: a prompt with context goes to the orchestrator, which fans out in parallel to Gemini, OpenAI and Claude; their responses go to a judge that synthesizes one verdict" src="docs/diagrams/how-it-works.svg" width="100%">
-</picture>
-
-1. **Query Phase** - Prompt sent to all providers in parallel, each under its own timeout
-2. **Judge Phase** - Designated LLM synthesizes the responses (skipped for a single provider)
-3. **Output Phase** - Formatted result with confidence and reasoning, priced in API mode
-
-### Multi-model judging
-
-The judge does not average the panel. It sorts what the models said into what they agree
-on and what they contest, turns the consensus into a reasoned verdict, and surfaces the
-contested material as disagreements and blind spots rather than discarding it. `--blind`
-hides which model said what so the sorting cannot favour a brand.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/judging-flow-dark.svg">
-  <img alt="Sankey: token shares from Gemini, OpenAI and Claude flow into consensus and contested pools; consensus becomes the verdict, contested content is surfaced as disagreements and blind spots, and a small remainder is dropped" src="docs/diagrams/judging-flow.svg" width="100%">
-</picture>
-
-Diagram sources live in [`docs/diagrams/src/`](docs/diagrams/src/); `python docs/diagrams/export.py` regenerates the light and dark SVGs.
-
-## Use Cases
-
-### Single Provider (Unified Interface)
-
-- **Quick queries** - Ask any LLM with consistent syntax
-- **Model comparison** - Same prompt, different providers, see which you prefer
-- **Specialized tasks** - Perplexity for search, Claude for code, Grok for X context
-
-### Multi-Provider (Consensus)
-
-- **Code Review** - Multiple perspectives on security, quality, performance
-- **Fact-Checking** - Cross-reference claims across models
-- **Architecture Decisions** - Consensus on design trade-offs
-- **Research Synthesis** - Combine knowledge from multiple sources
-- **Risk Assessment** - Identify blind spots in analysis
 
 ## Using Conclave from agents and scripts
 
