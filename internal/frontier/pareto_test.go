@@ -4,6 +4,9 @@
 package frontier
 
 import (
+	"encoding/json"
+	"math"
+	"math/rand"
 	"reflect"
 	"testing"
 )
@@ -100,7 +103,7 @@ func TestParetoOrderIsDeterministic(t *testing.T) {
 	want := []string{
 		"cheap-modest", "dear-smart", // frontier, ascending cost
 		"mid",            // dominated, descending score: 70
-		"dom-a", "dom-b", // score tie 40/40 broken by name: Alpha < Beta
+		"dom-b", "dom-a", // score tie 40/40 broken by ascending cost: 2 < 5
 		"u-amy", "u-nodata", "u-zed", // unscored, by name
 	}
 	got := Pareto(pts)
@@ -117,6 +120,89 @@ func TestParetoOrderIsDeterministic(t *testing.T) {
 	for _, p := range got[2:] {
 		if p.OnFrontier {
 			t.Errorf("%s is dominated or unscored but marked OnFrontier", p.ID)
+		}
+	}
+}
+
+// TestParetoMalformedNumbersAreUnavailable pins the data-quality boundary:
+// NaN/Inf scores and NaN/Inf/negative costs are observations we cannot plot,
+// while a genuinely free zero cost remains valid.
+func TestParetoMalformedNumbersAreUnavailable(t *testing.T) {
+	pts := []Point{
+		{ID: "valid", Name: "Valid", Kind: KindChat, Score: f64p(80), Cost: f64p(1)},
+		{ID: "free", Name: "Free", Kind: KindChat, Score: f64p(70), Cost: f64p(0)},
+		{ID: "nan-score", Name: "A NaN Score", Kind: KindChat, Score: f64p(math.NaN()), Cost: f64p(0)},
+		{ID: "infinite-score", Name: "B Infinite Score", Kind: KindChat, Score: f64p(math.Inf(1)), Cost: f64p(1)},
+		{ID: "negative-cost", Name: "C Negative Cost", Kind: KindChat, Score: f64p(100), Cost: f64p(-1)},
+		{ID: "nan-cost", Name: "D NaN Cost", Kind: KindChat, Score: f64p(100), Cost: f64p(math.NaN())},
+		{ID: "infinite-cost", Name: "E Infinite Cost", Kind: KindChat, Score: f64p(100), Cost: f64p(math.Inf(1))},
+	}
+
+	got := Pareto(pts)
+	byID := make(map[string]Point, len(got))
+	for _, p := range got {
+		byID[p.ID] = p
+	}
+	for _, id := range []string{"valid", "free"} {
+		if !byID[id].OnFrontier {
+			t.Errorf("valid point %q is off the frontier", id)
+		}
+	}
+	for _, id := range []string{"nan-score", "infinite-score", "negative-cost", "nan-cost", "infinite-cost"} {
+		if byID[id].OnFrontier {
+			t.Errorf("malformed point %q is on the frontier", id)
+		}
+	}
+	gotTail := make([]string, 0, 5)
+	for _, p := range got[len(got)-5:] {
+		gotTail = append(gotTail, p.ID)
+	}
+	wantTail := []string{"nan-score", "infinite-score", "negative-cost", "nan-cost", "infinite-cost"}
+	if !reflect.DeepEqual(gotTail, wantTail) {
+		t.Errorf("unavailable group = %v; want name-ordered %v", gotTail, wantTail)
+	}
+}
+
+// TestParetoSeparatesKinds prevents one class's quality scale from evicting a
+// point on the other class's separately computed frontier (ADR-018).
+func TestParetoSeparatesKinds(t *testing.T) {
+	got := Pareto([]Point{
+		{ID: "chat", Name: "Chat", Kind: KindChat, Score: f64p(90), Cost: f64p(1)},
+		{ID: "decision", Name: "Decision", Kind: KindDecision, Score: f64p(60), Cost: f64p(2)},
+	})
+	for _, p := range got {
+		if !p.OnFrontier {
+			t.Errorf("%s point was dominated across incomparable kind %s", p.ID, p.Kind)
+		}
+	}
+}
+
+// TestParetoOrderIsByteStableAcrossShuffles catches incomplete comparator
+// keys: costs distinguish otherwise duplicate dominated rows, so no stable
+// input-order fallback may leak into JSON output.
+func TestParetoOrderIsByteStableAcrossShuffles(t *testing.T) {
+	base := []Point{
+		{ID: "frontier-a", Name: "Frontier A", Kind: KindChat, Score: f64p(60), Cost: f64p(0.5)},
+		{ID: "frontier-b", Name: "Frontier B", Kind: KindChat, Score: f64p(80), Cost: f64p(3)},
+		{ID: "duplicate", Name: "Duplicate", Kind: KindChat, Score: f64p(40), Cost: f64p(2)},
+		{ID: "duplicate", Name: "Duplicate", Kind: KindChat, Score: f64p(40), Cost: f64p(1)},
+		{ID: "rest-b", Name: "Rest", Kind: KindChat},
+		{ID: "rest-a", Name: "Rest", Kind: KindChat, Cost: f64p(9)},
+	}
+	want, err := json.Marshal(Pareto(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rng := rand.New(rand.NewSource(42))
+	for i := 0; i < 200; i++ {
+		shuffled := append([]Point(nil), base...)
+		rng.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+		got, err := json.Marshal(Pareto(shuffled))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(want) {
+			t.Fatalf("shuffle %d changed JSON\n got: %s\nwant: %s", i, got, want)
 		}
 	}
 }

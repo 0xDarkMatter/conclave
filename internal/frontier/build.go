@@ -155,8 +155,8 @@ func BuildDecision(board *decisionindex.Board, models []openrouter.DecisionModel
 		p := Point{
 			Name:         e.Name,
 			Kind:         KindDecision,
-			ECE:          e.ECE,
-			LatencyMs:    e.MedianMs,
+			ECE:          copyOptionalFloat(e.ECE),
+			LatencyMs:    copyOptionalFloat(e.MedianMs),
 			SelfReported: e.SelfReported,
 			CostBasis:    basis,
 		}
@@ -186,7 +186,7 @@ func BuildDecision(board *decisionindex.Board, models []openrouter.DecisionModel
 			// the decider row (same list price family), and a decider-only
 			// model (Clef) prices from the table alone.
 			if m.Slug != "" {
-				if mm, ok := bySlug[m.Slug]; ok {
+				if mm, ok := bySlug[m.Slug]; ok && mm.Priced {
 					c := mm.InputPerM
 					p.Cost = &c
 				}
@@ -203,13 +203,23 @@ func BuildDecision(board *decisionindex.Board, models []openrouter.DecisionModel
 			continue
 		}
 		p := Point{ID: m.Slug, Name: m.Name, Kind: KindDecision, CostBasis: basis}
-		if basis == CostInputPerM {
+		if basis == CostInputPerM && m.Priced {
 			c := m.InputPerM
 			p.Cost = &c
 		}
 		res.Points = append(res.Points, p)
 	}
 	return res
+}
+
+// copyOptionalFloat gives the Result ownership of mutable source values. The
+// board is cached and may be reused after a caller edits a rendered Result.
+func copyOptionalFloat(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	copy := *v
+	return &copy
 }
 
 // deciderTableCost finds the Conclave decider row's input price; nil when the
@@ -230,12 +240,25 @@ func deciderTableCost(table []pricing.DeciderPrice, decider string) *float64 {
 // makes every one of these visible rather than silent.
 func boardWarning(b *decisionindex.Board) string {
 	var ws []string
-	ws = append(ws, b.Warnings...)
+	seen := make(map[string]struct{}, len(b.Warnings)+1)
+	appendUnique := func(w string) {
+		if w == "" {
+			return
+		}
+		if _, ok := seen[w]; ok {
+			return
+		}
+		seen[w] = struct{}{}
+		ws = append(ws, w)
+	}
+	for _, w := range b.Warnings {
+		appendUnique(w)
+	}
 	if b.Check == nil {
-		ws = append(ws, "Decision Index mirror cross-check did not run")
+		appendUnique("Decision Index mirror cross-check did not run")
 	} else {
 		for _, name := range b.Check.Mismatch {
-			ws = append(ws, fmt.Sprintf("mirror disagrees on %s (|delta| > %.2f)", name, decisionindex.Tolerance))
+			appendUnique(fmt.Sprintf("mirror disagrees on %s (|delta| > %.2f)", name, decisionindex.Tolerance))
 		}
 	}
 	return strings.Join(ws, "; ")
