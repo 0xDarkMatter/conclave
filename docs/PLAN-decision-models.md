@@ -135,9 +135,15 @@ OpenRouter lists decision models as `output_modalities=decisions`. Six vendors a
 | `jaredpalmer/kev-4b` | 0.042 | 8k | all 3 types; reports output tokens (192) though they are free; open weights |
 | `respan/span-01`, `-lite` | 0.02 / free | n/a | noul only (400 on choice/score); behaviour scoring, not general judgment |
 
-None of these are reachable from `conclave decide` yet except jev. Routing any `vendor/model`
-decider token through OpenRouter (the ADR-010 pattern, priced from the reported `usage.cost`)
-is the natural next step and needs its own ADR (017).
+All of these are reachable as `vendor/model` decider tokens since ADR-017 (2026-10-03); a live
+six-vendor panel ran in 1.4 s for $0.0001, with D1's `billing` pick flagged contested.
+
+**Price/score frontier (Decision Index 0.2.1, community board snapshot 2026-09-28, mirrored at
+https://clef-evals.workers-ai-mle.workers.dev; cost per call from the identical survey request).**
+Artificial Analysis indexes no decision models. Frontier: Kev 4B (3.6 micro-$, 34.6) -> Jev
+(16.9 micro-$, 57.9) -> Clef (83.3 micro-$, 61.2, self-reported). Dominated on cost: Tev1 4B
+(14.9, 29.2), Clef-flash (31.2, 57.1; but 39 ms median vs Jev's 524). D1, Solar Decide, Mercury
+Decide and Span-01 are unscored: the frontier is incomplete until we score them ourselves.
 
 ## Phase 1: deciders + `conclave decide` — DONE (2026-10-02)
 

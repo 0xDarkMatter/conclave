@@ -4,6 +4,10 @@
 package providers
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -94,5 +98,57 @@ func TestJevRoutesDirectFirstThenOpenRouter(t *testing.T) {
 	t.Setenv("TYPESAFE_API_KEY", "ts-test")
 	if d := NewJevDecider(); d.baseURL != jevDefaultURL || d.apiKeyEnv != "TYPESAFE_API_KEY" {
 		t.Fatalf("both keys: url=%q key=%q; want the direct route", d.baseURL, d.apiKeyEnv)
+	}
+}
+
+// ADR-017: a vendor/model token is an OpenRouter decision model. The token,
+// variant suffix included, is the model id sent and the reported cost is kept
+// (a free model's 0 must survive as a real 0, not "unreported").
+func TestSlashDeciderRoutesToOpenRouterDecisions(t *testing.T) {
+	var gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotModel = body.Model
+		_, _ = w.Write([]byte(`{"model":"inception/mercury-decide-20260930","answers":{"q":{"type":"noul","noul":0.9}},"usage":{"input_tokens":12,"output_tokens":0,"cost":0},"provider":"Inception"}`))
+	}))
+	defer srv.Close()
+	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
+	t.Setenv("CONCLAVE_OPENROUTER_DECISIONS_URL", srv.URL)
+
+	d, err := GetDecider("inception/mercury-decide:free")
+	if err != nil {
+		t.Fatalf("GetDecider: %v", err)
+	}
+	if isDeciderName("inception/mercury-decide:free") {
+		t.Fatal("slash decider leaked into the fixed registry")
+	}
+	dec, _, _, err := d.Decide(context.Background(), DecisionRequest{State: "hi", Questions: map[string]Question{"q": {Type: QuestionNoul, Instructions: "Greeting?"}}}, "")
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if gotModel != "inception/mercury-decide:free" {
+		t.Errorf("model sent = %q", gotModel)
+	}
+	if dec.ReportedCostUSD == nil || *dec.ReportedCostUSD != 0 {
+		t.Errorf("ReportedCostUSD = %v; want a reported 0", dec.ReportedCostUSD)
+	}
+}
+
+// OpenRouter relays upstream failures as HTTP 200 + {"error":{...}}; that must
+// be the error, not a generic "no answers".
+func TestSlashDeciderInline200ErrorIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"error":{"message":"Upstream provider timed out","code":502}}`))
+	}))
+	defer srv.Close()
+	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
+	t.Setenv("CONCLAVE_OPENROUTER_DECISIONS_URL", srv.URL)
+	d, _ := GetDecider("liquid/d1")
+	_, _, _, err := d.Decide(context.Background(), DecisionRequest{State: "hi", Questions: map[string]Question{"q": {Type: QuestionNoul, Instructions: "Greeting?"}}}, "")
+	if err == nil || !strings.Contains(err.Error(), "Upstream provider timed out") {
+		t.Fatalf("err = %v", err)
 	}
 }

@@ -260,7 +260,7 @@ func resolveDeciders(list string) ([]providers.Decider, error) {
 		if err != nil {
 			bare := providers.BareName(tok)
 			if _, ok := pricing.VendorPrefix(bare); ok {
-				return nil, fmt.Errorf("%s is a chat provider, not a decision model; `conclave decide` takes jev, clef or clef-flash (ask chat providers with `conclave %s \"...\"`)", tok, tok)
+				return nil, fmt.Errorf("%s is a chat provider, not a decision model; `conclave decide` takes jev, clef, clef-flash or an OpenRouter vendor/model decision model (ask chat providers with `conclave %s \"...\"`)", tok, tok)
 			}
 			if _, derr := providers.GetDecider(bare); derr == nil {
 				return nil, err // a decider with a transport suffix: GetDecider says why
@@ -279,11 +279,15 @@ func resolveDeciders(list string) ([]providers.Decider, error) {
 		for _, d := range providers.AllDeciders() {
 			valid = append(valid, d.Name())
 		}
-		return nil, fmt.Errorf("unknown decision model(s): %s; valid decision models: %s", strings.Join(unknown, ", "), strings.Join(valid, ", "))
+		return nil, fmt.Errorf("unknown decision model(s): %s; valid decision models: %s, or any OpenRouter vendor/model decision model", strings.Join(unknown, ", "), strings.Join(valid, ", "))
 	}
 	for _, d := range out {
 		if !d.IsAvailable() {
-			return nil, fmt.Errorf("decision model %s is not configured: set %s", d.Name(), strings.Join(deciderEnv[d.Name()], " and "))
+			need := deciderEnv[d.Name()]
+			if providers.IsOpenRouterModel(d.Name()) {
+				need = []string{"OPENROUTER_API_KEY"} // ADR-017 slash deciders
+			}
+			return nil, fmt.Errorf("decision model %s is not configured: set %s", d.Name(), strings.Join(need, " and "))
 		}
 	}
 	if len(out) == 0 {
@@ -351,9 +355,13 @@ func runOneDecider(parent context.Context, d providers.Decider, req providers.De
 		DurationMs: dur.Milliseconds(), Answers: dec.Answers, Metrics: metrics,
 	}
 	if metrics != nil {
-		// Priced from the hand table only (ADR-016); unpriced leaves CostUSD
-		// unset and Priced false, never an error.
-		if cost, ok := pricing.DeciderCost(d.Name(), r.Model, metrics.InputTokens, metrics.OutputTokens); ok {
+		// The vendor's own reported cost wins (OpenRouter usage.cost, ADR-017:
+		// slash deciders have no table row); else the hand table (ADR-016).
+		// Unpriced leaves CostUSD unset and Priced false, never an error.
+		if dec.ReportedCostUSD != nil {
+			metrics.CostUSD = *dec.ReportedCostUSD
+			r.Priced = true
+		} else if cost, ok := pricing.DeciderCost(d.Name(), r.Model, metrics.InputTokens, metrics.OutputTokens); ok {
 			metrics.CostUSD = cost
 			r.Priced = true
 		}

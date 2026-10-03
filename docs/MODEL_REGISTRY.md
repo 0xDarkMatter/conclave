@@ -294,6 +294,13 @@ works offline and under `CONCLAVE_NO_PRICING=1`.
 
 Sources: [Typesafe launch post](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
 [Workers AI Clef model page](https://developers.cloudflare.com/workers-ai/models/clef).
+Any other OpenRouter decision model is reachable as a `vendor/model` token (ADR-017) and priced from
+the `usage.cost` OpenRouter reports, not this table. Seen live 2026-10-03: `liquid/d1` ($0.04/M, 64k),
+`upstage/solar-decide` ($0.05/M, 512k), `inception/mercury-decide:free` (free, 32k),
+`togethercomputer/tev1-4b-experimental` ($0.042/M), `jaredpalmer/kev-4b` ($0.042/M, 8k), and
+`respan/span-01` (noul-only behaviour scorer). Per-call cost differs more than list price: the same
+request was 86 input tokens on Kev and 1,127 on Solar Decide.
+
 Limits: 1-64 questions per call, 2-255 choice options, 2-10 score levels; Jev 32k context, Clef 64k
 (an oversized Clef state is a 413, code 5021). Clef successes arrive in the Workers AI
 `{"result":...,"success":true}` envelope (probed live 2026-10-03).

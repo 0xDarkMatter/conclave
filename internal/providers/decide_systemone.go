@@ -44,7 +44,9 @@ var questionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 // path: the id is concatenated unescaped, so a "?" or "#" would silently turn
 // into the URL's query or fragment instead of a path segment. Documented ids
 // and the constructed "@cf/cloudflare/..." prefix all match.
-var modelIDPattern = regexp.MustCompile(`^[A-Za-z0-9@/._-]+$`)
+// ':' is allowed for OpenRouter variant suffixes ("inception/mercury-decide:free",
+// ADR-017); it is a legal path character, so it cannot redirect a Clef URL.
+var modelIDPattern = regexp.MustCompile(`^[A-Za-z0-9@/._:-]+$`)
 
 // accountSegmentPattern finds the path segment after "/accounts/" inside
 // rendered error text (the URL appears quoted there), for render-time redaction.
@@ -70,9 +72,15 @@ type systemOneResponse struct {
 	Model   string            `json:"model"`
 	Answers map[string]Answer `json:"answers"`
 	Usage   *struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens  int      `json:"input_tokens"`
+		OutputTokens int      `json:"output_tokens"`
+		Cost         *float64 `json:"cost"` // OpenRouter only; USD for this call
 	} `json:"usage"`
+	// Error is OpenRouter's inline failure: HTTP 200 with an error envelope
+	// relayed from the upstream provider (same trap as openRouterInlineError).
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
 // MarshalJSON builds the polymorphic criteria wire field where its shape is
@@ -291,6 +299,9 @@ func (p *systemOneDecider) decide(ctx context.Context, req DecisionRequest, mode
 	if err != nil {
 		return nil, duration, nil, err
 	}
+	if response.Error != nil && response.Error.Message != "" && len(response.Answers) == 0 {
+		return nil, duration, nil, parseAPIError(http.StatusOK, responseBody)
+	}
 	if err := checkAnswerCoverage(response.Answers, req.Questions); err != nil {
 		return nil, duration, nil, err
 	}
@@ -298,6 +309,7 @@ func (p *systemOneDecider) decide(ctx context.Context, req DecisionRequest, mode
 	var metrics *Metrics
 	if response.Usage != nil {
 		metrics = &Metrics{InputTokens: response.Usage.InputTokens, OutputTokens: response.Usage.OutputTokens}
+		decision.ReportedCostUSD = response.Usage.Cost
 	}
 	return decision, duration, metrics, nil
 }
@@ -307,7 +319,7 @@ func (p *systemOneDecider) endpoint(model string) (string, error) {
 	// wire, on either backend: Jev carries the id in the request body where it
 	// is harmless, but rejecting here keeps one rule for the whole class.
 	if !modelIDPattern.MatchString(model) {
-		return "", fmt.Errorf("model id %q is invalid: only [A-Za-z0-9@/._-] is allowed", model)
+		return "", fmt.Errorf("model id %q is invalid: only [A-Za-z0-9@/._:-] is allowed", model)
 	}
 	if p.backend == systemOneJev {
 		return p.baseURL, nil

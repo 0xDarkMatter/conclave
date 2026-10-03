@@ -138,7 +138,13 @@ func GetDecider(token string) (Decider, error) {
 			return entry.new(), nil
 		}
 	}
-	return nil, fmt.Errorf("unknown decision model %q; valid decision models: %s", name, strings.Join(deciderNameList(), ", "))
+	// ADR-017: a vendor/model token is an OpenRouter decision model, built on
+	// demand like ADR-010's chat slugs. Whether OpenRouter serves it as a
+	// decision model is OpenRouter's to answer (a 400 "does not exist").
+	if IsOpenRouterModel(name) {
+		return NewOpenRouterDecider(name), nil
+	}
+	return nil, fmt.Errorf("unknown decision model %q; valid decision models: %s, or any OpenRouter vendor/model decision model", name, strings.Join(deciderNameList(), ", "))
 }
 
 func isDeciderName(name string) bool {

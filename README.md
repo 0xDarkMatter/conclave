@@ -498,6 +498,16 @@ is_urgent:
   instructions: Must this be answered within an hour?
 ```
 
+**Any OpenRouter decision model.** A `vendor/model` token is routed to OpenRouter's Decisions API
+with `OPENROUTER_API_KEY`, so models from other vendors can join the panel and be priced from the
+cost OpenRouter reports:
+
+```bash
+conclave decide jev,liquid/d1,upstage/solar-decide,inception/mercury-decide:free -f ticket.txt --questions triage.yaml
+```
+
+Find them at openrouter.ai (output modality "decisions"). Design: [ADR-017](docs/adr/ADR-017-slash-routed-decision-models-via-openrouter.md).
+
 **Setup.** `TYPESAFE_API_KEY` for `jev`, or just `OPENROUTER_API_KEY` (jev is also served by
 OpenRouter's Decisions API at the same price; a Typesafe key wins when both are set); `CLOUDFLARE_API_TOKEN` (with Workers AI
 permission) and `CLOUDFLARE_ACCOUNT_ID` for `clef` and `clef-flash`. Environment,

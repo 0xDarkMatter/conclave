@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Any OpenRouter decision model as a `conclave decide` member: a `vendor/model`
+  token (`liquid/d1`, `inception/mercury-decide:free`) routes to OpenRouter's
+  Decisions API with `OPENROUTER_API_KEY` and is priced from the cost OpenRouter
+  reports. `jev` also falls back to OpenRouter when no `TYPESAFE_API_KEY` is set.
+  ADR-017.
 - `conclave decide [deciders] [state] --questions FILE | --ask TEXT`: a panel
   of decision models (Typesafe `jev`, Cloudflare `clef` and `clef-flash`) over
   one state (positional text, stdin, `-f`) and a typed question set (`noul`,

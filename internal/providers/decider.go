@@ -85,6 +85,11 @@ type Answer struct {
 type Decision struct {
 	Model   string            `json:"model"`
 	Answers map[string]Answer `json:"answers"`
+	// ReportedCostUSD is the vendor's own price for this call (OpenRouter's
+	// usage.cost, ADR-017), nil when the vendor reports none. A pointer, so a
+	// free model's genuine 0 is distinguishable from "not reported". Not
+	// serialised: a cached decision costs nothing (ADR-011).
+	ReportedCostUSD *float64 `json:"-"`
 }
 
 // Decider is the decision-model counterpart of Provider. Decide returns

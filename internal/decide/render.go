@@ -279,7 +279,9 @@ func deciderPick(r DeciderResult, id string) string {
 		}
 	case providers.QuestionScore:
 		if a.Score != nil {
-			return strconv.FormatFloat(*a.Score, 'f', -1, 64)
+			// Vendors report the weighted score at up to 16 digits
+			// (mercury: 2.995988000147034); two decimals match noul's column.
+			return fmt.Sprintf("%.2f", *a.Score)
 		}
 	case providers.QuestionNoul:
 		if a.Noul != nil {
