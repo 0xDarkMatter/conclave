@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-03
+
+### Added
+
+- `conclave models --frontier`: price-performance Pareto frontiers from
+  external quality sources only (ADR-018). Chat models plot an Artificial
+  Analysis index (`--axis intelligence|coding|agentic`) against list price
+  (`--cost blend|input`) or OpenRouter's measured cost per eval task
+  (`--cost task`), and need `OPENROUTER_API_KEY` (exit 3 without it).
+  `--deciders` plots decision models: the Decision Index v0.2.1, recomputed
+  from upstream and checked against Cloudflare's mirror, against input list
+  price; no key needed. Output lists the frontier, the top 15 dominated
+  models, scored-but-unpriced models and unscored names, plus every source
+  with its as-of date; failing sources are warnings on stderr, and only
+  "no source at all" exits 3. `--json` prints the result as is, `--html FILE`
+  writes a self-contained offline report (inline SVG charts, sortable
+  table, sources), and `--refresh` bypasses the caches.
+- Any OpenRouter decision model as a `conclave decide` member: a `vendor/model`
+  token (`liquid/d1`, `inception/mercury-decide:free`) routes to OpenRouter's
+  Decisions API with `OPENROUTER_API_KEY` and is priced from the cost OpenRouter
+  reports. `jev` also falls back to OpenRouter when no `TYPESAFE_API_KEY` is set.
+  ADR-017.
+- `conclave decide [deciders] [state] --questions FILE | --ask TEXT`: a panel
+  of decision models (Typesafe `jev`, Cloudflare `clef` and `clef-flash`) over
+  one state (positional text, stdin, `-f`) and a typed question set (`noul`,
+  `choice`, `score`; YAML or JSON in the vendors' wire shape). Deciders run in
+  parallel under a per-decider `-t` (default 30 s); answers are combined per
+  question by equal-weight probability averaging, with `agreement`
+  (1 - Jensen-Shannon divergence), `votes` and `contested`. Questions are
+  validated before any network call. `--json` prints a `deciders` /
+  `consensus` / `meta` envelope (also on exit 1), `-q` prints `id=value`
+  lines, `--ask` is a single `noul` question with id `q`. Exit 0 when at least
+  one decider answered, 1 when all failed, 130 on Ctrl-C. `--cache` keys on
+  the state and the canonical question set; a hit reports `cached: true` and
+  costs $0. ADR-016.
+- `TYPESAFE_API_KEY` (or `OPENROUTER_API_KEY`, via OpenRouter's Decisions API), `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
+  `conclave init` and `conclave keyring list`. Decider keys are saved without
+  a live check (no spend-free auth probe is known yet).
+- `conclave models` lists the decision-model price table with each row's
+  `as_of` date under "Decision models" (`conclave models jev` for one), and
+  `conclave models --json` gains an additive `deciders` array.
+
+### Fixed
+
+- API error responses whose `error.code` is a number (OpenRouter,
+  Perplexity) were rendered as the raw JSON body because the decode failed;
+  they now show the message and code (`HTTP 401: User not found. [code: 401]`).
+
 ## [1.4.0] - 2026-10-01
 
 ### Added
@@ -457,7 +505,8 @@ Initial public release.
 - Blind mode for unbiased judging.
 - Interactive setup (`conclave init`) for API key configuration.
 
-[Unreleased]: https://github.com/0xDarkMatter/conclave/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/0xDarkMatter/conclave/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/0xDarkMatter/conclave/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/0xDarkMatter/conclave/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/0xDarkMatter/conclave/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/0xDarkMatter/conclave/compare/v1.1.0...v1.2.0

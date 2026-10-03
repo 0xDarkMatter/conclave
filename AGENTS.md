@@ -17,11 +17,17 @@ Conclave is a Go CLI that queries multiple LLM providers in parallel and synthes
 ```
 cmd/
   root.go          # Main CLI entry, flag parsing, orchestration
+  decide.go        # `conclave decide`: decision-model panel (ADR-016)
   init.go          # Interactive API key setup
 
 internal/
   config/          # Configuration loading (.env, config.yaml)
   context/         # File/stdin context building
+  decide/          # Decision models' non-provider half: question loader, consensus maths, --json/table render (ADR-016)
+  benchmarks/      # External quality sources for `models --frontier` (ADR-018); fetched + cached, never committed
+    decisionindex/ # Decision Index recomputed from upstream, edition-pinned, mirror-checked
+    openrouter/    # OpenRouter benchmarks feed (AA indices, evals; keyed) + decision-model catalog (public)
+  frontier/        # Pareto maths, Result assembly, decider name map, terminal + self-contained HTML report (ADR-018)
   judge/           # Verdict synthesis logic
   jsonscan/        # The one "find the JSON object in the prose" scanner (CLI stdout, judge verdicts)
   orchestrator/    # Parallel provider execution
@@ -36,6 +42,8 @@ internal/
     gemini.go      # CLI provider
     api_gemini.go  # API provider
     api_openrouter.go  # Slash-routed OpenRouter backend: any vendor/model token in -g mode (ADR-010)
+    decider.go     # Decider interface + typed Question/Answer (NOT a Provider, ADR-016)
+    decide_*.go    # System One wire client (decide_systemone.go), jev, clef/clef-flash, OpenRouter slash deciders (ADR-017)
     ...
 ```
 
@@ -136,6 +144,13 @@ contract: [docs/CHECK_GATE.md](docs/CHECK_GATE.md).
 | `internal/providers/api_openrouter.go` | OpenRouter transport + `/auth/key` preflight; `IsOpenRouterModel` is the routing rule |
 | `docs/OPENROUTER.md` | User guide for slash-routed OpenRouter models: setup, slugs, cost, judge rule, error decoder |
 | `internal/pricing/catalog.go` | OpenRouter catalog cache, TTL, vendor-id → slug rewriter; advisory, nil-safe |
+| `cmd/decide.go` | `conclave decide`: decider resolution, state assembly, parallel run, cache, exit policy |
+| `internal/providers/decide_systemone.go` | Decider wire client: validation (`ValidateDecisionRequest`), request/response, Clef envelope unwrap |
+| `internal/decide/` | `questions.go` (loader, `--ask`, cache-key form), `consensus.go` (averaging, agreement), `render.go` (envelope, table, `-q`) |
+| `internal/pricing/deciders.go` | Hand-maintained decider price table with `as_of`; NOT gated by `models --check` |
+| `docs/PLAN-decision-models.md` | Decision-model build plan; Phase 0 probe status lives there |
+| `internal/frontier/` | `build.go` (sources -> Result), `pareto.go`, `decidermap.go` (hand board-name map), `render.go` (terminal), `html.go` + `report.html.tmpl` (offline HTML report, golden-tested) |
+| `internal/benchmarks/` | `decisionindex` (edition-pinned recompute + mirror check) and `openrouter` (benchmarks feed, decision catalog); both advisory and cached |
 | `docs/adr/` | Architecture Decision Records (the directory is the index) |
 
 ## Code Style
@@ -168,3 +183,5 @@ contract: [docs/CHECK_GATE.md](docs/CHECK_GATE.md).
 12. **The transport suffix never reaches the provider name** (ADR-012): `claude@cli` resolves to a provider whose `Name()` is `claude`. `--json` keys, the progress line, the judge label, `-m` override keys and the pricing catalog all use the bare name; the transport travels separately (`Response.Transport`, `TransportOf`). Do not compare tokens to names (`p.Name() == flagJudge` breaks when the judge is `claude@cli`; use `providers.BareName`), and do not read `flagGeneral` to decide whether a response was billed: since one panel can mix transports, `output.Options.APIMode` no longer exists and any `Response` built outside the orchestrator must set `Transport` or it prices as nothing (pinned by `TestUnknownTransportIsNotPriced`). `glm@api` and `deepseek/x@cli` are errors by design, and so is the same bare name twice in one panel (`claude@cli,claude@api`): `Registry.GetProviders` refuses it because `--json` and the progress display would drop one leg. `withJudge` deduplicates by name AND transport for the same reason in reverse: a CLI panel member must not stand in for an API judge's preflight.
 13. **CLIs that promise JSON still print prose on stdout.** claude printed `Client.listTools() called but server does not advertise tools capability - returning empty list` ahead of its envelope (2026-09-13), and `claude auth status` is pretty-printed multi-line JSON. Every reader of claude or gemini stdout (`Query` in both, claude's `Preflight` and `SubscriptionLoggedIn`) therefore *locates* its object with `jsonscan.FindObject` (`internal/jsonscan`, the one shared scanner; the judge's verdict parser uses it too) instead of unmarshalling the whole buffer; do not "simplify" any of them back to `json.Unmarshal(output)`. On an API error claude exits 1 but the only readable message is in the envelope's `result`, so `Query` keeps stdout on failure (`cmdOptions.keepStdoutOnErr`) and surfaces it. Pinned by `TestClaudeCLIIgnoresLeadingNoiseBeforeJSON`, `TestGeminiCLIIgnoresStdoutNoiseAroundJSON` and siblings.
 14. **claude runs isolated from the caller's cwd and settings** (ADR-013): `--strict-mcp-config --setting-sources "" --no-session-persistence`, in an empty temp directory, so a panel answer is not shaped by whichever repo conclave was invoked from (a bare "hi" once described the caller's worktree and cited its startup hook) nor by the user's own persona (user settings alone added ~52k prompt tokens per query). The empty source list keeps OAuth; never swap this for `--bare`, which disables OAuth and breaks subscription auth (Gotcha 7). Context goes in via `-f`/stdin. Pinned by `TestClaudeCLIRunsIsolatedFromCallerContext`.
+15. **Deciders are not providers** (ADR-016): jev, clef, clef-flash and any slash-routed `vendor/model` decision model (ADR-017: built on demand by `GetDecider`, served by OpenRouter's Decisions API, priced from the reported `usage.cost` via `Decision.ReportedCostUSD`, never in `AllDeciders()`) implement `Decider`, are listed only by `AllDeciders()` (never `AllAPIProviders()`, so never in `--all`, a chat panel or the judge) and run only from `conclave decide`; `GetProvider` on a decider name points to `decide`, and a transport suffix on one is an error. Their cache key reuses the `system` slot: `cache.Key("api", decider, model, state, decide.CanonicalQuestions(qs))`, built once per run in `cmd/decide.go`. The clef backend REQUIRES the Workers AI `{"result":{...},"success":true}` envelope and refuses a bare body (pinned by a live probe, 2026-10-03); jev is bare. Do not "unify" the two decode paths. Local validation mirrors Clef's published schema (ids `[A-Za-z0-9_.-]`, noul criteria `true`/`false` only, 2-255 choices, 2-10 levels); the Workers AI 400 for a bad question is a generic message, so local errors are the useful ones (findings in `docs/PLAN-decision-models.md`). `decide`'s `--cache`/`--no-cache` deliberately bind root's `flagCache`/`flagNoCache` so `resolveCache` serves both.
+16. **Frontiers come only from external, edition-pinned data** (ADR-018): `conclave models --frontier` never runs a model, and an unscored model stays unscored (never estimated). Three traps. The Decision Index edition is pinned by FILE NAME (`decisionindex.Edition`, `IndexFile`, `MethodologyFile`); moving it is a deliberate bump with the worked-example test re-typed, never "follow upstream's index.json". No upstream or mirror data is ever committed (the Space has no licence): tests use synthetic fixtures, and `internal/frontier/testdata/*.golden.html` is rendered from hand-built Results. Board display names reach OpenRouter slugs and decider names only through the hand map in `internal/frontier/decidermap.go`; a stale row silently leaves a model unpriced (it lands under UNPRICED), so re-verify the map whenever the edition moves. Sources are advisory: one failing is a stderr warning, and only no source at all exits 3. The HTML report is one file with no external requests (pinned by `TestHTMLReportHasNoExternalReferences`); regenerate its goldens with `go test ./internal/frontier -run Golden -update`. Cached source files carry a schema version in their NAME (`feed.v2.json`, `decision-models.v2.json`; the Decision Index cache is keyed by edition): bump it whenever a cached type gains a field whose zero value means something, or old caches are silently misread (an old file without `Priced` unpriced the whole catalog). The OpenRouter-evals sub-source is advisory inside the feed (`Feed.EvalsError`) and a partial feed is never cached.

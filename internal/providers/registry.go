@@ -93,6 +93,79 @@ func AllAPIProviders() []Provider {
 	}
 }
 
+// deciderRegistry is the single name table for the decision-model class:
+// AllDeciders, isDeciderName and GetDecider's "valid decision models" message
+// all derive from it, so a decider added in one place cannot be missed by the
+// others and surface as "unknown provider" on the Provider path. Constructors
+// run lazily and only for a matching name — checking a name never builds a
+// decider or spends ADR-008 keyring lookups. The concrete *systemOneDecider
+// return type is deliberate: every ADR-016 backend is that struct, and Go has
+// no func-result covariance, so a future non-System-One decider would need a
+// small adapter here.
+var deciderRegistry = []struct {
+	name string
+	new  func() *systemOneDecider
+}{
+	{"jev", NewJevDecider},
+	{"clef", NewClefDecider},
+	{"clef-flash", NewClefFlashDecider},
+}
+
+// AllDeciders returns API-only decision models. ADR-016 keeps this list
+// separate from AllAPIProviders so ordinary --all panels never receive typed
+// decision requests and decider answers never enter the LLM judge path.
+func AllDeciders() []Decider {
+	deciders := make([]Decider, 0, len(deciderRegistry))
+	for _, entry := range deciderRegistry {
+		deciders = append(deciders, entry.new())
+	}
+	return deciders
+}
+
+// GetDecider resolves a bare decision-model token. ParseProviderToken remains
+// the only suffix parser (ADR-012), but deciders reject every transport suffix
+// because their class is API-only and has no transport selection grammar.
+func GetDecider(token string) (Decider, error) {
+	name, transport, err := ParseProviderToken(token)
+	if err != nil {
+		return nil, err
+	}
+	if transport != TransportDefault {
+		return nil, fmt.Errorf("%s: decision models are API-only and take no transport suffix", strings.TrimSpace(token))
+	}
+	for _, entry := range deciderRegistry {
+		if entry.name == name {
+			return entry.new(), nil
+		}
+	}
+	// ADR-017: a vendor/model token is an OpenRouter decision model, built on
+	// demand like ADR-010's chat slugs. Whether OpenRouter serves it as a
+	// decision model is OpenRouter's to answer (a 400 "does not exist").
+	if IsOpenRouterModel(name) {
+		return NewOpenRouterDecider(name), nil
+	}
+	return nil, fmt.Errorf("unknown decision model %q; valid decision models: %s, or any OpenRouter vendor/model decision model", name, strings.Join(deciderNameList(), ", "))
+}
+
+func isDeciderName(name string) bool {
+	for _, entry := range deciderRegistry {
+		if entry.name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// deciderNameList returns the table's names in registration order; the order
+// is part of the user-visible "valid decision models" message.
+func deciderNameList() []string {
+	names := make([]string, 0, len(deciderRegistry))
+	for _, entry := range deciderRegistry {
+		names = append(names, entry.name)
+	}
+	return names
+}
+
 // OpenRouterListing returns the non-routable "openrouter" placeholder row for
 // --list-providers (API column only). Ready iff OPENROUTER_API_KEY resolves.
 func OpenRouterListing() Provider {
@@ -126,6 +199,9 @@ func (r *Registry) GetProvider(token string, modelOverrides map[string]string) (
 	name, transport, err := ParseProviderToken(token)
 	if err != nil {
 		return nil, err
+	}
+	if isDeciderName(name) {
+		return nil, fmt.Errorf("%s is a decision model; use \"conclave decide %s ...\"", name, name)
 	}
 	// Precedence: suffix > config transports > global mode. The config layer
 	// is a per-provider default, so it sits above the panel-wide -g/-c and

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat-model price-performance frontier</title>
+<style>
+:root {
+  --font: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --text: #1b1f24;
+  --muted: #5d6673;
+  --line: #d9dee5;
+  --grid: #e8ebf0;
+  --accent: #1f5fbf;
+  --accent-soft: #c9d9f2;
+  --dom: #7c8694;
+  --warn-bg: #fff5d6;
+  --warn-text: #6b4e00;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418;
+    --surface: #191d23;
+    --text: #e6e9ee;
+    --muted: #9aa3af;
+    --line: #2d333c;
+    --grid: #232830;
+    --accent: #7fb0ff;
+    --accent-soft: #24406b;
+    --dom: #8a94a3;
+    --warn-bg: #3a3014;
+    --warn-text: #f0d68a;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+}
+button, select, input, textarea { font-family: var(--font); font-size: inherit; color: inherit; }
+main { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.5rem; margin: 0 0 4px; line-height: 1.25; }
+h2 { font-size: 1.1rem; margin: 32px 0 8px; }
+p { margin: 0 0 12px; }
+.sub, .note { color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.chart { display: block; width: 100%; height: auto; }
+.chart text { font-family: var(--font); fill: var(--text); font-size: 12px; }
+.chart .tick { fill: var(--muted); font-size: 11px; }
+.chart .axis { fill: var(--muted); font-size: 12px; }
+.chart .empty { fill: var(--muted); }
+.chart .grid line { stroke: var(--grid); stroke-width: 1; }
+.chart .step { fill: none; stroke: var(--accent); stroke-width: 2; }
+.chart .pt circle, .chart .pt path { stroke-width: 1.5; }
+.chart .front circle, .chart .front path { fill: var(--accent); stroke: var(--accent); }
+.chart .dom circle, .chart .dom path { fill: var(--surface); stroke: var(--dom); }
+.chart .labels text { font-size: 11px; }
+.chart.hide-dom .dom { display: none; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 8px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: 13px; }
+.legend li { display: flex; align-items: center; gap: 6px; }
+.legend svg { width: 16px; height: 16px; flex: none; }
+.legend .front { fill: var(--accent); stroke: var(--accent); }
+.legend .dom { fill: var(--surface); stroke: var(--dom); stroke-width: 1.5; }
+.legend .step { fill: none; stroke: var(--accent); stroke-width: 2; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--muted); font-size: 13px; }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+th button { background: none; border: 0; padding: 0; font-weight: 600; cursor: pointer; text-align: inherit; }
+th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+th[aria-sort="ascending"] button::after { content: " \2191"; }
+th[aria-sort="descending"] button::after { content: " \2193"; }
+tr.on-frontier td:first-child { font-weight: 600; }
+.unscored { columns: 2 220px; margin: 0; padding-left: 18px; }
+.warn { background: var(--warn-bg); color: var(--warn-text); border-radius: 6px; padding: 6px 10px; margin-top: 6px; }
+#sources dl { margin: 0; }
+#sources dt { font-weight: 600; margin-top: 12px; }
+#sources dd { margin: 2px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+#sources a { color: var(--accent); }
+footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Chat-model price-performance frontier</h1>
+<p class="sub">Score axis: Artificial Analysis Intelligence Index. Cost: USD per 1M tokens, 3:1 input:output blend (list price).</p>
+<p class="note">Every score comes from a named external source (listed at the end) with its own snapshot date. Conclave runs no evaluations, and a model with no external score is listed as unscored, never estimated.</p>
+
+<h2>Score vs cost</h2>
+<div class="card">
+<svg class="chart" viewBox="0 0 720 420" role="img" aria-labelledby="price-title price-desc"><title id="price-title">Score vs cost</title><desc id="price-desc">Scatter of 23 models: Artificial Analysis Intelligence Index against USD per 1M tokens, 3:1 input:output blend (list price), log scale. 3 on the price frontier: Cheap, Mid, Top. The table below lists every model.</desc><g class="grid"><line x1="64" y1="16" x2="64" y2="364"/><text class="tick" x="64" y="382" text-anchor="middle">$0.1</text><line x1="276" y1="16" x2="276" y2="364"/><text class="tick" x="276" y="382" text-anchor="middle">$1</text><line x1="488" y1="16" x2="488" y2="364"/><text class="tick" x="488" y="382" text-anchor="middle">$10</text><line x1="700" y1="16" x2="700" y2="364"/><text class="tick" x="700" y="382" text-anchor="middle">$100</text><line x1="64" y1="364" x2="700" y2="364"/><text class="tick" x="56" y="368" text-anchor="end">30</text><line x1="64" y1="294.4" x2="700" y2="294.4"/><text class="tick" x="56" y="298.4" text-anchor="end">40</text><line x1="64" y1="224.8" x2="700" y2="224.8"/><text class="tick" x="56" y="228.8" text-anchor="end">50</text><line x1="64" y1="155.2" x2="700" y2="155.2"/><text class="tick" x="56" y="159.2" text-anchor="end">60</text><line x1="64" y1="85.6" x2="700" y2="85.6"/><text class="tick" x="56" y="89.6" text-anchor="end">70</text><line x1="64" y1="16" x2="700" y2="16"/><text class="tick" x="56" y="20" text-anchor="end">80</text></g><text class="axis" x="382" y="410" text-anchor="middle">USD per 1M tokens, 3:1 input:output blend (list price), log scale</text><text class="axis" transform="translate(16 190) rotate(-90)" text-anchor="middle">Artificial Analysis Intelligence Index</text><path class="step" d="M64 294.4 H276 V155.2 H504.8 V50.8"/><g class="dots"><g class="pt dom"><title>Dominated 19: score 49.0, $32.00</title><circle cx="595.1" cy="231.8" r="5"/></g><g class="pt dom"><title>Dominated 18: score 48.0, $31.00</title><circle cx="592.2" cy="238.7" r="5"/></g><g class="pt dom"><title>Dominated 17: score 47.0, $30.00</title><circle cx="589.1" cy="245.7" r="5"/></g><g class="pt dom"><title>Dominated 16: score 46.0, $29.00</title><circle cx="586" cy="252.6" r="5"/></g><g class="pt dom"><title>Dominated 15: score 45.0, $28.00</title><circle cx="582.8" cy="259.6" r="5"/></g><g class="pt dom"><title>Dominated 14: score 44.0, $27.00</title><circle cx="579.4" cy="266.6" r="5"/></g><g class="pt dom"><title>Dominated 13: score 43.0, $26.00</title><circle cx="576" cy="273.5" r="5"/></g><g class="pt dom"><title>Dominated 12: score 42.0, $25.00</title><circle cx="572.4" cy="280.5" r="5"/></g><g class="pt dom"><title>Dominated 11: score 41.0, $24.00</title><circle cx="568.6" cy="287.4" r="5"/></g><g class="pt dom"><title>Dominated 10: score 40.0, $23.00</title><circle cx="564.7" cy="294.4" r="5"/></g><g class="pt dom"><title>Dominated 09: score 39.0, $22.00</title><circle cx="560.6" cy="301.4" r="5"/></g><g class="pt dom"><title>Dominated 08: score 38.0, $21.00</title><circle cx="556.3" cy="308.3" r="5"/></g><g class="pt dom"><title>Dominated 07: score 37.0, $20.00</title><circle cx="551.8" cy="315.3" r="5"/></g><g class="pt dom"><title>Dominated 06: score 36.0, $19.00</title><circle cx="547.1" cy="322.2" r="5"/></g><g class="pt dom"><title>Dominated 05: score 35.0, $18.00</title><circle cx="542.1" cy="329.2" r="5"/></g><g class="pt dom"><title>Dominated 04: score 34.0, $17.00</title><circle cx="536.9" cy="336.2" r="5"/></g><g class="pt dom"><title>Dominated 03: score 33.0, $16.00</title><circle cx="531.3" cy="343.1" r="5"/></g><g class="pt dom"><title>Dominated 02: score 32.0, $15.00</title><circle cx="525.3" cy="350.1" r="5"/></g><g class="pt dom"><title>Dominated 01: score 31.0, $14.00</title><circle cx="519" cy="357" r="5"/></g><g class="pt dom"><title>Dominated 00: score 30.0, $13.00</title><circle cx="512.2" cy="364" r="5"/></g><g class="pt front"><title>Cheap: score 40.0, $0.100, on the frontier</title><circle cx="64" cy="294.4" r="5"/></g><g class="pt front"><title>Mid: score 60.0, $1.00, on the frontier</title><circle cx="276" cy="155.2" r="5"/></g><g class="pt front"><title>Top: score 75.0, $12.00, on the frontier</title><circle cx="504.8" cy="50.8" r="5"/></g></g><g class="labels"><text x="72" y="286.4" text-anchor="start">Cheap</text><text x="284" y="147.2" text-anchor="start">Mid</text><text x="512.8" y="42.8" text-anchor="start">Top</text></g></svg>
+<ul class="legend">
+<li><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="front" cx="8" cy="8" r="5"/></svg>On the frontier (filled)</li>
+<li><svg viewBox="0 0 16 16" aria-hidden="true"><circle class="dom" cx="8" cy="8" r="5"/></svg>Dominated (hollow)</li>
+<li><svg viewBox="0 0 16 16" aria-hidden="true"><path class="dom" d="M8 1 L15 8 L8 15 L1 8Z"/></svg>Self-reported (diamond)</li>
+<li><svg viewBox="0 0 16 16" aria-hidden="true"><path class="step" d="M1 12 H8 V4 H15"/></svg>Frontier step line</li>
+</ul>
+<label class="toggle"><input type="checkbox" data-hide-dom> Hide dominated models</label>
+
+</div>
+<p class="note">Cost is the list price in USD per million tokens, blended 3:1 input to output. It is a price-sheet figure: what a task costs also depends on how many tokens a model spends on it, which list price does not show.</p>
+
+
+<h2>All models</h2>
+<div class="card tablewrap">
+<table id="points">
+<caption class="note">Click a column header to sort. Cost is USD per 1M tokens, 3:1 input:output blend (list price).</caption>
+<thead><tr>
+<th scope="col" data-type="text"><button type="button">Model</button></th>
+<th scope="col" class="num" data-type="num"><button type="button">Score</button></th>
+<th scope="col" class="num" data-type="num"><button type="button">Cost</button></th>
+<th scope="col" data-type="text"><button type="button">Cost basis</button></th>
+<th scope="col" class="num" data-type="num"><button type="button">Latency</button></th>
+<th scope="col" class="num" data-type="num"><button type="button">ECE</button></th>
+<th scope="col" data-type="text"><button type="button">Self-reported</button></th>
+<th scope="col" data-type="text"><button type="button">Frontier</button></th>
+</tr></thead>
+<tbody>
+<tr class="on-frontier">
+<td data-v="Cheap" title="a/cheap">Cheap</td>
+<td class="num" data-v="40">40.0</td>
+<td class="num" data-v="0.1">$0.100</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="yes">yes</td>
+</tr>
+<tr class="on-frontier">
+<td data-v="Mid" title="a/mid">Mid</td>
+<td class="num" data-v="60">60.0</td>
+<td class="num" data-v="1">$1.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="yes">yes</td>
+</tr>
+<tr class="on-frontier">
+<td data-v="Top" title="a/top">Top</td>
+<td class="num" data-v="75">75.0</td>
+<td class="num" data-v="12">$12.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="yes">yes</td>
+</tr>
+<tr>
+<td data-v="Dominated 19" title="b/d19">Dominated 19</td>
+<td class="num" data-v="49">49.0</td>
+<td class="num" data-v="32">$32.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 18" title="b/d18">Dominated 18</td>
+<td class="num" data-v="48">48.0</td>
+<td class="num" data-v="31">$31.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 17" title="b/d17">Dominated 17</td>
+<td class="num" data-v="47">47.0</td>
+<td class="num" data-v="30">$30.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 16" title="b/d16">Dominated 16</td>
+<td class="num" data-v="46">46.0</td>
+<td class="num" data-v="29">$29.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 15" title="b/d15">Dominated 15</td>
+<td class="num" data-v="45">45.0</td>
+<td class="num" data-v="28">$28.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 14" title="b/d14">Dominated 14</td>
+<td class="num" data-v="44">44.0</td>
+<td class="num" data-v="27">$27.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 13" title="b/d13">Dominated 13</td>
+<td class="num" data-v="43">43.0</td>
+<td class="num" data-v="26">$26.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 12" title="b/d12">Dominated 12</td>
+<td class="num" data-v="42">42.0</td>
+<td class="num" data-v="25">$25.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 11" title="b/d11">Dominated 11</td>
+<td class="num" data-v="41">41.0</td>
+<td class="num" data-v="24">$24.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 10" title="b/d10">Dominated 10</td>
+<td class="num" data-v="40">40.0</td>
+<td class="num" data-v="23">$23.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 09" title="b/d09">Dominated 09</td>
+<td class="num" data-v="39">39.0</td>
+<td class="num" data-v="22">$22.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 08" title="b/d08">Dominated 08</td>
+<td class="num" data-v="38">38.0</td>
+<td class="num" data-v="21">$21.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 07" title="b/d07">Dominated 07</td>
+<td class="num" data-v="37">37.0</td>
+<td class="num" data-v="20">$20.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 06" title="b/d06">Dominated 06</td>
+<td class="num" data-v="36">36.0</td>
+<td class="num" data-v="19">$19.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 05" title="b/d05">Dominated 05</td>
+<td class="num" data-v="35">35.0</td>
+<td class="num" data-v="18">$18.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 04" title="b/d04">Dominated 04</td>
+<td class="num" data-v="34">34.0</td>
+<td class="num" data-v="17">$17.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 03" title="b/d03">Dominated 03</td>
+<td class="num" data-v="33">33.0</td>
+<td class="num" data-v="16">$16.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 02" title="b/d02">Dominated 02</td>
+<td class="num" data-v="32">32.0</td>
+<td class="num" data-v="15">$15.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 01" title="b/d01">Dominated 01</td>
+<td class="num" data-v="31">31.0</td>
+<td class="num" data-v="14">$14.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="Dominated 00" title="b/d00">Dominated 00</td>
+<td class="num" data-v="30">30.0</td>
+<td class="num" data-v="13">$13.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+<tr>
+<td data-v="No Score" title="a/none">No Score</td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="3">$3.00</td>
+<td data-v=""></td>
+<td class="num" data-v="">-</td>
+<td class="num" data-v="">-</td>
+<td data-v="no">no</td>
+<td data-v="no">no</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h2>Unscored</h2>
+<p class="note">No external source scores these models on this axis, so they are not plotted.</p>
+<ul class="unscored">
+<li>No Score</li>
+</ul>
+
+<section id="sources">
+<h2>Sources</h2>
+<dl>
+<dt>Artificial Analysis via OpenRouter</dt>
+<dd><a href="https://openrouter.ai/api/v1/benchmarks">https://openrouter.ai/api/v1/benchmarks</a></dd>
+<dd>As of 2026-10-01</dd>
+
+<dd>Artificial Analysis, artificialanalysis.ai</dd>
+
+
+</dl>
+</section>
+
+<footer>Generated by <code>conclave models --frontier</code>. ADR-018: frontiers come from external, edition-pinned sources only.</footer>
+</main>
+<script>
+
+
+(function () {
+  var table = document.getElementById("points");
+  if (table) {
+    var heads = table.tHead.rows[0].cells;
+    Array.prototype.forEach.call(heads, function (th, col) {
+      th.querySelector("button").addEventListener("click", function () {
+        var asc = th.getAttribute("aria-sort") !== "ascending";
+        Array.prototype.forEach.call(heads, function (h) { h.removeAttribute("aria-sort"); });
+        th.setAttribute("aria-sort", asc ? "ascending" : "descending");
+        var num = th.getAttribute("data-type") === "num";
+        var body = table.tBodies[0];
+        var rows = Array.prototype.slice.call(body.rows);
+        rows.sort(function (a, b) {
+          var x = a.cells[col].getAttribute("data-v"), y = b.cells[col].getAttribute("data-v");
+          if (num) {
+            
+            if (x === "" || y === "") { return (x === "") - (y === ""); }
+            return asc ? x - y : y - x;
+          }
+          return asc ? x.localeCompare(y) : y.localeCompare(x);
+        });
+        rows.forEach(function (r) { body.appendChild(r); });
+      });
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-hide-dom]"), function (box) {
+    box.addEventListener("change", function () {
+      Array.prototype.forEach.call(document.querySelectorAll("svg.chart"), function (svg) {
+        svg.classList.toggle("hide-dom", box.checked);
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

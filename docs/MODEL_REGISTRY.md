@@ -26,6 +26,12 @@ carry (Perplexity request fees, Gemini long-context multipliers, GLM Coding Plan
 > against it (exit 2 on drift, 3 if the catalog is unreachable). This document is the annotated, human-readable layer on top;
 > when the two disagree, the command is right. See ADR-009.
 
+> **Quality vs price.** This file records prices and ids, not quality. For "which model is worth
+> its price", `conclave models --frontier` (chat, needs `OPENROUTER_API_KEY`) and
+> `conclave models --frontier --deciders` (decision models, no key) draw the Pareto frontier from
+> external scores only: Artificial Analysis via OpenRouter, and the Decision Index v0.2.1. Add
+> `--html FILE` for an offline report. Unscored models are listed, never estimated. See ADR-018.
+
 > **Maintenance:** the "Conclave Defaults" and "Cheap Mode" tables MUST match the maps in
 > `internal/config/config.go`. If you change a default in code, change it here in the same commit.
 > The "Drift Watch" section lists IDs the code still uses that OpenRouter no longer serves.
@@ -275,6 +281,35 @@ live list with context sizes and prices run `conclave models` (all six direct ve
 - GLM 5.2 pricing rose from the $0.60/$2.20 recorded in December 2025 to $0.97/$3.04
 - `glm-5.3-flash` at $0.075/$0.25 replaced `glm-4.6v-flashx` as the cheap model in v1.3.0; moot in practice while `-g glm` is disabled (ADR-006)
 - Context caching: reduced input rate on cached prefixes (vendor docs)
+
+---
+
+## Decision models
+
+Used only by `conclave decide` (ADR-016); never on a chat panel, never in `--all`, API-only.
+Prices are a hand-maintained table in `internal/pricing/deciders.go` (not the OpenRouter
+catalog, which does not list these models), so `conclave models --check` does **not** gate
+them: the as-of date is the staleness signal. `conclave models jev` prints the live table; it needs no catalog, so it
+works offline and under `CONCLAVE_NO_PRICING=1`.
+
+| Decider | Default model | Endpoint | Auth | Price (USD / 1M tokens) | As of |
+|---|---|---|---|---|---|
+| `jev` | `jev-latest` (reports e.g. `jev-1.13.0`) | `POST https://api.typesafe.ai/v1/systemone` (override: `CONCLAVE_JEV_BASE_URL`, full URL) | `Bearer TYPESAFE_API_KEY`, or else `OPENROUTER_API_KEY` via `POST https://openrouter.ai/api/alpha/decisions` (reports `typesafe/jev-1.13-20260917`) | $0.042 in, output free (same on both routes) | 2026-10-03 |
+| `clef` | `clef` (`@cf/cloudflare/clef`) | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` (override: `CONCLAVE_CLEF_BASE_URL`, prefix through `/ai/run`) | `Bearer CLOUDFLARE_API_TOKEN` | $0.24 in, no published output price | 2026-10-02 |
+| `clef-flash` | `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | | unpublished: reported unpriced | 2026-10-02 |.09 in, no published output price | 2026-10-02 |
+
+Sources: [Typesafe launch post](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
+[Workers AI Clef model page](https://developers.cloudflare.com/workers-ai/models/clef).
+Any other OpenRouter decision model is reachable as a `vendor/model` token (ADR-017) and priced from
+the `usage.cost` OpenRouter reports, not this table. Seen live 2026-10-03: `liquid/d1` ($0.04/M, 64k),
+`upstage/solar-decide` ($0.05/M, 512k), `inception/mercury-decide:free` (free, 32k),
+`togethercomputer/tev1-4b-experimental` ($0.042/M), `jaredpalmer/kev-4b` ($0.042/M, 8k), and
+`respan/span-01` (noul-only behaviour scorer). Per-call cost differs more than list price: the same
+request was 86 input tokens on Kev and 1,127 on Solar Decide.
+
+Limits: 1-64 questions per call, 2-255 choice options, 2-10 score levels; Jev 32k context, Clef 64k
+(an oversized Clef state is a 413, code 5021). Clef successes arrive in the Workers AI
+`{"result":...,"success":true}` envelope (probed live 2026-10-03).
 
 ---
 

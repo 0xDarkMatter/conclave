@@ -20,6 +20,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -122,6 +123,11 @@ type apiBaseProvider struct {
 	apiKeyEnv    string
 	baseURL      string
 	client       *http.Client
+	// clientOnce makes the lazy client init safe when one provider instance
+	// is shared across goroutines (Phase 2 batch workers share a decider).
+	// The zero value is ready, so the value composite literals across
+	// provider files need no change.
+	clientOnce sync.Once
 }
 
 func (p *apiBaseProvider) Name() string {
@@ -144,12 +150,19 @@ func (p *apiBaseProvider) getAPIKey() string {
 // The 300s ceiling accommodates reasoning models (gpt-5.x, o1, claude opus
 // with thinking) that can legitimately take 2-4 minutes. The orchestrator's
 // per-request context still caps individual queries to --timeout (default 60s).
+//
+// sync.Once rather than eager construction: providers and tests build
+// apiBaseProvider as value literals and tests may pre-set client to inject a
+// stub transport, so the init must stay lazy AND race-free when one instance
+// is shared across goroutines.
 func (p *apiBaseProvider) httpClient() *http.Client {
-	if p.client == nil {
-		p.client = &http.Client{
-			Timeout: 300 * time.Second,
+	p.clientOnce.Do(func() {
+		if p.client == nil {
+			p.client = &http.Client{
+				Timeout: 300 * time.Second,
+			}
 		}
-	}
+	})
 	return p.client
 }
 
@@ -344,6 +357,15 @@ var billingErrorCodes = map[string]bool{
 // the vendor code that said so. Any 402 Payment Required counts: OpenRouter's
 // 402 body carries a numeric code ({"error":{"code":402,...}}), so the status
 // is its only reliable signal.
+//
+// TODO(phase0-probe2, decide-p1): Cloudflare Workers AI is suspected to
+// report an exhausted daily free allocation as HTTP 429 with errors[].code
+// 3036 ("Account limited: you have used up your daily free allocation of N
+// neurons"). That should classify as a BillingError under ADR-004 but is
+// currently retried with backoff, because this function does not read the
+// Cloudflare errors[] envelope. 3036 is from memory, not a recorded response;
+// verify it with the Phase 0 error-shape probe (PLAN probe 2) before adding
+// a Cloudflare branch here.
 func billingCode(statusCode int, body []byte) (string, bool) {
 	var e struct {
 		Error struct {
@@ -377,8 +399,11 @@ func parseAPIError(statusCode int, body []byte) error {
 		Error struct {
 			Message string `json:"message"`
 			Type    string `json:"type"`
-			Code    string `json:"code"`
-			Param   string `json:"param"`
+			// A string (OpenAI) or a number (OpenRouter, Perplexity). Typed as
+			// string, a numeric code failed the whole Unmarshal and the caller
+			// got the raw JSON body instead of the message.
+			Code  json.RawMessage `json:"code"`
+			Param string          `json:"param"`
 		} `json:"error"`
 		Message string `json:"message"` // Some APIs use this directly
 	}
@@ -391,11 +416,31 @@ func parseAPIError(statusCode int, body []byte) error {
 		if msg != "" {
 			// Build a detailed error with code/param when present.
 			details := msg
-			if errResp.Error.Code != "" {
-				details += fmt.Sprintf(" [code: %s]", errResp.Error.Code)
+			if code := strings.Trim(strings.TrimSpace(string(errResp.Error.Code)), `"`); code != "" && code != "null" {
+				details += fmt.Sprintf(" [code: %s]", code)
 			}
 			if errResp.Error.Param != "" {
 				details += fmt.Sprintf(" [param: %s]", errResp.Error.Param)
+			}
+			return fmt.Errorf("HTTP %d: %s", statusCode, details)
+		}
+	}
+
+	var cloudflareResp struct {
+		Success *bool `json:"success"`
+		Errors  []struct {
+			Code    json.RawMessage `json:"code"`
+			Message string          `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &cloudflareResp); err == nil && cloudflareResp.Success != nil && len(cloudflareResp.Errors) > 0 {
+		first := cloudflareResp.Errors[0]
+		if first.Message != "" {
+			details := first.Message
+			// Cloudflare's code is a JSON number, unlike the string codes in the
+			// established OpenAI envelope parsed above.
+			if code := strings.TrimSpace(string(first.Code)); code != "" && code != "null" {
+				details += fmt.Sprintf(" [code: %s]", strings.Trim(code, `"`))
 			}
 			return fmt.Errorf("HTTP %d: %s", statusCode, details)
 		}
