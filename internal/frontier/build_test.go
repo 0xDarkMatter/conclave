@@ -41,6 +41,8 @@ func mustPoint(t *testing.T, pts []Point, id string) *Point {
 	return p
 }
 
+// === CHAT RESULT ASSEMBLY ===
+
 // TestBuildChatBlendCost pins the blend basis: (3*input + output)/4 from the
 // row's own pricing, nil when either half is missing (a half-blend would be an
 // invented price), plus the axis pick and the AA provenance.
@@ -152,6 +154,8 @@ func TestBuildChatNilFeedIsSourceError(t *testing.T) {
 	}
 }
 
+// === DECISION RESULT ASSEMBLY ===
+
 // TestBuildDecisionPricesViaSlugThenDeciderTable pins the cost precedence:
 // OpenRouter's decision-model InputPerM when the board name maps to a listed
 // slug (even when the decider table disagrees), the Conclave decider table
@@ -169,7 +173,7 @@ func TestBuildDecisionPricesViaSlugThenDeciderTable(t *testing.T) {
 		Check: &decisionindex.Check{Compared: 2},
 	}
 	models := []openrouter.DecisionModel{
-		{Slug: "typesafe/jev-1.13", Name: "Jev", InputPerM: 0.05},
+		{Slug: "typesafe/jev-1.13", Name: "Jev", Priced: true, InputPerM: 0.05},
 	}
 	// The jev row deliberately disagrees with the catalog: the slug price must
 	// win, which is the whole point of the precedence.
@@ -229,9 +233,9 @@ func TestBuildDecisionAddsUnscoredOpenRouterModels(t *testing.T) {
 		Check:        &decisionindex.Check{Compared: 1},
 	}
 	models := []openrouter.DecisionModel{
-		{Slug: "liquid/d1", Name: "D1", InputPerM: 0.10},
-		{Slug: "solar-ai/solar-decide", Name: "Solar Decide", InputPerM: 0.05},
-		{Slug: "~liquid/d1", Name: "D1 (alias)", AliasTarget: "liquid/d1", InputPerM: 0.10},
+		{Slug: "liquid/d1", Name: "D1", Priced: true, InputPerM: 0.10},
+		{Slug: "solar-ai/solar-decide", Name: "Solar Decide", Priced: true, InputPerM: 0.05},
+		{Slug: "~liquid/d1", Name: "D1 (alias)", AliasTarget: "liquid/d1", Priced: true, InputPerM: 0.10},
 	}
 	table := []pricing.DeciderPrice{{Decider: "clef", Model: "clef", InPerM: 0.24}}
 	res := BuildDecision(board, models, table, CostInputPerM)
@@ -343,9 +347,9 @@ func TestKnownDecisionFrontier(t *testing.T) {
 		Check: &decisionindex.Check{Compared: 3, MaxDelta: 0.01},
 	}
 	models := []openrouter.DecisionModel{
-		{Slug: "typesafe/jev-1.13", Name: "Jev", InputPerM: 0.042},
-		{Slug: "jaredpalmer/kev-4b", Name: "Kev 4B", InputPerM: 0.042},
-		{Slug: "togethercomputer/tev1-4b-experimental", Name: "Tev1-4B-experimental", InputPerM: 0.042},
+		{Slug: "typesafe/jev-1.13", Name: "Jev", Priced: true, InputPerM: 0.042},
+		{Slug: "jaredpalmer/kev-4b", Name: "Kev 4B", Priced: true, InputPerM: 0.042},
+		{Slug: "togethercomputer/tev1-4b-experimental", Name: "Tev1-4B-experimental", Priced: true, InputPerM: 0.042},
 	}
 	table := []pricing.DeciderPrice{
 		{Decider: "clef", Model: "clef", InPerM: 0.24},
@@ -379,5 +383,67 @@ func TestKnownDecisionFrontier(t *testing.T) {
 	}
 	if !clef.SelfReported {
 		t.Error("Clef must carry self-reported: its row exists only in the mirror (ADR-018)")
+	}
+}
+
+// TestBuildDecisionDistinguishesFreeFromUnpricedCatalog pins the catalog's
+// Priced presence bit: zero is a real free price only when present, while an
+// unpriced mapped model falls through to the decider table and an unpriced
+// catalog-only model remains nil.
+func TestBuildDecisionDistinguishesFreeFromUnpricedCatalog(t *testing.T) {
+	board := &decisionindex.Board{
+		Entries: []decisionindex.Entry{{Name: "Jev", Index: 57.91}},
+		Check:   &decisionindex.Check{},
+	}
+	models := []openrouter.DecisionModel{
+		{Slug: "typesafe/jev-1.13", Name: "Jev", Priced: false},
+		{Slug: "inception/free", Name: "Free", Priced: true, InputPerM: 0},
+		{Slug: "liquid/unpriced", Name: "Unpriced", Priced: false},
+	}
+	table := []pricing.DeciderPrice{{Decider: "jev", InPerM: 0.42}}
+
+	res := BuildDecision(board, models, table, CostInputPerM)
+	jev := mustPoint(t, res.Points, "typesafe/jev-1.13")
+	if jev.Cost == nil || !almostEqual(*jev.Cost, 0.42) {
+		t.Errorf("unpriced mapped model cost = %v; want table fallback 0.42", jev.Cost)
+	}
+	free := mustPoint(t, res.Points, "inception/free")
+	if free.Cost == nil || *free.Cost != 0 {
+		t.Errorf("genuinely free model cost = %v; want non-nil zero", free.Cost)
+	}
+	if unpriced := mustPoint(t, res.Points, "liquid/unpriced"); unpriced.Cost != nil {
+		t.Errorf("unpriced catalog model cost = %v; want nil", *unpriced.Cost)
+	}
+}
+
+// TestBuildDecisionCopiesBoardOptionalValues ensures the assembled Result
+// owns mutable optional values instead of aliasing cached source data.
+func TestBuildDecisionCopiesBoardOptionalValues(t *testing.T) {
+	board := &decisionindex.Board{
+		Entries: []decisionindex.Entry{{Name: "Jev", Index: 57.91, ECE: f64p(0.08), MedianMs: f64p(900)}},
+		Check:   &decisionindex.Check{},
+	}
+	res := BuildDecision(board, nil, nil, CostInputPerM)
+	p := mustPoint(t, res.Points, "typesafe/jev-1.13")
+	*p.ECE = 0.99
+	*p.LatencyMs = 1
+	if got := *board.Entries[0].ECE; !almostEqual(got, 0.08) {
+		t.Errorf("mutating result ECE changed board to %v; want 0.08", got)
+	}
+	if got := *board.Entries[0].MedianMs; !almostEqual(got, 900) {
+		t.Errorf("mutating result latency changed board to %v; want 900", got)
+	}
+}
+
+// TestBuildDecisionDeduplicatesWarningsStable pins first-occurrence warning
+// order across board warnings and synthesized mirror health messages.
+func TestBuildDecisionDeduplicatesWarningsStable(t *testing.T) {
+	const missing = "Decision Index mirror cross-check did not run"
+	board := &decisionindex.Board{
+		Warnings: []string{missing, "upstream warning", missing, "upstream warning"},
+	}
+	warning := BuildDecision(board, nil, nil, CostInputPerM).Sources[0].Warning
+	if want := missing + "; upstream warning"; warning != want {
+		t.Errorf("warning = %q; want stable deduplicated %q", warning, want)
 	}
 }
