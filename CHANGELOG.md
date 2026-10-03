@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-03
+
 ### Added
 
 - `conclave models --frontier`: price-performance Pareto frontiers from
@@ -46,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `conclave models` lists the decision-model price table with each row's
   `as_of` date under "Decision models" (`conclave models jev` for one), and
   `conclave models --json` gains an additive `deciders` array.
+
+### Fixed
+
+- API error responses whose `error.code` is a number (OpenRouter,
+  Perplexity) were rendered as the raw JSON body because the decode failed;
+  they now show the message and code (`HTTP 401: User not found. [code: 401]`).
 
 ## [1.4.0] - 2026-10-01
 
@@ -497,7 +505,8 @@ Initial public release.
 - Blind mode for unbiased judging.
 - Interactive setup (`conclave init`) for API key configuration.
 
-[Unreleased]: https://github.com/0xDarkMatter/conclave/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/0xDarkMatter/conclave/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/0xDarkMatter/conclave/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/0xDarkMatter/conclave/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/0xDarkMatter/conclave/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/0xDarkMatter/conclave/compare/v1.1.0...v1.2.0
