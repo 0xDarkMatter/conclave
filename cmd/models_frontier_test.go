@@ -48,11 +48,14 @@ func decisionSources(t *testing.T, down ...string) {
 	for _, d := range down {
 		isDown[d] = true
 	}
-	meth := `{"benchmarks":[{"id":1,"tracks":[]}],"index":{"areas":[{"id":"knowledge","weight":1,"panel":[{"id":1}]}],"chance_levels":[{"id":1,"chance":0}],"lower_rules":[]}}`
-	idx := `{"generated_utc":"2026-09-28T00:00:00Z","models":[
+	// Edition identity is enforced by decisionindex.Load (ADR-018): the
+	// methodology's edition.id and the index's suite.panel_id must match the
+	// pinned edition, and the mirror's upstream.label must name it.
+	meth := `{"edition":{"id":"` + decisionindex.Edition + `"},"benchmarks":[{"id":1,"tracks":[]}],"index":{"panel_id":"decision-index-0.2.1","areas":[{"id":"knowledge","weight":1,"panel":[{"id":1}]}],"chance_levels":[{"id":1,"chance":0}],"lower_rules":[]}}`
+	idx := `{"generated_utc":"2026-09-28T00:00:00Z","suite":{"panel_id":"decision-index-0.2.1"},"models":[
 	  {"engine":"jev","name":"Jev","benchmarks":{"1":{"raw":0.7,"coverage":1}},"latency":{"median":300}},
 	  {"engine":"kev","name":"Kev 4B","benchmarks":{"1":{"raw":0.6,"coverage":1}},"latency":{"median":90}}]}`
-	mirror := `{"models":[{"engine":"jev","name":"Jev","index":70},{"engine":"kev","name":"Kev 4B","index":60},
+	mirror := `{"upstream":{"label":"Decision Index 0.2.1"},"models":[{"engine":"jev","name":"Jev","index":70},{"engine":"kev","name":"Kev 4B","index":60},
 	  {"engine":"clef","name":"Clef","index":65,"latency":{"median":1200}}]}`
 	catalog := `{"data":[{"id":"typesafe/jev-1.13","name":"Jev","pricing":{"prompt":"0.000000042","completion":"0"}},
 	  {"id":"jaredpalmer/kev-4b","name":"Kev 4B","pricing":{"prompt":"0.00000005","completion":"0"}}]}`
