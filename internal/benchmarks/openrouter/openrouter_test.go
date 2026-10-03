@@ -257,3 +257,29 @@ func TestPrePricedCacheFileIsNotRead(t *testing.T) {
 		t.Fatalf("hits=%d models=%+v; want a fresh fetch with Priced=true", hits, models)
 	}
 }
+
+// Refuted 2026-10-03: an evals-only outage aborted the whole feed although
+// Artificial Analysis supplied every score; it must be advisory and uncached.
+func TestFeedEvalsDownKeepsAAAndIsNotCached(t *testing.T) {
+	dir := t.TempDir()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("source") == "openrouter" {
+			http.Error(w, `{"error":{"message":"boom","code":500}}`, http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"source":"artificial-analysis","model_permaslug":"a/b-20260101","display_name":"B","intelligence_index":50,"pricing":{"prompt":"0.000001","completion":"0.000002"}}],"meta":{"as_of":"2026-10-01","source":"artificial-analysis"}}`))
+	}))
+	defer srv.Close()
+	t.Setenv("CONCLAVE_OPENROUTER_BENCHMARKS_URL", srv.URL)
+	t.Setenv("CONCLAVE_NO_PRICING", "")
+	feed, err := LoadFeed(context.Background(), Options{APIKey: "sk-or-test", CacheDir: dir})
+	if err != nil {
+		t.Fatalf("LoadFeed: %v", err)
+	}
+	if len(feed.AA) != 1 || feed.EvalsError == "" {
+		t.Fatalf("feed = %+v; want AA kept and EvalsError set", feed)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, feedCacheFile)); statErr == nil {
+		t.Fatal("partial feed was cached")
+	}
+}

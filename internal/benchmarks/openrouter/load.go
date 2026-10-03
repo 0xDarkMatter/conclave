@@ -128,6 +128,11 @@ func loadFeed(ctx context.Context, opts Options) (*Feed, error) {
 		}
 		return nil, fmt.Errorf("openrouter benchmarks unavailable: %w", fetchErr)
 	}
+	if feed.EvalsError != "" {
+		// A partial feed is served but never cached: caching it would hide
+		// the evals for a whole TTL after a transient failure.
+		return feed, nil
+	}
 	entry := &feedCache{FetchedAt: time.Now().UTC(), Feed: feed}
 	if err := writeJSONCache(cachePath, entry); err != nil {
 		return feed, fmt.Errorf("openrouter benchmarks cache not written: %w", err)
@@ -173,24 +178,21 @@ func fetchFeed(ctx context.Context, client *http.Client, endpoint, apiKey string
 	if err != nil {
 		return nil, fmt.Errorf("fetch artificial-analysis source: %w", err)
 	}
-	evalsWire, err := fetchBenchmarkSource(ctx, client, endpoint, apiKey, evalsSource)
-	if err != nil {
-		return nil, fmt.Errorf("fetch openrouter source: %w", err)
-	}
 	aa, err := selectSource(aaWire, aaSource)
 	if err != nil {
 		return nil, fmt.Errorf("artificial-analysis source: %w", err)
 	}
-	evals, err := selectSource(evalsWire, evalsSource)
-	if err != nil {
-		return nil, fmt.Errorf("openrouter source: %w", err)
-	}
+	feed := &Feed{AAAsOf: aa.asOf, Citation: aa.citation}
 
-	feed := &Feed{
-		AAAsOf:    aa.asOf,
-		EvalsAsOf: evals.asOf,
-		Citation:  aa.citation,
+	// Evals are advisory: they only feed the per_task cost basis, so their
+	// failure is recorded on the feed instead of discarding the AA scores.
+	var evals sourceSelection
+	if evalsWire, err := fetchBenchmarkSource(ctx, client, endpoint, apiKey, evalsSource); err != nil {
+		feed.EvalsError = fmt.Sprintf("fetch openrouter source: %v", err)
+	} else if evals, err = selectSource(evalsWire, evalsSource); err != nil {
+		feed.EvalsError = fmt.Sprintf("openrouter source: %v", err)
 	}
+	feed.EvalsAsOf = evals.asOf
 	for _, row := range aa.rows {
 		input, output := convertPricing(row.Pricing)
 		feed.AA = append(feed.AA, AAScore{

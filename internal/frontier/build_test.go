@@ -447,3 +447,40 @@ func TestBuildDecisionDeduplicatesWarningsStable(t *testing.T) {
 		t.Errorf("warning = %q; want stable deduplicated %q", warning, want)
 	}
 }
+
+// Refuted 2026-10-03: a down Decision Index hid every catalog model behind
+// "UNSCORED (0)". The catalog must still appear, unscored.
+func TestBuildDecisionBoardDownKeepsCatalogUnscored(t *testing.T) {
+	models := []openrouter.DecisionModel{
+		{Slug: "liquid/d1", Name: "LiquidAI: D1", Priced: true, InputPerM: 0.04},
+		{Slug: "jaredpalmer/kev-4b", Name: "Kev 4B", Priced: true, InputPerM: 0.042},
+	}
+	res := BuildDecision(nil, models, nil, CostInputPerM)
+	if len(res.Points) != 2 {
+		t.Fatalf("points = %d, want both catalog models", len(res.Points))
+	}
+	for _, p := range res.Points {
+		if p.Score != nil {
+			t.Errorf("%s scored with no board", p.ID)
+		}
+	}
+	if len(res.Sources) == 0 || res.Sources[0].Error == "" {
+		t.Errorf("board source error missing: %+v", res.Sources)
+	}
+}
+
+// Refuted 2026-10-03: an evals failure must surface on the per_task source,
+// not vanish.
+func TestBuildChatEvalsErrorReachesPerTaskSource(t *testing.T) {
+	feed := &openrouter.Feed{EvalsError: "fetch openrouter source: HTTP 500"}
+	res := BuildChat(feed, AxisIntelligence, CostPerTask)
+	found := false
+	for _, s := range res.Sources {
+		if s.Name == evalsSourceName && s.Error != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("evals error not carried: %+v", res.Sources)
+	}
+}

@@ -94,9 +94,10 @@ func BuildChat(feed *openrouter.Feed, axis Axis, basis CostBasis) Result {
 	})
 	if basis == CostPerTask {
 		res.Sources = append(res.Sources, Source{
-			Name: evalsSourceName,
-			URL:  openrouter.BenchmarksURL,
-			AsOf: feed.EvalsAsOf,
+			Name:  evalsSourceName,
+			URL:   openrouter.BenchmarksURL,
+			AsOf:  feed.EvalsAsOf,
+			Error: feed.EvalsError, // per_task points are then unpriced, never estimated
 		})
 	}
 	return res
@@ -123,21 +124,25 @@ func aaScore(row openrouter.AAScore, axis Axis) *float64 {
 // unscored so they still appear (never estimated — ADR-018).
 func BuildDecision(board *decisionindex.Board, models []openrouter.DecisionModel, table []pricing.DeciderPrice, basis CostBasis) Result {
 	res := Result{Kind: KindDecision, Axis: AxisDecision, CostBasis: basis}
+	// A missing board must not hide the catalog: its models still appear,
+	// unscored (advisory rule, ADR-009/ADR-018). Only the scores are lost.
+	var entries []decisionindex.Entry
 	if board == nil {
 		res.Sources = []Source{{
 			Name:  boardSourceName,
 			URL:   decisionindex.UpstreamBase + decisionindex.IndexFile,
 			Error: "Decision Index board unavailable",
 		}}
-		return res
+	} else {
+		entries = board.Entries
+		res.Sources = append(res.Sources, Source{
+			Name:    boardSourceName,
+			URL:     decisionindex.UpstreamBase + decisionindex.IndexFile,
+			Edition: board.Edition,
+			AsOf:    board.GeneratedUTC,
+			Warning: boardWarning(board),
+		})
 	}
-	res.Sources = append(res.Sources, Source{
-		Name:    boardSourceName,
-		URL:     decisionindex.UpstreamBase + decisionindex.IndexFile,
-		Edition: board.Edition,
-		AsOf:    board.GeneratedUTC,
-		Warning: boardWarning(board),
-	})
 
 	bySlug := map[string]openrouter.DecisionModel{}
 	onBoard := map[string]bool{}
@@ -150,7 +155,7 @@ func BuildDecision(board *decisionindex.Board, models []openrouter.DecisionModel
 		bySlug[m.Slug] = m
 	}
 
-	for _, e := range board.Entries {
+	for _, e := range entries {
 		m, _ := mapBoard(e.Name)
 		p := Point{
 			Name:         e.Name,

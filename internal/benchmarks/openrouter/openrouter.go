@@ -49,6 +49,11 @@ type Feed struct {
 	AAAsOf    string // meta.as_of for source=artificial-analysis; empty when upstream's meta.source named another scope
 	EvalsAsOf string
 	Citation  string // meta.citation for Artificial Analysis
+	// EvalsError is set when the OpenRouter-evals sub-source failed while
+	// Artificial Analysis loaded. Evals only feed the per_task cost basis, so
+	// their failure is advisory, never a reason to drop the AA scores. A feed
+	// with EvalsError is not cached, so the next run retries evals.
+	EvalsError string
 }
 
 // DecisionModel is one catalog entry with output modality "decisions".
