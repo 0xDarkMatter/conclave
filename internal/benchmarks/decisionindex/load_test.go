@@ -158,6 +158,11 @@ func TestLoadServesFreshCacheWithoutRefetching(t *testing.T) {
 	if len(b.Entries) != 2 || b.Check == nil {
 		t.Errorf("cached board incomplete: %+v", b)
 	}
+	// A refetch would fail against the closed server and fall back to the
+	// stale-cache path, which warns; a fresh cache must not warn at all.
+	if len(b.Warnings) != 0 {
+		t.Errorf("fresh cache was refetched: %q", b.Warnings)
+	}
 }
 
 func anyContains(ss []string, sub string) bool {
