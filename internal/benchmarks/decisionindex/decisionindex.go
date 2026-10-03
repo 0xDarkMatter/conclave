@@ -29,8 +29,8 @@ const (
 
 // Entry is one model's recomputed (or, for mirror-only rows, mirrored) result.
 type Entry struct {
-	Name         string   // board display name, e.g. "Kev 4B"
-	Index        float64  // 0..100, chance-corrected, edition formula
+	Name         string  // board display name, e.g. "Kev 4B"
+	Index        float64 // 0..100, chance-corrected, edition formula
 	Areas        map[string]float64
 	ECE          *float64 // calibration error, when published
 	MedianMs     *float64
