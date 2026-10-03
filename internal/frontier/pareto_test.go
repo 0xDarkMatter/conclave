@@ -99,7 +99,7 @@ func TestParetoOrderIsDeterministic(t *testing.T) {
 	}
 	want := []string{
 		"cheap-modest", "dear-smart", // frontier, ascending cost
-		"mid",           // dominated, descending score: 70
+		"mid",            // dominated, descending score: 70
 		"dom-a", "dom-b", // score tie 40/40 broken by name: Alpha < Beta
 		"u-amy", "u-nodata", "u-zed", // unscored, by name
 	}
