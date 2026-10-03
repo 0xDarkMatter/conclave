@@ -160,8 +160,9 @@ func TestHTMLReportGolden(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read golden (run with -update to create): %v", err)
 			}
-			// Git on Windows may check the golden out with CRLF.
-			if strings.ReplaceAll(string(want), "\r\n", "\n") != got {
+			// Git on Windows (autocrlf) may check out the golden AND the
+			// embedded template with CRLF, so compare line endings neutrally.
+			if strings.ReplaceAll(string(want), "\r\n", "\n") != strings.ReplaceAll(got, "\r\n", "\n") {
 				t.Fatalf("report differs from %s; rerun with -update and review the diff", path)
 			}
 		})
