@@ -17,8 +17,8 @@ does classification work: batch mode first, rubric scoring (reliability plan Fea
 
 No change to `Provider`, `--all`, the judge, ADR-012's transport grammar or the
 pricing catalog. No images in phase 1. No vendor fine-tuning features. Praxis is not
-modified. Its switch to decision-model scoring is a decision for Praxis after the
-calibration eval (Phase 0).
+modified. Its switch to decision-model scoring is a decision for Praxis, made on external
+quality data (ADR-018), not on evals run inside Conclave.
 
 ## Wire contract (both vendors)
 
@@ -73,10 +73,9 @@ key may need to be added there first.
    `GET /client/v4/user/tokens/verify`; Typesafe has none documented. A one-question
    call with a 1-word state may be the fallback, so measure its cost.
 5. **Clef-flash price** from the Workers AI pricing page.
-6. **Calibration eval.** On 30-50 Praxis questions that already have a gold grade,
-   compare per-criterion `noul` from clef and jev against the current gemini/openai/
-   claude majority. Record agreement and the probability spread on disagreements.
-   This gates Phase 3, not Phases 1-2.
+6. ~~**Calibration eval.**~~ DROPPED 2026-10-03: Conclave does not run evals (maintainer
+   decision, ADR-018). Calibration comes from external data instead: the Decision Index
+   publishes ECE per model, shown by `conclave models --frontier --deciders`.
 
 Write the findings into this file under each probe.
 
@@ -103,7 +102,7 @@ Write the findings into this file under each probe.
    $0.00003 on clef) is the only real check. Not built yet.
 5. *Clef-flash price:* $0.090/M input, no output price (https://developers.cloudflare.com/workers-ai/platform/pricing/,
    updated 2026-10-01).
-6. *Calibration eval:* open.
+6. *Calibration eval:* dropped (ADR-018); external ECE from the Decision Index instead.
 
 The published input schema (`GET /accounts/{id}/ai/models/schema?model=@cf/cloudflare/clef`)
 corrected four local rules, now enforced: question ids are 1-100 of `[A-Za-z0-9_.-]`; noul takes
@@ -316,7 +315,8 @@ Feature 5's rubric criteria map 1:1 onto questions:
 Add `--scorer decide:<deciders>` alongside the LLM path. Ties come from the averaged
 probability instead of a vote count, so `tie_expected` and `tie_forbidden` apply only
 when the averaged value sits inside a dead band (default 0.45-0.55, set in the rubric
-front matter). Gated on the Phase 0 calibration eval. Before Feature 5 is built, add a
+front matter). No longer gated on an in-house eval (ADR-018); external Decision Index scores and
+ECE inform whether to switch. Before Feature 5 is built, add a
 note to `docs/PLAN-reliability-judging.md` Feature 5 so its criteria schema keeps this
 mapping possible: per-criterion `type` and `anchors` fields.
 
