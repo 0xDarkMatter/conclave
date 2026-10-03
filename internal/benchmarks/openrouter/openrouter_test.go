@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestFeedConvertsPerTokenPricingToPerMillion(t *testing.T) {
@@ -229,4 +230,30 @@ func loadTestFeed(t *testing.T, srv *httptest.Server, cacheDir string) (*Feed, e
 	t.Setenv("CONCLAVE_OPENROUTER_BENCHMARKS_URL", srv.URL)
 	t.Setenv("CONCLAVE_NO_PRICING", "")
 	return LoadFeed(context.Background(), Options{APIKey: "test-key", CacheDir: cacheDir, HTTPClient: srv.Client()})
+}
+
+// A cache written before DecisionModel.Priced existed decodes every row as
+// unpriced; it must never be read as current (seen live 2026-10-03: Kev and
+// Tev1 showed no price until --refresh).
+func TestPrePricedCacheFileIsNotRead(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"fetched_at":"` + time.Now().UTC().Format(time.RFC3339) + `","models":[{"Slug":"jaredpalmer/kev-4b","InputPerM":0.042}]}`
+	if err := os.WriteFile(filepath.Join(dir, "decision-models.json"), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		_, _ = w.Write([]byte(`{"data":[{"id":"jaredpalmer/kev-4b","pricing":{"prompt":"0.000000042","completion":"0"}}]}`))
+	}))
+	defer srv.Close()
+	t.Setenv("CONCLAVE_OPENROUTER_MODELS_URL", srv.URL)
+	t.Setenv("CONCLAVE_NO_PRICING", "")
+	models, err := LoadDecisionModels(context.Background(), Options{CacheDir: dir})
+	if err != nil {
+		t.Fatalf("LoadDecisionModels: %v", err)
+	}
+	if hits != 1 || len(models) != 1 || !models[0].Priced {
+		t.Fatalf("hits=%d models=%+v; want a fresh fetch with Priced=true", hits, models)
+	}
 }

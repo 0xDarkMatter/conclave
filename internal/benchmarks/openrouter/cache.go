@@ -19,8 +19,13 @@ import (
 )
 
 const (
-	feedCacheFile   = "feed.json"
-	modelsCacheFile = "decision-models.json"
+	// The schema version is part of the file name: bump it whenever a cached
+	// type gains a field whose zero value means something. DecisionModel.Priced
+	// did exactly that: a v1 file (written before Priced existed) decodes every
+	// row as Priced=false, silently unpricing the whole catalog until the TTL
+	// expires. A new name makes old files invisible instead of misread.
+	feedCacheFile   = "feed.v2.json"
+	modelsCacheFile = "decision-models.v2.json"
 
 	// TTL bounds (adjudication 8 on the refuted defects): the env TTL is
 	// parsed as float hours, and a huge or "Inf" value overflows
