@@ -25,15 +25,27 @@ Built with [Charm](https://charm.sh)'s Bubble Tea for a terminal UI that doesn't
 
 ## Recent Updates
 
-### Unreleased
-
-**📈 Price-performance frontiers: `conclave models --frontier`**
-
-Which models are worth their price? `conclave models --frontier` draws the Pareto frontier of quality against cost from external sources only: Artificial Analysis indices via OpenRouter for chat models, and the community Decision Index (recomputed, edition-pinned) for decision models. Add `--html report.html` for a self-contained offline report with charts. See [Price-performance frontiers](#price-performance-frontiers).
+### v1.5.0 — 2026-10-03
 
 **🎯 Decision models: `conclave decide`**
 
-Typed questions in, typed answers with probabilities out. `conclave decide clef,jev -f ticket.txt --questions triage.yaml` runs Cloudflare Clef and Typesafe Jev in parallel and averages their probabilities per question, with no LLM judge in the loop. See [Decision models](#decision-models-conclave-decide).
+Typed questions in, typed answers with probabilities out. `conclave decide clef,jev -f ticket.txt --questions triage.yaml` runs Cloudflare Clef and Typesafe Jev in parallel and averages their probabilities per question, with no LLM judge in the loop: each question gets a consensus answer, an agreement score and a `contested` flag when the models disagree. See [Decision models](#decision-models-conclave-decide).
+
+**🧭 Any decision model on OpenRouter**
+
+A `vendor/model` token joins the panel through OpenRouter's Decisions API, priced from the cost OpenRouter reports: `conclave decide jev,liquid/d1,upstage/solar-decide,inception/mercury-decide:free ...`. Jev itself runs on an OpenRouter key alone when no Typesafe key is set.
+
+**📈 Price-performance frontiers: `conclave models --frontier`**
+
+Which models are worth their price? `conclave models --frontier` draws the Pareto frontier of quality against cost from external sources only: Artificial Analysis indices via OpenRouter for chat models, and the community Decision Index (recomputed from upstream, edition-pinned) for decision models. Add `--html report.html` for a self-contained offline report. Conclave runs no evaluations of its own; a model nobody has scored is listed as unscored, never estimated. See [Price-performance frontiers](#price-performance-frontiers).
+
+**🛠️ Readable OpenRouter and Perplexity errors**
+
+Error responses whose `code` is a number (OpenRouter, Perplexity) used to surface as raw JSON; they now read `HTTP 401: User not found. [code: 401]`.
+
+**⚠️ Known issue (unchanged):** the Perplexity Agent API migration is still held pending a live key. See [CHANGELOG](CHANGELOG.md#140---2026-10-01).
+
+---
 
 ### v1.4.0 — 2026-10-01
 
@@ -443,8 +455,8 @@ you the whole panel; `--skip-preflight` overrides that.
 
 ## Decision models (`conclave decide`)
 
-Decision models (Typesafe **Jev**, Cloudflare **Clef** and **Clef-flash**) are not chat
-models. They take a *state* (any text) and a set of *typed questions*, and return typed
+Decision models (Typesafe **Jev**, Cloudflare **Clef** and **Clef-flash**, plus any decision
+model on OpenRouter) are not chat models. They take a *state* (any text) and a set of *typed questions*, and return typed
 answers with calibrated probabilities:
 
 | Type | Asks | Answer |
@@ -479,8 +491,8 @@ conclave decide jev "Server down since 9am" --ask "Is this urgent?"
 argument is the decider list only when it is a comma list of two or more names
 (`clef,jev`, state then from stdin or `-f`); anything else, including one word such as
 `jev`, is the state and every configured decider answers it. Every entry of a decider list
-must be `jev`, `clef` or `clef-flash`; a typo or a chat provider is refused before anything
-is sent.
+must be `jev`, `clef`, `clef-flash` or an OpenRouter `vendor/model` decision model; a typo or a
+chat provider is refused before anything is sent.
 
 A questions file is YAML or JSON in the vendors' wire shape (`criteria` is a mapping for
 `choice` (2-255 options), an ordered list for `score` (2-10 levels), and for `noul` an optional
@@ -519,8 +531,9 @@ permission) and `CLOUDFLARE_ACCOUNT_ID` for `clef` and `clef-flash`. Environment
 are API-only (no `@cli`/`@api` suffix), are never part of `--all`, and are not accepted as a
 chat provider or judge. `--cache`, `-t` (default 30 s per decider) and `--json` behave as on a
 query; exit status is 0 when at least one decider answered, 1 when all failed, 130 on Ctrl-C.
-Prices come from a hand-maintained table (`conclave models jev`, which works offline and
-with `CONCLAVE_NO_PRICING=1`), input tokens only. Any secret a vendor echoes back in an error
+Cost is the vendor's own reported figure where one exists (OpenRouter's `usage.cost`, which
+covers every `vendor/model` decider and jev on that route); otherwise a hand-maintained table
+(`conclave models jev`, which works offline and with `CONCLAVE_NO_PRICING=1`), input tokens only. Any secret a vendor echoes back in an error
 (API key, account id) is shown as `<redacted>`. Design: [ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md),
 build plan: [docs/PLAN-decision-models.md](docs/PLAN-decision-models.md).
 
@@ -599,6 +612,11 @@ unreachable, so a release script can tell the two apart. See
 The catalog never blocks a query: once a cache exists it is served immediately, stale or
 not, and refreshed in the background.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/pricing-catalog-dark.svg">
+  <img alt="State machine: no cache leads to one synchronous fetch; a fresh cache is served with no network until its TTL expires; a stale cache is served immediately while a background refresh makes it fresh; a failed first fetch leaves the catalog absent and queries proceed without prices" src="docs/diagrams/pricing-catalog.svg" width="100%">
+</picture>
+
 ### Price-performance frontiers
 
 `conclave models --frontier` lists the models no other model beats on both quality and
@@ -630,11 +648,6 @@ conclave models --frontier --json                   # the full result, machine-r
 - The HTML report is one file with inline SVG charts (score vs cost on a log axis with the
   frontier step line, plus score vs latency for decision models), a sortable table, and
   the sources. It makes no network requests, so it works offline and from `file://`.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/pricing-catalog-dark.svg">
-  <img alt="State machine: no cache leads to one synchronous fetch; a fresh cache is served with no network until its TTL expires; a stale cache is served immediately while a background refresh makes it fresh; a failed first fetch leaves the catalog absent and queries proceed without prices" src="docs/diagrams/pricing-catalog.svg" width="100%">
-</picture>
 
 ## Usage Examples
 
@@ -808,6 +821,10 @@ Output Flags:
 Subcommands:
       conclave init      Set up API keys interactively
       conclave models    Inspect the model/price catalog (--check, --json, --all, --refresh)
+                         --frontier [--deciders] [--axis intelligence|coding|agentic]
+                         [--cost blend|input|task] [--html <file>]: price-performance frontier
+      conclave decide    Decision-model panel: [deciders] [state] --questions <file> | --ask <text>
+                         (-f, -t, --json, -q, --cache work as on a query)
       conclave keyring   Manage API keys in the OS keyring
       conclave cache     Inspect or empty the response cache
 
@@ -950,8 +967,10 @@ bodies with no parsing at all. Nothing is ever prompted for when stdin is not a 
 Key design decisions are recorded as ADRs in [`docs/adr/`](docs/adr/) — dual provider
 modes, the LLM-as-judge synthesis, parallel/per-provider timeouts, the shared HTTP
 client, credential precedence + OS-keyring fallback, the GLM Coding Plan transport, the
-runtime pricing catalog, OpenRouter slash routing, the opt-in response cache, and the
-per-provider `@cli` / `@api` transport suffix.
+runtime pricing catalog, OpenRouter slash routing, the opt-in response cache, the
+per-provider `@cli` / `@api` transport suffix, claude's isolation from the caller's
+context, decision models as their own provider class, slash-routed decision models, and
+price-performance frontiers from external, edition-pinned sources.
 
 ## License
 
