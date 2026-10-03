@@ -455,6 +455,58 @@ you the whole panel; `--skip-preflight` overrides that.
 
 ## Decision models (`conclave decide`)
 
+### What are System One models?
+
+Most of Conclave talks to LLMs: you send a prompt, they write text, and something has to
+read that text to find the answer. That is slow (seconds), costs output tokens, and the
+"confidence" an LLM states is just more text it chose to write.
+
+**System One models** are a different class, introduced by TypeSafe with **Jev**. The name
+echoes Kahneman's System 1 (fast, intuitive judgment) as opposed to System 2 (slow,
+deliberate reasoning, which is the LLM's job). Instead of a prompt, you give one a *state*
+(a ticket, a log line, a JSON record) and a set of *typed questions*. Instead of text, it
+returns a typed value per question with a probability distribution attached, which your
+code can branch on directly:
+
+| | LLM (chat model) | System One model |
+|---|---|---|
+| Input | a prompt | a state plus typed questions |
+| Output | free text you must parse | a typed answer per question: yes/no, one of N labels, or a point on a scale |
+| Confidence | whatever the model says it is | a probability distribution over the possible answers |
+| Speed | seconds | tens to hundreds of milliseconds |
+| Cost | input and output tokens | input tokens only (output is free) |
+| Good for | explaining, writing, open-ended reasoning | routing, triage, classification, gating an agent's next action |
+
+Each question is answered independently and in parallel, so one call can ask 64 things about
+the same state. The answers cannot drift out of format, because there is no free text to
+drift. They will not explain *why*, though: when you need reasoning, ask an LLM.
+
+The models Conclave can use:
+
+- **Jev** (TypeSafe): the first System One model. 32k context, $0.042 per million input
+  tokens. Reached directly with a TypeSafe key, or through OpenRouter.
+- **Clef** and **Clef-flash** (Cloudflare): open-weight (Apache-2.0) models that speak Jev's
+  API, hosted on Workers AI. 64k context. Clef-flash trades a little quality for speed
+  (around 40 ms median).
+- **Any OpenRouter decision model**: Liquid AI, Upstage, Inception, Together and others publish
+  System One models there; use them as `vendor/model`.
+
+Because they return comparable probabilities, a panel of decision models needs no judge:
+Conclave averages the distributions and tells you where the models disagree. To compare them
+on quality and price, see [Price-performance frontiers](#price-performance-frontiers).
+
+**Read more:**
+[Introducing System One models and Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) (TypeSafe) ·
+[System One concepts](https://docs.typesafe.ai/concepts/system-one),
+[question types](https://docs.typesafe.ai/primitives) and
+[reading confidence](https://docs.typesafe.ai/confidence) (TypeSafe docs) ·
+[Clef and Clef-flash](https://blog.cloudflare.com/clef-decision-models/) (Cloudflare) ·
+[Using Jev on OpenRouter](https://openrouter.ai/docs/guides/community/jev) ·
+[Decision Index leaderboard](https://huggingface.co/spaces/multimodalart/jev-decision-index) (community) ·
+[ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md) (how Conclave models them)
+
+### Using `conclave decide`
+
 Decision models (Typesafe **Jev**, Cloudflare **Clef** and **Clef-flash**, plus any decision
 model on OpenRouter) are not chat models. They take a *state* (any text) and a set of *typed questions*, and return typed
 answers with calibrated probabilities:
