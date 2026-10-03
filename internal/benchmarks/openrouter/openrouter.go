@@ -75,9 +75,9 @@ var ErrNotImplemented = errors.New("openrouter benchmarks: not implemented")
 
 // LoadFeed fetches (or reads cached) the benchmarks feed. A missing key is an
 // error naming OPENROUTER_API_KEY; callers treat any error as "no chat scores".
-func LoadFeed(ctx context.Context, opts Options) (*Feed, error) { return nil, ErrNotImplemented }
+func LoadFeed(ctx context.Context, opts Options) (*Feed, error) { return loadFeed(ctx, opts) }
 
 // LoadDecisionModels fetches (or reads cached) the decision-model catalog.
 func LoadDecisionModels(ctx context.Context, opts Options) ([]DecisionModel, error) {
-	return nil, ErrNotImplemented
+	return loadDecisionModels(ctx, opts)
 }
