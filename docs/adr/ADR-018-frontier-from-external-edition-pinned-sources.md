@@ -55,3 +55,7 @@ The methodology moves fast: v0.2 on 2026-09-27, v0.2.1 on 2026-09-28, and a "cor
 - `docs/PLAN-decision-models.md` - "Frontier view" section: build plan and source details.
 - [ADR-009](ADR-009-runtime-pricing-catalog-from-openrouter.md) - advisory, cached, nil-safe external data.
 - [ADR-016](ADR-016-decision-models-are-a-separate-provider-class.md), [ADR-017](ADR-017-slash-routed-decision-models-via-openrouter.md) - the decision models being plotted.
+
+## Addendum - 2026-10-03: upstream does publish the headline score
+
+The Context above says upstream "does not publish the headline index". That is wrong: each row of `index-v0.2.1.json` carries it as `scores.balanced_skill`. The decision stands, and the finding strengthens its guardrail. Conclave's recompute from the published methodology reproduces `balanced_skill` within 0.006 for all 71 upstream rows, and the Cloudflare mirror within 0.01 (0 mismatches). A future edition test can therefore check against the original source as well as the mirror. The mirror stays as the source of the self-reported Clef rows. Mirror rows join upstream on `engine`, not display name, because the mirror renames models (for example `pplx-decider-v1-27b` becomes "AutoJev-27B").
