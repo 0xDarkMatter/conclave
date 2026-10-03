@@ -154,3 +154,17 @@ func TestDeciderPriceRowsCarryProvenance(t *testing.T) {
 		t.Fatal("DeciderPrices leaked the package-level table to callers")
 	}
 }
+
+// OpenRouter reports Jev as "typesafe/jev-1.13-20260917" (probed 2026-10-03):
+// same model, same $0.042/M, so it must price like jev-1.13.
+func TestOpenRouterJevModelIdsArePriced(t *testing.T) {
+	for _, model := range []string{"typesafe/jev-1.13-20260917", "typesafe/jev-1.13", "~typesafe/jev-latest"} {
+		cost, ok := DeciderCost("jev", model, 284, 20)
+		if want := 284 * 0.042 / 1_000_000; !ok || cost < want*0.999999 || cost > want*1.000001 {
+			t.Errorf("%s: cost=%v ok=%v", model, cost, ok)
+		}
+	}
+	if _, ok := DeciderCost("jev", "typesafe/jev-evil", 1, 0); ok {
+		t.Error("typesafe/jev-evil priced")
+	}
+}

@@ -56,9 +56,10 @@ var (
 
 // deciderEnv names the credentials each decider needs, for the "not
 // configured" errors. It restates what decide_jev.go / decide_clef.go read;
-// keep the two in step when a backend's credentials change.
+// keep the two in step when a backend's credentials change. Entries are
+// joined with " and " (all required); jev needs EITHER key, so it is one entry.
 var deciderEnv = map[string][]string{
-	"jev":        {"TYPESAFE_API_KEY"},
+	"jev":        {"TYPESAFE_API_KEY or OPENROUTER_API_KEY"},
 	"clef":       {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"},
 	"clef-flash": {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"},
 }
@@ -81,7 +82,7 @@ Every entry of a decider list must be jev, clef or clef-flash. Omit the list
 to use every configured decider; for a single decider give two arguments
 (conclave decide jev "state text").
 
-Setup: TYPESAFE_API_KEY (jev); CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
+Setup: TYPESAFE_API_KEY or OPENROUTER_API_KEY (jev); CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
 (clef, clef-flash). Environment, ~/.config/conclave/.env or the OS keyring.
 
 Examples:
@@ -239,7 +240,7 @@ func resolveDeciders(list string) ([]providers.Decider, error) {
 			}
 		}
 		if len(out) == 0 {
-			return nil, fmt.Errorf("no decision models configured: set TYPESAFE_API_KEY (jev), or CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (clef, clef-flash)")
+			return nil, fmt.Errorf("no decision models configured: set TYPESAFE_API_KEY or OPENROUTER_API_KEY (jev), or CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (clef, clef-flash)")
 		}
 		return out, nil
 	}

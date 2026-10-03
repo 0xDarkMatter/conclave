@@ -11,6 +11,7 @@ touches:
   - "internal/providers/registry.go:AllDeciders"
   - "internal/decide/**"
   - "internal/pricing/deciders.go"
+  - "internal/providers/decide_jev.go"
   - "cmd/decide.go"
 ---
 
@@ -73,3 +74,15 @@ Meanwhile the thing Conclave exists to do, comparing several models and measurin
 - [ADR-011](ADR-011-opt-in-response-cache-keyed-on-the-full-prompt.md) — the cache key this extends.
 - Typesafe quickstart: https://docs.typesafe.ai/introduction/quickstart
 - Clef announcement: https://blog.cloudflare.com/clef-decision-models/ and model page https://developers.cloudflare.com/workers-ai/models/clef
+
+## Addendum — 2026-10-03: Jev has a second route, through OpenRouter
+
+Jev is now also served by OpenRouter's Decisions API (`POST https://openrouter.ai/api/alpha/decisions`,
+`OPENROUTER_API_KEY`), at the same $0.042/M and with the same bare System One response shape plus
+`usage.cost`, `id` and `provider`. The `jev` decider keeps one name and one price row but picks its
+route by credential: Typesafe direct when `TYPESAFE_API_KEY` resolves, otherwise OpenRouter. This
+refines, not reverses, the decision above: jev is still a `Decider`, still outside `AllAPIProviders`,
+still priced from the table (whose jev alias rule now accepts OpenRouter's `typesafe/jev-X.Y-YYYYMMDD`
+id). The same probe found five more vendors' decision models on OpenRouter; whether `conclave decide`
+should route arbitrary `vendor/model` decider tokens there is a separate decision, left to ADR-017.
+Evidence: `docs/PLAN-decision-models.md`, Phase 0 findings.

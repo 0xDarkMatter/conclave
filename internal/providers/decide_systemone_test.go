@@ -524,3 +524,12 @@ func TestDecideVendorEchoRedactsEverySecret(t *testing.T) {
 		srv.Close()
 	}
 }
+
+// OpenRouter's Decisions API sends error.code as a number (probed 2026-10-03);
+// a string-typed Code failed the whole decode and surfaced the raw JSON body.
+func TestParseAPIErrorNumericCodeRendersMessage(t *testing.T) {
+	err := parseAPIError(401, []byte(`{"error":{"message":"User not found.","code":401}}`))
+	if err == nil || err.Error() != "HTTP 401: User not found. [code: 401]" {
+		t.Fatalf("err = %v", err)
+	}
+}

@@ -498,7 +498,8 @@ is_urgent:
   instructions: Must this be answered within an hour?
 ```
 
-**Setup.** `TYPESAFE_API_KEY` for `jev`; `CLOUDFLARE_API_TOKEN` (with Workers AI
+**Setup.** `TYPESAFE_API_KEY` for `jev`, or just `OPENROUTER_API_KEY` (jev is also served by
+OpenRouter's Decisions API at the same price; a Typesafe key wins when both are set); `CLOUDFLARE_API_TOKEN` (with Workers AI
 permission) and `CLOUDFLARE_ACCOUNT_ID` for `clef` and `clef-flash`. Environment,
 `~/.config/conclave/.env`, `conclave init`, or `conclave keyring set <VAR>`. Decision models
 are API-only (no `@cli`/`@api` suffix), are never part of `--all`, and are not accepted as a

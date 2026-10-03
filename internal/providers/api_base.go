@@ -399,8 +399,11 @@ func parseAPIError(statusCode int, body []byte) error {
 		Error struct {
 			Message string `json:"message"`
 			Type    string `json:"type"`
-			Code    string `json:"code"`
-			Param   string `json:"param"`
+			// A string (OpenAI) or a number (OpenRouter, Perplexity). Typed as
+			// string, a numeric code failed the whole Unmarshal and the caller
+			// got the raw JSON body instead of the message.
+			Code  json.RawMessage `json:"code"`
+			Param string          `json:"param"`
 		} `json:"error"`
 		Message string `json:"message"` // Some APIs use this directly
 	}
@@ -413,8 +416,8 @@ func parseAPIError(statusCode int, body []byte) error {
 		if msg != "" {
 			// Build a detailed error with code/param when present.
 			details := msg
-			if errResp.Error.Code != "" {
-				details += fmt.Sprintf(" [code: %s]", errResp.Error.Code)
+			if code := strings.Trim(strings.TrimSpace(string(errResp.Error.Code)), `"`); code != "" && code != "null" {
+				details += fmt.Sprintf(" [code: %s]", code)
 			}
 			if errResp.Error.Param != "" {
 				details += fmt.Sprintf(" [param: %s]", errResp.Error.Param)

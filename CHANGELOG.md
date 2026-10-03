@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one decider answered, 1 when all failed, 130 on Ctrl-C. `--cache` keys on
   the state and the canonical question set; a hit reports `cached: true` and
   costs $0. ADR-016.
-- `TYPESAFE_API_KEY`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
+- `TYPESAFE_API_KEY` (or `OPENROUTER_API_KEY`, via OpenRouter's Decisions API), `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in
   `conclave init` and `conclave keyring list`. Decider keys are saved without
   a live check (no spend-free auth probe is known yet).
 - `conclave models` lists the decision-model price table with each row's

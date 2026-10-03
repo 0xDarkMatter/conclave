@@ -80,3 +80,19 @@ func TestAllDecidersNamesRecognisedBySharedTable(t *testing.T) {
 		}
 	}
 }
+
+// Jev reaches the same model through OpenRouter's Decisions API (probed live
+// 2026-10-03); a machine with only an OpenRouter key must still have jev, and
+// a Typesafe key must keep the direct route.
+func TestJevRoutesDirectFirstThenOpenRouter(t *testing.T) {
+	t.Setenv("CONCLAVE_JEV_BASE_URL", "")
+	t.Setenv("TYPESAFE_API_KEY", "")
+	t.Setenv("OPENROUTER_API_KEY", "sk-or-test")
+	if d := NewJevDecider(); d.baseURL != jevOpenRouterURL || d.apiKeyEnv != "OPENROUTER_API_KEY" || !d.IsAvailable() {
+		t.Fatalf("OpenRouter-only: url=%q key=%q available=%v", d.baseURL, d.apiKeyEnv, d.IsAvailable())
+	}
+	t.Setenv("TYPESAFE_API_KEY", "ts-test")
+	if d := NewJevDecider(); d.baseURL != jevDefaultURL || d.apiKeyEnv != "TYPESAFE_API_KEY" {
+		t.Fatalf("both keys: url=%q key=%q; want the direct route", d.baseURL, d.apiKeyEnv)
+	}
+}

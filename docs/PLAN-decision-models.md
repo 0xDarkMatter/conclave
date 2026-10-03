@@ -49,7 +49,7 @@ Response:
 
 | Decider | Endpoint | Auth | Default model | Context | Price (2026-10) |
 |---|---|---|---|---|---|
-| `jev` | `POST https://api.typesafe.ai/v1/systemone` | `Bearer TYPESAFE_API_KEY` | `jev-latest` | 32k | $0.042/M in, output free |
+| `jev` | `POST https://api.typesafe.ai/v1/systemone`, else `POST https://openrouter.ai/api/alpha/decisions` | `Bearer TYPESAFE_API_KEY`, else `OPENROUTER_API_KEY` | `jev-latest` | 32k | $0.042/M in, output free |
 | `clef` | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` | `Bearer CLOUDFLARE_API_TOKEN` | `clef` | 64k | $0.24/M in |
 | `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | `clef-flash` | 64k | | 64k | unpublished at 2026-10-02; confirm |.09/M in (pricing page, updated 2026-10-01) |
 
@@ -80,7 +80,7 @@ key may need to be added there first.
 
 Write the findings into this file under each probe.
 
-**Findings (live against Clef and Clef-flash on Workers AI, 2026-10-03; Jev untested, no key).**
+**Findings (live against Clef and Clef-flash on Workers AI, 2026-10-03; Jev via OpenRouter below).**
 
 1. *Wrapper:* every success is `{"result":{model,answers,usage},"success":true,"errors":[],"messages":[]}`.
    The clef backend now REQUIRES it and refuses a bare body; Jev stays bare (Typesafe docs).
@@ -111,6 +111,33 @@ OPTIONAL criteria `{"true": ..., "false": ...}`; choice takes 2-255 options; sco
 levels. `model` defaults to `clef` when omitted; `state` may be a string or structured data.
 Not yet supported locally: criteria descriptions and `instructions` given as objects/arrays (the
 schema allows them; ours are strings), and `images`.
+
+**Jev via OpenRouter (live, 2026-10-03).** `POST https://openrouter.ai/api/alpha/decisions` with
+`OPENROUTER_API_KEY` serves Jev 1.13 at the same $0.042/M (no markup; `usage.cost` matched the
+table exactly). The response is the bare System One shape plus `usage.cost`, `id` and `provider`;
+it reports the model as `typesafe/jev-1.13-20260917`. `jev-latest`, `~typesafe/jev-latest` and
+`typesafe/jev-1.13` are all accepted; `model` is required (400 when omitted). Two identical calls
+returned identical answers (Clef did not: see Phase 0 probe 3). 65 questions were accepted (only
+Clef caps at 64); a ~40k-token state is a 400 `max_tokens_exceeded`; a bad key is 401 `User not
+found.`. Errors are `{"error":{"message","code":<number>}}`, which `parseAPIError` now decodes
+(it rendered raw JSON before). The jev decider uses this route when `TYPESAFE_API_KEY` is unset.
+
+**Other decision models on OpenRouter (survey, 2026-10-03; same 3-question request to each).**
+OpenRouter lists decision models as `output_modalities=decisions`. Six vendors as of this date:
+
+| Slug | $/M in | Context | Live result |
+|---|---|---|---|
+| `typesafe/jev-1.13` | 0.042 | 32k | all 3 types; 2-decimal probabilities; deterministic |
+| `liquid/d1` | 0.04 | 64k | all 3 types; routed the outage to **billing** (0.73), the only dissent |
+| `upstage/solar-decide` | 0.05 | 512k | all 3 types; ~6x the input tokens for the same request |
+| `inception/mercury-decide:free` | free | 32k | all 3 types |
+| `togethercomputer/tev1-4b-experimental` | 0.042 | 32k | all 3 types despite a "choice only" description; open weights |
+| `jaredpalmer/kev-4b` | 0.042 | 8k | all 3 types; reports output tokens (192) though they are free; open weights |
+| `respan/span-01`, `-lite` | 0.02 / free | n/a | noul only (400 on choice/score); behaviour scoring, not general judgment |
+
+None of these are reachable from `conclave decide` yet except jev. Routing any `vendor/model`
+decider token through OpenRouter (the ADR-010 pattern, priced from the reported `usage.cost`)
+is the natural next step and needs its own ADR (017).
 
 ## Phase 1: deciders + `conclave decide` — DONE (2026-10-02)
 

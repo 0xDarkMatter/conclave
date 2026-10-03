@@ -48,13 +48,17 @@ var deciderPrices = []DeciderPrice{
 	},
 }
 
-var jevVersionID = regexp.MustCompile(`^jev-\d+\.\d+(\.\d+)?$`)
+// jevVersionID matches the ids Jev reports or accepts for a numbered release:
+// Typesafe's "jev-1.13" and OpenRouter's "typesafe/jev-1.13-20260917" (dated
+// canonical slug, probed 2026-10-03). Same model, same price on both routes.
+var jevVersionID = regexp.MustCompile(`^(typesafe/)?jev-\d+\.\d+(\.\d+)?(-\d{8})?$`)
 
 // DeciderCost prices one decision call from the table. Matching, in order:
 //
 //  1. the exact (decider, model) row;
 //  2. an explicit vendor alias: @cf/cloudflare/<decider> for either Clef row,
-//     or jev-latest / a numeric jev-X.Y[.Z] version for Jev.
+//     or jev-latest / ~typesafe/jev-latest / a numeric jev-X.Y[.Z] version
+//     (optionally typesafe/-prefixed and -YYYYMMDD-dated) for Jev.
 //
 // Anything else is unpriced: ok=false, never an error (ADR-009). A cost of 0
 // with ok=true means the table knows the price and it is genuinely zero
@@ -79,7 +83,7 @@ func deciderRow(decider, model string) *DeciderPrice {
 	alias := false
 	switch decider {
 	case "jev":
-		alias = model == "jev-latest" || jevVersionID.MatchString(model)
+		alias = model == "jev-latest" || model == "~typesafe/jev-latest" || jevVersionID.MatchString(model)
 	case "clef", "clef-flash":
 		alias = model == "@cf/cloudflare/"+decider
 	}

@@ -288,7 +288,7 @@ works offline and under `CONCLAVE_NO_PRICING=1`.
 
 | Decider | Default model | Endpoint | Auth | Price (USD / 1M tokens) | As of |
 |---|---|---|---|---|---|
-| `jev` | `jev-latest` (reports e.g. `jev-1.13.0`) | `POST https://api.typesafe.ai/v1/systemone` (override: `CONCLAVE_JEV_BASE_URL`, full URL) | `Bearer TYPESAFE_API_KEY` | $0.042 in, output free | 2026-10-02 |
+| `jev` | `jev-latest` (reports e.g. `jev-1.13.0`) | `POST https://api.typesafe.ai/v1/systemone` (override: `CONCLAVE_JEV_BASE_URL`, full URL) | `Bearer TYPESAFE_API_KEY`, or else `OPENROUTER_API_KEY` via `POST https://openrouter.ai/api/alpha/decisions` (reports `typesafe/jev-1.13-20260917`) | $0.042 in, output free (same on both routes) | 2026-10-03 |
 | `clef` | `clef` (`@cf/cloudflare/clef`) | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` (override: `CONCLAVE_CLEF_BASE_URL`, prefix through `/ai/run`) | `Bearer CLOUDFLARE_API_TOKEN` | $0.24 in, no published output price | 2026-10-02 |
 | `clef-flash` | `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | | unpublished: reported unpriced | 2026-10-02 |.09 in, no published output price | 2026-10-02 |
 
