@@ -115,7 +115,7 @@ func TestFeedSourceWithoutSnapshotDateIsRefused(t *testing.T) {
 // key must come back redacted, and vendor text is capped at 300 characters so
 // a hostile body cannot balloon a caller's warning.
 func TestVendorErrorsAreRedactedAndCapped(t *testing.T) {
-	const key = "sk-or-v1-SECRET-KEY-LEAK"
+	const key = "redaction-sentinel-not-a-real-credential-KEY-LEAK" // deliberately not key-shaped: secret scanners flag sk-or-… literals
 	serve := func(message func(r *http.Request) string) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
