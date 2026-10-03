@@ -1,0 +1,4 @@
+# False positives only. Each line is a gitleaks fingerprint (commit:file:rule:line).
+# Verified 2026-10-03: a fake key literal in a redaction test, not a real credential;
+# the literal was replaced with a non-key-shaped sentinel in a later commit.
+444ac6f405e5c92b79fb492ca67fe936bd75213a:internal/benchmarks/openrouter/defects_test.go:generic-api-key:118
