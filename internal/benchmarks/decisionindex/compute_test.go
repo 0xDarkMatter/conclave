@@ -8,6 +8,7 @@ package decisionindex
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -60,8 +61,9 @@ func buildMethodology(t *testing.T, areas []tArea) []byte {
 		mAreas = append(mAreas, map[string]any{"id": a.id, "weight": a.weight, "panel": panel})
 	}
 	b, err := json.Marshal(map[string]any{
+		"edition":    map[string]any{"id": Edition, "panel_id": testPanelID},
 		"benchmarks": benches,
-		"index":      map[string]any{"areas": mAreas, "chance_levels": chance, "lower_rules": lower},
+		"index":      map[string]any{"panel_id": testPanelID, "areas": mAreas, "chance_levels": chance, "lower_rules": lower},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -87,11 +89,33 @@ func row(engine string, raws map[int]float64, briers map[int]float64) map[string
 
 func buildIndex(t *testing.T, rows ...map[string]any) []byte {
 	t.Helper()
-	b, err := json.Marshal(map[string]any{"generated_utc": "2026-09-28T00:00:00Z", "models": rows})
+	b, err := json.Marshal(map[string]any{"generated_utc": "2026-09-28T00:00:00Z",
+		"suite": map[string]any{"panel_id": testPanelID}, "models": rows})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return b
+}
+
+// testPanelID stands in for the edition's panel id (v0.2.1 publishes
+// "decision-index-0.2.1" in methodology `edition.panel_id`, `index.panel_id`
+// and the index file's `suite.panel_id`).
+const testPanelID = "decision-index-test"
+
+// mutate decodes a fixture, lets f edit it as generic JSON and re-encodes it,
+// so a test can corrupt one field without a bespoke builder.
+func mutate(t *testing.T, b []byte, f func(map[string]any)) []byte {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	f(m)
+	out, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 func itoa(i int) string { b, _ := json.Marshal(i); return string(b) }
@@ -217,6 +241,7 @@ func TestMultiTrackBenchmarkCorrectsEachTrack(t *testing.T) {
 func TestComputeIncludesTopLevelJev(t *testing.T) {
 	meth := buildMethodology(t, singleArea(tBench{id: 1}))
 	idx, _ := json.Marshal(map[string]any{
+		"suite":  map[string]any{"panel_id": testPanelID},
 		"models": []any{row("a", map[int]float64{1: 0.2}, nil)},
 		"jev":    row("jev", map[int]float64{1: 0.9}, nil),
 	})
@@ -226,5 +251,81 @@ func TestComputeIncludesTopLevelJev(t *testing.T) {
 	}
 	if len(es) != 2 || es[1].Engine != "jev" || !near(es[1].Index, 90, 1e-9) {
 		t.Fatalf("top-level jev missing or wrong: %+v", es)
+	}
+}
+
+// === Refuted defects (Codex review, 2026-10-03) ===
+
+// Corrupt edition numbers used to flow straight into the formula: gold 0
+// produced Index NaN, coverage 2 produced Index 200, and an empty weighted
+// area was silently dropped so weights summing to 1.5 passed. Each must now
+// reject the edition with an error naming the field.
+func TestComputeRejectsCorruptNumbers(t *testing.T) {
+	two := []tArea{
+		{id: "knowledge", weight: 1, panel: []tBench{{id: 1}}},
+		{id: "language", weight: 0.5},
+	}
+	good := buildMethodology(t, singleArea(tBench{id: 1, chance: 0.25}))
+	goodIdx := buildIndex(t, row("m", map[int]float64{1: 0.5}, nil))
+	setBench := func(field string, v any) func(map[string]any) {
+		return func(m map[string]any) {
+			b := m["models"].([]any)[0].(map[string]any)["benchmarks"].(map[string]any)["1"].(map[string]any)
+			b[field] = v
+		}
+	}
+	setMeth := func(f func(ix map[string]any)) func(map[string]any) {
+		return func(m map[string]any) { f(m["index"].(map[string]any)) }
+	}
+	cases := []struct {
+		name      string
+		meth, idx []byte
+		field     string
+	}{
+		{"gold zero", mutate(t, good, setMeth(func(ix map[string]any) {
+			ix["areas"].([]any)[0].(map[string]any)["panel"].([]any)[0].(map[string]any)["gold"] = 0.0
+		})), goodIdx, "gold"},
+		{"coverage above one", good, mutate(t, goodIdx, setBench("coverage", 2.0)), "coverage"},
+		{"raw above one", good, mutate(t, goodIdx, setBench("raw", 1.5)), "raw"},
+		{"raw negative", good, mutate(t, goodIdx, setBench("raw", -0.1)), "raw"},
+		{"chance one", mutate(t, good, setMeth(func(ix map[string]any) {
+			ix["chance_levels"].([]any)[0].(map[string]any)["chance"] = 1.0
+		})), goodIdx, "chance"},
+		{"negative area weight", mutate(t, good, setMeth(func(ix map[string]any) {
+			a := ix["areas"].([]any)
+			ix["areas"] = append(a, map[string]any{"id": "x", "weight": -0.5, "panel": a[0].(map[string]any)["panel"]})
+		})), goodIdx, "weight"},
+		{"empty weighted area", buildMethodology(t, two), goodIdx, "language"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			es, err := Compute(c.meth, c.idx)
+			if err == nil {
+				t.Fatalf("corrupt edition accepted: %+v", es)
+			}
+			if !strings.Contains(err.Error(), c.field) {
+				t.Errorf("error %q does not name the field %q", err, c.field)
+			}
+		})
+	}
+}
+
+// A multi-track benchmark whose in-index tracks are absent used to fall back
+// to scalar raw scoring (raw 0.8 gave Index 80). Methodology `index.steps[0]`
+// and `[1]`: an unanswered track counts as wrong and tracks average equally,
+// so the missing tracks score 0 and raw is never consulted.
+func TestMultiTrackBenchmarkMissingTracksScoreZeroNotRaw(t *testing.T) {
+	meth := buildMethodology(t, singleArea(tBench{id: 30, chance: 0.175, tracks: []tTrack{
+		{name: "GSM8K-4choice", random: 0.25}, {name: "GSM8K-10choice", random: 0.1},
+	}}))
+	if e := onlyEntry(t, meth, buildIndex(t, row("m", map[int]float64{30: 0.8}, nil))); e.Index != 0 {
+		t.Errorf("no tracks: Index = %v, want 0 (never scalar raw)", e.Index)
+	}
+	r := row("m", nil, nil)
+	r["benchmarks"] = map[string]any{"30": map[string]any{"raw": 0.8, "coverage": 1.0, "tracks": []map[string]any{
+		{"track": "GSM8K-4choice", "score": 1.0},
+	}}}
+	// One track perfect, the other missing: mean(1, 0) = 0.5.
+	if e := onlyEntry(t, meth, buildIndex(t, r)); !near(e.Index, 50, 1e-9) {
+		t.Errorf("one track missing: Index = %v, want 50", e.Index)
 	}
 }
