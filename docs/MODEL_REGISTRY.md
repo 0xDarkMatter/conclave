@@ -26,6 +26,12 @@ carry (Perplexity request fees, Gemini long-context multipliers, GLM Coding Plan
 > against it (exit 2 on drift, 3 if the catalog is unreachable). This document is the annotated, human-readable layer on top;
 > when the two disagree, the command is right. See ADR-009.
 
+> **Quality vs price.** This file records prices and ids, not quality. For "which model is worth
+> its price", `conclave models --frontier` (chat, needs `OPENROUTER_API_KEY`) and
+> `conclave models --frontier --deciders` (decision models, no key) draw the Pareto frontier from
+> external scores only: Artificial Analysis via OpenRouter, and the Decision Index v0.2.1. Add
+> `--html FILE` for an offline report. Unscored models are listed, never estimated. See ADR-018.
+
 > **Maintenance:** the "Conclave Defaults" and "Cheap Mode" tables MUST match the maps in
 > `internal/config/config.go`. If you change a default in code, change it here in the same commit.
 > The "Drift Watch" section lists IDs the code still uses that OpenRouter no longer serves.

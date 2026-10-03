@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `conclave models --frontier`: price-performance Pareto frontiers from
+  external quality sources only (ADR-018). Chat models plot an Artificial
+  Analysis index (`--axis intelligence|coding|agentic`) against list price
+  (`--cost blend|input`) or OpenRouter's measured cost per eval task
+  (`--cost task`), and need `OPENROUTER_API_KEY` (exit 3 without it).
+  `--deciders` plots decision models: the Decision Index v0.2.1, recomputed
+  from upstream and checked against Cloudflare's mirror, against input list
+  price; no key needed. Output lists the frontier, the top 15 dominated
+  models, scored-but-unpriced models and unscored names, plus every source
+  with its as-of date; failing sources are warnings on stderr, and only
+  "no source at all" exits 3. `--json` prints the result as is, `--html FILE`
+  writes a self-contained offline report (inline SVG charts, sortable
+  table, sources), and `--refresh` bypasses the caches.
 - Any OpenRouter decision model as a `conclave decide` member: a `vendor/model`
   token (`liquid/d1`, `inception/mercury-decide:free`) routes to OpenRouter's
   Decisions API with `OPENROUTER_API_KEY` and is priced from the cost OpenRouter

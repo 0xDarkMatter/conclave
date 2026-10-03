@@ -27,6 +27,10 @@ Built with [Charm](https://charm.sh)'s Bubble Tea for a terminal UI that doesn't
 
 ### Unreleased
 
+**📈 Price-performance frontiers: `conclave models --frontier`**
+
+Which models are worth their price? `conclave models --frontier` draws the Pareto frontier of quality against cost from external sources only: Artificial Analysis indices via OpenRouter for chat models, and the community Decision Index (recomputed, edition-pinned) for decision models. Add `--html report.html` for a self-contained offline report with charts. See [Price-performance frontiers](#price-performance-frontiers).
+
 **🎯 Decision models: `conclave decide`**
 
 Typed questions in, typed answers with probabilities out. `conclave decide clef,jev -f ticket.txt --questions triage.yaml` runs Cloudflare Clef and Typesafe Jev in parallel and averages their probabilities per question, with no LLM judge in the loop. See [Decision models](#decision-models-conclave-decide).
@@ -594,6 +598,38 @@ unreachable, so a release script can tell the two apart. See
 
 The catalog never blocks a query: once a cache exists it is served immediately, stale or
 not, and refreshed in the background.
+
+### Price-performance frontiers
+
+`conclave models --frontier` lists the models no other model beats on both quality and
+price, from **external** scores only. Conclave runs no evaluations of its own, every score
+names its source and snapshot date, and a model nobody has scored is listed as unscored,
+never estimated (ADR-018).
+
+```bash
+conclave models --frontier                          # chat: AA Intelligence Index vs blended list price
+conclave models --frontier --axis coding            # or agentic
+conclave models --frontier --cost task              # OpenRouter's measured cost per eval task (or: input, blend)
+conclave models --frontier --deciders               # decision models: Decision Index vs input list price
+conclave models --frontier --deciders --html d.html # plus a self-contained HTML report
+conclave models --frontier --json                   # the full result, machine-readable
+```
+
+- **Chat models** need `OPENROUTER_API_KEY` (env, `.env` or `conclave keyring set
+  OPENROUTER_API_KEY`), because OpenRouter's benchmarks feed is keyed. Without it the
+  command says so and exits 3.
+- **Decision models** need no key. Scores are the Decision Index (v0.2.1), recomputed from
+  its upstream Hugging Face Space and cross-checked against Cloudflare's mirror; Clef rows
+  come from the mirror and are marked self-reported. The only cost basis is list price per
+  input token, which can mislead: per-call token counts differ by up to 13x between vendors.
+- Output has four parts: the **frontier**, the top 15 **dominated** models, scored models
+  with **no price** on the chosen basis, and the **unscored** names, followed by the sources.
+- Sources are advisory. One that fails leaves its models unscored with a warning on
+  stderr; only when nothing at all loads does the command exit 3. `--refresh` bypasses the
+  caches (24 h by default; `CONCLAVE_BENCHMARKS_TTL`, `CONCLAVE_DECISION_INDEX_TTL`).
+- The HTML report is one file with inline SVG charts (score vs cost on a log axis with the
+  frontier step line, plus score vs latency for decision models), a sortable table, and
+  the sources. It makes no network requests, so it works offline and from `file://`.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/pricing-catalog-dark.svg">
