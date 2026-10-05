@@ -393,12 +393,15 @@ retired.
 | Decider | Runs on | Default model | Price | Key |
 |---|---|---|---|---|
 | jev | TypeSafe API, or OpenRouter's Decisions API | `jev-latest` | $0.042 / M input | `TYPESAFE_API_KEY`, or `OPENROUTER_API_KEY` |
-| clef | Cloudflare Workers AI | `clef` | $0.24 / M input | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
-| clef-flash | Cloudflare Workers AI | `clef-flash` | $0.09 / M input | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
+| clef | Cloudflare Workers AI | `clef` | $0.24 / M input, after a free daily allocation | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
+| clef-flash | Cloudflare Workers AI | `clef-flash` | $0.09 / M input, after a free daily allocation | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` |
 | `vendor/model` | OpenRouter's Decisions API | the slug itself | as OpenRouter reports | `OPENROUTER_API_KEY` |
 
-Output tokens are free for decision models. [docs/MODEL_REGISTRY.md](docs/MODEL_REGISTRY.md)
-is the full reference for every id, price and verification date.
+Decision models bill input tokens only: Jev's output is free, and Cloudflare publishes no output
+price for Clef. Workers AI also gives every Cloudflare account 10,000 Neurons a day free, which is
+about 458K Clef or 1.2M Clef-flash input tokens (see [Workers AI's free allocation](#workers-ais-free-allocation)).
+[docs/MODEL_REGISTRY.md](docs/MODEL_REGISTRY.md) is the full reference for every id, price and
+verification date.
 
 ### OpenRouter (any model)
 
@@ -557,7 +560,25 @@ Find them at openrouter.ai (output modality "decisions"). Design: [ADR-017](docs
 - **Cost:** the vendor's own reported figure where one exists (OpenRouter's `usage.cost`, which
   covers every `vendor/model` decider and jev on that route); otherwise a hand-maintained table
   (`conclave models jev`, which works offline and with `CONCLAVE_NO_PRICING=1`). Input tokens only.
+  Always the metered price, even where a free allocation covers the call (below).
 - **Secrets:** any API key or account id a vendor echoes back in an error is shown as `<redacted>`.
+
+#### Workers AI's free allocation
+
+Workers AI bills Neurons, at $0.011 per 1,000; Clef's $0.24/M and Clef-flash's $0.09/M are that
+rate restated (21,818 and 8,182 Neurons per million input tokens). Every Cloudflare account gets
+**10,000 Neurons a day free**, on Workers Free and Workers Paid alike, reset at 00:00 UTC. That is
+about 458K Clef or 1.2M Clef-flash input tokens: roughly 1,100 Clef or 3,000 Clef-flash calls of
+~400 input tokens a day, if nothing else on the account uses Workers AI.
+
+- **What Conclave reports:** `cost_usd` and the frontier always use the metered price, because the
+  allocation is account-wide, shared with every other Workers AI workload, and Conclave cannot see
+  how much is left. Read `cost_usd` as an upper bound: inside the allocation the real bill is $0.
+  `conclave models clef` shows the allocation beside the price ([ADR-019](docs/adr/ADR-019-free-daily-allocations-are-recorded-never-subtracted.md)).
+- **When it runs out:** on Workers Paid the excess is billed at the metered price. On Workers Free
+  every Clef call fails until 00:00 UTC with HTTP 429 "you have used up your daily free allocation
+  of 10,000 neurons" (code 4006). Conclave fails that decider at once instead of retrying it;
+  rerun after the reset or upgrade to Workers Paid.
 
 Design: [ADR-016](docs/adr/ADR-016-decision-models-are-a-separate-provider-class.md),
 build plan: [docs/PLAN-decision-models.md](docs/PLAN-decision-models.md).
@@ -655,6 +676,8 @@ conclave models --frontier --json                   # the full result, machine-r
   its upstream Hugging Face Space and cross-checked against Cloudflare's mirror; Clef rows
   come from the mirror and are marked self-reported. The only cost basis is list price per
   input token, which can mislead: per-call token counts differ by up to 13x between vendors.
+  Clef and Clef-flash are marked `+`: they are plotted at the metered price, but the first
+  10,000 Neurons a day on each Cloudflare account are free ([above](#workers-ais-free-allocation)).
 - Output has four parts: the **frontier**, the top 15 **dominated** models, scored models
   with **no price** on the chosen basis, and the **unscored** names, followed by the sources.
 - Sources are advisory. One that fails leaves its models unscored with a warning on

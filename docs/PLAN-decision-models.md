@@ -50,8 +50,13 @@ Response:
 | Decider | Endpoint | Auth | Default model | Context | Price (2026-10) |
 |---|---|---|---|---|---|
 | `jev` | `POST https://api.typesafe.ai/v1/systemone`, else `POST https://openrouter.ai/api/alpha/decisions` | `Bearer TYPESAFE_API_KEY`, else `OPENROUTER_API_KEY` | `jev-latest` | 32k | $0.042/M in, output free |
-| `clef` | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` | `Bearer CLOUDFLARE_API_TOKEN` | `clef` | 64k | $0.24/M in |
-| `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | `clef-flash` | 64k | | 64k | unpublished at 2026-10-02; confirm |.09/M in (pricing page, updated 2026-10-01) |
+| `clef` | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` | `Bearer CLOUDFLARE_API_TOKEN` | `clef` | 64k | $0.240/M in (21818 Neurons/M) |
+| `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | `clef-flash` | 64k | $0.090/M in (8182 Neurons/M) |
+
+Clef prices re-read 2026-10-05 (pricing page updated 2026-10-01): Workers AI bills $0.011 per 1,000
+Neurons, has no output price for either model, and gives every account 10,000 Neurons a day free
+(reset 00:00 UTC), about 458K Clef or 1.2M Clef-flash input tokens. Costs stay at the metered price;
+the allocation is shown, never subtracted ([ADR-019](adr/ADR-019-free-daily-allocations-are-recorded-never-subtracted.md)).
 
 Limits from the Clef model page and schema: 1-64 questions per call, 2-255 choice options, 2-10 score levels; up to 4 images (PNG/JPEG/WebP,
 4 MiB, 16 MP each).
@@ -89,8 +94,11 @@ Write the findings into this file under each probe.
    text, not the actual defect - local validation stays the useful error); 65 questions -> 422
    (`at most 64 items`); ~80k-token state -> 413 code 5021 (`exceeded this model context window
    limit (65536)`). None of these are retried (isRetryable is 429 + 5xx only). The quota 429
-   (suspected code 3036) could not be triggered cheaply, so `TODO(phase0-probe2)` at `billingCode`
-   stays open.
+   could not be triggered cheaply. CLOSED 2026-10-05 from public captures instead of our own:
+   a spent free allocation is HTTP 429 with `errors[].code` **4006** on the wire ("you have used
+   up your daily free allocation of 10,000 neurons"). The errors page lists the same message as
+   3036, but no capture shows 3036. `billingCode` now treats both as billing, inside the
+   Cloudflare envelope only; 3040 ("Out of capacity", also 429) stays retryable (ADR-019).
 3. *Answer fields:* noul returns `noul` only (no `confidence`); choice and score return
    `confidence`; `score` is the probability-WEIGHTED value (e.g. 2.9573 on a 0-3 scale), not an
    index - consensus already works from `probabilities`. `usage.output_tokens` is 0 (input-only
@@ -101,7 +109,8 @@ Write the findings into this file under each probe.
    R2-only token also verifies), so a one-noul call on a 1-word state (142 input tokens, about
    $0.00003 on clef) is the only real check. Not built yet.
 5. *Clef-flash price:* $0.090/M input, no output price (https://developers.cloudflare.com/workers-ai/platform/pricing/,
-   updated 2026-10-01).
+   updated 2026-10-01). Re-read 2026-10-05 with the Neuron rates and the free allocation: see
+   the table above.
 6. *Calibration eval:* dropped (ADR-018); external ECE from the Decision Index instead.
 
 The published input schema (`GET /accounts/{id}/ai/models/schema?model=@cf/cloudflare/clef`)
@@ -263,7 +272,8 @@ Human output is a per-question table: question, consensus answer, probability,
 agreement, and each decider's pick.
 
 **Pricing** (`internal/pricing/deciders.go`): `{decider, model, in_per_m, out_per_m,
-as_of, source_url}` rows. `conclave decide` prices through `pricing.DeciderCost` directly; `Catalog.CostOf` never sees deciders (ADR-016 keeps them out of the provider cost paths).
+as_of, source_url}` rows, plus `neurons_per_m_in` and `free_neurons_per_day` on Workers AI rows
+(2026-10-05, ADR-019). `conclave decide` prices through `pricing.DeciderCost` directly; `Catalog.CostOf` never sees deciders (ADR-016 keeps them out of the provider cost paths).
 `conclave models` lists the rows with their `as_of`.
 
 **Cache.** `cache.Key("api", decider, model, state, canonicalJSON(questions))`, with

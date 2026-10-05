@@ -21,3 +21,4 @@
 | ADR-016 | accepted | 2026-10-02 | Decision models are a separate provider class |
 | ADR-017 | accepted | 2026-10-03 | Slash-routed decision models via OpenRouter |
 | ADR-018 | accepted | 2026-10-03 | Price-performance frontiers from external, edition-pinned quality sources |
+| ADR-019 | accepted | 2026-10-05 | Free daily allocations are recorded, never subtracted |
