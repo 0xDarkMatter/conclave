@@ -6,6 +6,7 @@ package pricing
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 )
@@ -35,28 +36,73 @@ func TestDeciderCostStaysSeparateFromProviderCatalog(t *testing.T) {
 	if got, ok := DeciderCost("clef", "clef", 0, 1_000_000); !ok || got != 0 {
 		t.Fatalf("DeciderCost(clef, output-only) = %v, %v; want 0, true — output must be free, not unpriced", got, ok)
 	}
+}
+
+// workersAIUSDPerKNeurons is Workers AI's one price, "$0.011 per 1,000
+// Neurons" (developers.cloudflare.com/workers-ai/platform/pricing/, page
+// updated 2026-10-01, read 2026-10-05). Every per-token price on that page is
+// a Neuron rate shown in dollars.
+const workersAIUSDPerKNeurons = 0.011
+
+// TestClefRowsMatchTheWorkersAIPricingPage pins both Cloudflare rows to the
+// "Other model pricing" table as read on 2026-10-05: $0.240 / 21818 Neurons
+// per M input tokens (clef), $0.090 / 8182 (clef-flash), no output row, and
+// the 10,000 Neurons/day free allocation. A row edited by hand without its
+// Neuron rate (or vice versa) drifts silently, since nothing re-checks the
+// table, so the dollar price must stay the Neuron rate at $0.011 per 1,000.
+func TestClefRowsMatchTheWorkersAIPricingPage(t *testing.T) {
+	const source = "https://developers.cloudflare.com/workers-ai/platform/pricing/#other-model-pricing"
+	want := map[string]DeciderPrice{
+		"clef":       {Decider: "clef", Model: "clef", InPerM: 0.240, NeuronsPerMIn: 21818, FreeNeuronsPerDay: 10_000, AsOf: "2026-10-05", Source: source},
+		"clef-flash": {Decider: "clef-flash", Model: "clef-flash", InPerM: 0.090, NeuronsPerMIn: 8182, FreeNeuronsPerDay: 10_000, AsOf: "2026-10-05", Source: source},
+	}
 	for _, row := range DeciderPrices() {
-		if row.Decider == "clef" && row.Source != "https://developers.cloudflare.com/workers-ai/platform/pricing/" {
-			t.Fatalf("clef source = %q; want the Workers AI pricing page", row.Source)
+		if row.NeuronsPerMIn > 0 {
+			// The page rounds the dollar column to three places.
+			if derived := row.NeuronsPerMIn * workersAIUSDPerKNeurons / 1000; math.Abs(derived-row.InPerM) > 0.0005 {
+				t.Errorf("%s: in_per_m %v is not its Neuron rate (%v Neurons/M = $%.4f/M)", row.Decider, row.InPerM, row.NeuronsPerMIn, derived)
+			}
 		}
+		w, ok := want[row.Decider]
+		if !ok {
+			continue
+		}
+		delete(want, row.Decider)
+		if row != w {
+			t.Errorf("%s row = %+v\nwant %+v", row.Decider, row, w)
+		}
+	}
+	for name := range want {
+		t.Errorf("DeciderPrices omitted %s", name)
 	}
 }
 
-// TestClefFlashHasPublishedPrice pins the independently dated Cloudflare row.
-func TestClefFlashHasPublishedPrice(t *testing.T) {
-	got, ok := DeciderCost("clef-flash", "clef-flash", 1_000_000, 0)
-	if !ok || got < 0.0899 || got > 0.0901 {
-		t.Fatalf("DeciderCost(clef-flash, 1M in) = %v, %v; want 0.090, true", got, ok)
+// TestFreeAllocationNeverZeroesDeciderCost: the free Neurons are account-wide
+// and shared with every other Workers AI caller, and Conclave cannot see how
+// many are left, so a decide call is always priced at the metered rate (an
+// upper bound on what it adds to the bill), never at $0 (ADR-019). The
+// allocation is published as a fact instead, in the model's own tokens.
+func TestFreeAllocationNeverZeroesDeciderCost(t *testing.T) {
+	cost, ok := DeciderCost("clef", "clef", 400, 0)
+	if want := 400 * 0.240 / 1_000_000; !ok || math.Abs(cost-want) > 1e-12 {
+		t.Fatalf("DeciderCost(clef, 400 in) = %v, %v; want the metered %v, true", cost, ok, want)
 	}
 	for _, row := range DeciderPrices() {
-		if row.Decider == "clef-flash" {
-			if row.Model != "clef-flash" || row.InPerM != 0.090 || row.OutPerM != 0 || row.AsOf != "2026-10-02" || row.Source != "https://developers.cloudflare.com/workers-ai/platform/pricing/" {
-				t.Fatalf("clef-flash row = %+v; want the verified Cloudflare pricing row", row)
-			}
-			return
+		var wantTokens int
+		var wantNote string
+		switch row.Decider {
+		case "clef": // 10,000 / 21,818 Neurons per M
+			wantTokens, wantNote = 458_337, "10,000 Neurons/day per Cloudflare account"
+		case "clef-flash": // 10,000 / 8,182 Neurons per M
+			wantTokens, wantNote = 1_222_195, "10,000 Neurons/day per Cloudflare account"
+		}
+		if got := row.FreeInputTokensPerDay(); got != wantTokens {
+			t.Errorf("%s FreeInputTokensPerDay = %d, want %d", row.Decider, got, wantTokens)
+		}
+		if got := row.FreeDaily(); got != wantNote {
+			t.Errorf("%s FreeDaily = %q, want %q", row.Decider, got, wantNote)
 		}
 	}
-	t.Fatal("DeciderPrices omitted clef-flash")
 }
 
 // TestVersionedJevModelStillPriced pins the approved aliases reported by Jev

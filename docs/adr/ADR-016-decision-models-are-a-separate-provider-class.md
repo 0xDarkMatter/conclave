@@ -86,3 +86,14 @@ still priced from the table (whose jev alias rule now accepts OpenRouter's `type
 id). The same probe found five more vendors' decision models on OpenRouter; whether `conclave decide`
 should route arbitrary `vendor/model` decider tokens there is a separate decision, left to ADR-017.
 Evidence: `docs/PLAN-decision-models.md`, Phase 0 findings.
+
+## Addendum - 2026-10-05: Workers AI rows carry their Neuron rate and free allocation
+
+The Clef prices above were re-verified on 2026-10-05 and stand: $0.240 and $0.090 per million input
+tokens, still with no output price. Workers AI bills Neurons ($0.011 per 1,000) and shows the
+per-token figure as an equivalent, so the table rows gained two optional columns, `neurons_per_m_in`
+(21818 and 8182) and `free_neurons_per_day` (10,000, account-wide, reset 00:00 UTC). The dollar price
+must stay the Neuron rate at $0.011 per 1,000, and a test pins that. The free allocation is recorded
+and shown but never subtracted from a cost; that decision, and why, is
+[ADR-019](ADR-019-free-daily-allocations-are-recorded-never-subtracted.md). A spent allocation
+(HTTP 429, Cloudflare code 4006) is now a `BillingError`.

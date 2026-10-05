@@ -19,15 +19,17 @@ import (
 var update = flag.Bool("update", false, "rewrite golden files")
 
 // decisionFixture covers every rendering branch: frontier, dominated,
-// self-reported, unpriced, unscored, zero cost, and a source with a warning.
-// One name carries markup, to prove external strings reach the page escaped.
+// self-reported, free daily allocation, unpriced, unscored, zero cost, and a
+// source with a warning. One name carries markup, to prove external strings
+// reach the page escaped.
 func decisionFixture() Result {
+	const cfFree = "10,000 Neurons/day per Cloudflare account"
 	return Result{
 		Kind: KindDecision, Axis: AxisDecision, CostBasis: CostInputPerM,
 		Points: []Point{
 			{ID: "jev", Name: "Jev", Kind: KindDecision, Score: f64p(57.91), Cost: f64p(0.042), CostBasis: CostInputPerM, LatencyMs: f64p(310), ECE: f64p(0.041)},
-			{ID: "clef", Name: "Clef", Kind: KindDecision, Score: f64p(61.2), Cost: f64p(0.24), CostBasis: CostInputPerM, LatencyMs: f64p(1450), ECE: f64p(0.03), SelfReported: true},
-			{ID: "clef-flash", Name: "Clef-flash", Kind: KindDecision, Score: f64p(49.5), Cost: f64p(0.09), CostBasis: CostInputPerM, LatencyMs: f64p(220), SelfReported: true},
+			{ID: "clef", Name: "Clef", Kind: KindDecision, Score: f64p(61.2), Cost: f64p(0.24), CostBasis: CostInputPerM, LatencyMs: f64p(1450), ECE: f64p(0.03), SelfReported: true, FreeDaily: cfFree},
+			{ID: "clef-flash", Name: "Clef-flash", Kind: KindDecision, Score: f64p(49.5), Cost: f64p(0.09), CostBasis: CostInputPerM, LatencyMs: f64p(220), SelfReported: true, FreeDaily: cfFree},
 			{ID: "vendor/kev-4b", Name: "Kev 4B", Kind: KindDecision, Score: f64p(44.1), Cost: f64p(0.05), CostBasis: CostInputPerM, LatencyMs: f64p(95)},
 			{ID: "vendor/free", Name: "Free Tier", Kind: KindDecision, Score: f64p(30), Cost: f64p(0), CostBasis: CostInputPerM},
 			{ID: "Board Only", Name: "Board Only", Kind: KindDecision, Score: f64p(52), CostBasis: CostInputPerM, LatencyMs: f64p(700)},
@@ -199,5 +201,39 @@ func TestRenderTextSections(t *testing.T) {
 	}
 	if ws := Warnings(decisionFixture()); len(ws) != 1 || !strings.Contains(ws[0], "cross-check") {
 		t.Errorf("Warnings = %q, want the board's cross-check warning", ws)
+	}
+}
+
+// TestReportsLabelFreeAllocationAtListPrice: both reports showed $0.24 for
+// Clef with no hint that the first 10,000 Neurons a day are free, and a
+// reader could not tell a metered price from a typical bill. Each report must
+// mark the models that have an allocation, name it once, and say that COST is
+// the metered price that applies once it is spent (ADR-019).
+func TestReportsLabelFreeAllocationAtListPrice(t *testing.T) {
+	var b bytes.Buffer
+	if err := RenderText(&b, decisionFixture()); err != nil {
+		t.Fatal(err)
+	}
+	text := b.String()
+	for _, want := range []string{"Clef * +", "Clef-flash * +", "free daily allocation, 10,000 Neurons/day per Cloudflare account: Clef, Clef-flash", "metered list price"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("terminal report lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "Jev +") {
+		t.Errorf("Jev has no allocation but is marked:\n%s", text)
+	}
+	if strings.Count(text, "10,000 Neurons/day") != 1 {
+		t.Errorf("the allocation should be named once, not per model:\n%s", text)
+	}
+
+	page := renderHTML(t, decisionFixture())
+	for _, want := range []string{"Free daily allocation, 10,000 Neurons/day per Cloudflare account: Clef, Clef-flash", "metered list price", "Clef: score 61.20, $0.240, on the frontier, self-reported, free daily allocation"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("HTML report lacks %q", want)
+		}
+	}
+	if plain := renderHTML(t, chatFixture()); strings.Contains(plain, "allocation") {
+		t.Error("a report with no allocation still mentions one")
 	}
 }

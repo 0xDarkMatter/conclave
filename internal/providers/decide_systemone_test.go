@@ -129,6 +129,43 @@ func TestClefErrorEnvelopeRendersMessage(t *testing.T) {
 	}
 }
 
+// TestClefFreeAllocationSpentIsNotRetried: once a Workers Free account has
+// spent its 10,000 Neurons for the UTC day, every Clef call answers 429 code
+// 4006 until 00:00 UTC. Read as a rate limit, doRequest backed off three
+// times (~7 s per decider per call) before failing with the same message.
+// It must fail on the first attempt, typed as billing through the decider's
+// redaction wrappers, with Cloudflare's own remedy in the text.
+func TestClefFreeAllocationSpentIsNotRetried(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(workersAIFreeAllocationBody))
+	}))
+	defer srv.Close()
+
+	t.Setenv("CLOUDFLARE_API_TOKEN", "test-cf-token")
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
+	t.Setenv("CONCLAVE_CLEF_BASE_URL", srv.URL)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _, _, err := NewClefDecider().Decide(ctx, validDecisionRequest(), "")
+	if err == nil {
+		t.Fatal("expected the free-allocation error")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("a spent free allocation was sent %d times, want exactly 1", got)
+	}
+	for _, want := range []string{"HTTP 429", "daily free allocation of 10,000 neurons", "Workers Paid", "[code: 4006]"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should carry Cloudflare's message (%q); got: %s", want, err)
+		}
+	}
+	if !IsBillingError(err) || !IsPermanent(err) {
+		t.Errorf("error is not a permanent *BillingError through the decider's wrappers: %T %v", err, err)
+	}
+}
+
 func TestInvalidQuestionsRejectedBeforeNetwork(t *testing.T) {
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -196,8 +196,14 @@ func BuildDecision(board *decisionindex.Board, models []openrouter.DecisionModel
 					p.Cost = &c
 				}
 			}
+			// The allocation travels with the table price only: it belongs to
+			// the vendor that bills (Workers AI), not to a catalog route.
 			if p.Cost == nil && m.Decider != "" {
-				p.Cost = deciderTableCost(table, m.Decider)
+				if row := deciderTableRow(table, m.Decider); row != nil {
+					c := row.InPerM
+					p.Cost = &c
+					p.FreeDaily = row.FreeDaily()
+				}
 			}
 		}
 		res.Points = append(res.Points, p)
@@ -227,13 +233,12 @@ func copyOptionalFloat(v *float64) *float64 {
 	return &copy
 }
 
-// deciderTableCost finds the Conclave decider row's input price; nil when the
-// decider is absent from the table (unpriced, never an error).
-func deciderTableCost(table []pricing.DeciderPrice, decider string) *float64 {
+// deciderTableRow finds the Conclave decider row; nil when the decider is
+// absent from the table (unpriced, never an error).
+func deciderTableRow(table []pricing.DeciderPrice, decider string) *pricing.DeciderPrice {
 	for i := range table {
 		if table[i].Decider == decider {
-			v := table[i].InPerM
-			return &v
+			return &table[i]
 		}
 	}
 	return nil

@@ -63,6 +63,11 @@ type Point struct {
 	SelfReported bool      `json:"self_reported,omitempty"`
 	ScoreSource  string    `json:"score_source,omitempty"` // Source.Name the score came from
 	OnFrontier   bool      `json:"on_frontier"`
+	// FreeDaily names a vendor's free daily allocation behind Cost ("10,000
+	// Neurons/day per Cloudflare account"); "" when none. A label, never a
+	// discount: Cost stays the metered list price, because the allocation is
+	// account-wide and nobody here knows how much of it is left (ADR-019).
+	FreeDaily string `json:"free_daily,omitempty"`
 }
 
 // Result is one frontier: a kind, an axis, a cost basis, every point

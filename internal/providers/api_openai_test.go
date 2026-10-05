@@ -213,6 +213,13 @@ func TestBillingIsToldApartFromRateLimits(t *testing.T) {
 		// Same status and error.type as the spend cap; only details.error_code differs.
 		{"anthropic rate limit", 429, `{"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed the rate limit for your organization of 400,000 output tokens per minute."},"request_id":"req_011CSHoEeqs5C35K2UUqR7Fy"}`, false},
 		{"gemini resource exhausted", 429, `{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED"}}`, false},
+		{"workers ai free allocation, wire code 4006", 429, workersAIFreeAllocationBody, true},
+		{"workers ai free allocation, documented code 3036", 429, `{"result":null,"success":false,"errors":[{"code":3036,"message":"You have used up your daily free allocation of 10,000 neurons."}],"messages":[]}`, true},
+		// Same status and envelope as the quota; only errors[].code differs,
+		// and capacity frees up within one backoff.
+		{"workers ai out of capacity", 429, `{"result":null,"success":false,"errors":[{"code":3040,"message":"Capacity temporarily exceeded, please try again."}],"messages":[]}`, false},
+		// Cloudflare's numbers mean nothing in another vendor's error.code.
+		{"4006 outside the cloudflare envelope", 429, `{"error":{"message":"slow down","code":4006}}`, false},
 		{"bare 429", 429, ``, false},
 		{"plain-text 429", 429, `Too Many Requests`, false},
 	}
@@ -222,6 +229,15 @@ func TestBillingIsToldApartFromRateLimits(t *testing.T) {
 		}
 	}
 }
+
+// workersAIFreeAllocationBody is the 429 Workers AI's REST API answers once an
+// account has spent its 10,000 free Neurons for the UTC day, as a public run
+// log captured it (github.com/oliver-trako/korcula-events/issues/4; the same
+// shape appears in every capture found, 2026-07 to 2026-10). The wire code
+// is 4006, NOT the 3036 that the errors page
+// (developers.cloudflare.com/workers-ai/platform/errors/, updated 2026-09-17)
+// lists for the same message. On Workers Free it lasts until 00:00 UTC.
+const workersAIFreeAllocationBody = `{"errors":[{"message":"AiError: AiError: you have used up your daily free allocation of 10,000 neurons, please upgrade to Cloudflare's Workers Paid plan if you would like to continue usage. (34c42ff6-804c-4ae5-b686-808eb859bc70)","code":4006}],"success":false,"result":{},"messages":[]}`
 
 // anthropicSpendCapBody is the 429 Anthropic documents for an organization
 // past its usage tier's monthly spend cap, verbatim from

@@ -221,6 +221,36 @@ func TestBuildDecisionPricesViaSlugThenDeciderTable(t *testing.T) {
 	}
 }
 
+// TestBuildDecisionLabelsFreeAllocationButKeepsListPrice: Workers AI's free
+// Neurons were invisible on the frontier, and plotting them as $0 would put
+// Clef below every paid model for any workload past the first few hundred
+// calls of the day. The point keeps the metered list price and carries the
+// allocation as a label, and only when the table row priced it: an
+// allocation belongs to the vendor that bills, so a model priced from the
+// OpenRouter catalog never inherits one from its decider row (ADR-019).
+func TestBuildDecisionLabelsFreeAllocationButKeepsListPrice(t *testing.T) {
+	board := &decisionindex.Board{
+		Entries: []decisionindex.Entry{{Name: "Jev", Index: 57.91}, {Name: "Clef", Index: 61.21}},
+	}
+	models := []openrouter.DecisionModel{{Slug: "typesafe/jev-1.13", Name: "Jev", Priced: true, InputPerM: 0.042}}
+	table := []pricing.DeciderPrice{
+		{Decider: "jev", Model: "jev-latest", InPerM: 0.042, NeuronsPerMIn: 3818, FreeNeuronsPerDay: 10_000},
+		{Decider: "clef", Model: "clef", InPerM: 0.240, NeuronsPerMIn: 21818, FreeNeuronsPerDay: 10_000},
+	}
+	res := BuildDecision(board, models, table, CostInputPerM)
+
+	clef := mustPoint(t, res.Points, "clef")
+	if clef.Cost == nil || !almostEqual(*clef.Cost, 0.240) {
+		t.Errorf("clef cost = %v; want the metered 0.240, never a free-tier 0", clef.Cost)
+	}
+	if clef.FreeDaily != "10,000 Neurons/day per Cloudflare account" {
+		t.Errorf("clef FreeDaily = %q; want the table row's allocation", clef.FreeDaily)
+	}
+	if jev := mustPoint(t, res.Points, "typesafe/jev-1.13"); jev.FreeDaily != "" {
+		t.Errorf("jev, priced from the catalog, inherited its table row's allocation %q", jev.FreeDaily)
+	}
+}
+
 // TestBuildDecisionAddsUnscoredOpenRouterModels pins that catalog decision
 // models missing from the board still appear (unscored — never estimated),
 // that catalog "~" aliases do not double-list their target, and that

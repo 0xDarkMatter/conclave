@@ -295,11 +295,21 @@ works offline and under `CONCLAVE_NO_PRICING=1`.
 | Decider | Default model | Endpoint | Auth | Price (USD / 1M tokens) | As of |
 |---|---|---|---|---|---|
 | `jev` | `jev-latest` (reports e.g. `jev-1.13.0`) | `POST https://api.typesafe.ai/v1/systemone` (override: `CONCLAVE_JEV_BASE_URL`, full URL) | `Bearer TYPESAFE_API_KEY`, or else `OPENROUTER_API_KEY` via `POST https://openrouter.ai/api/alpha/decisions` (reports `typesafe/jev-1.13-20260917`) | $0.042 in, output free (same on both routes) | 2026-10-03 |
-| `clef` | `clef` (`@cf/cloudflare/clef`) | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` (override: `CONCLAVE_CLEF_BASE_URL`, prefix through `/ai/run`) | `Bearer CLOUDFLARE_API_TOKEN` | $0.24 in, no published output price | 2026-10-02 |
-| `clef-flash` | `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | | unpublished: reported unpriced | 2026-10-02 |.09 in, no published output price | 2026-10-02 |
+| `clef` | `clef` (`@cf/cloudflare/clef`) | `POST https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/cloudflare/clef` (override: `CONCLAVE_CLEF_BASE_URL`, prefix through `/ai/run`) | `Bearer CLOUDFLARE_API_TOKEN` | $0.240 in (21818 Neurons), no published output price | 2026-10-05 |
+| `clef-flash` | `clef-flash` | same, `@cf/cloudflare/clef-flash` | same | $0.090 in (8182 Neurons), no published output price | 2026-10-05 |
 
 Sources: [Typesafe launch post](https://typesafe.ai/blog/introducing-system-one-models-and-jev),
-[Workers AI Clef model page](https://developers.cloudflare.com/workers-ai/models/clef).
+[Workers AI Clef model page](https://developers.cloudflare.com/workers-ai/models/clef),
+[Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/#other-model-pricing).
+
+**Workers AI free allocation.** Workers AI bills Neurons ($0.011 per 1,000); the per-token prices
+above are that rate restated. Every Cloudflare account gets 10,000 Neurons a day free, on Workers
+Free and Workers Paid, reset at 00:00 UTC and shared with all other Workers AI use on the account.
+That is about 458K Clef or 1.2M Clef-flash input tokens, or roughly 1,100 Clef calls of ~400 tokens.
+Past it, Workers Free fails every call until the reset (HTTP 429, code 4006, a `BillingError`
+that is not retried), and Workers Paid bills the excess at the prices above. Conclave cannot see how
+much of the allocation is left, so `cost_usd` and the frontier always use the metered price, an
+upper bound on the bill; `conclave models clef` shows the allocation beside it (ADR-019).
 Any other OpenRouter decision model is reachable as a `vendor/model` token (ADR-017) and priced from
 the `usage.cost` OpenRouter reports, not this table. Seen live 2026-10-03: `liquid/d1` ($0.04/M, 64k),
 `upstage/solar-decide` ($0.05/M, 512k), `inception/mercury-decide:free` (free, 32k),

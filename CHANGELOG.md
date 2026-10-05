@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `conclave models` shows Workers AI's free daily allocation beside the Clef
+  prices. Workers AI bills Neurons ($0.011 per 1,000) and gives every
+  Cloudflare account 10,000 a day free, reset 00:00 UTC; a new FREE/DAY
+  column puts that in each model's own input tokens (about 458K for clef,
+  1.2M for clef-flash), with a note saying the costs Conclave reports use the
+  metered price. `--json` rows gain `neurons_per_m_in` and
+  `free_neurons_per_day`. On `conclave models --frontier --deciders`, Clef
+  and Clef-flash are marked `+` with a legend line (terminal) or a note and
+  tooltip (HTML), and frontier points carry `free_daily`. Costs are
+  unchanged: `cost_usd` and the frontier keep the metered price, an upper
+  bound on the bill, because the allocation is account-wide and Conclave
+  cannot see how much is left. ADR-019.
+
+### Changed
+
+- Clef prices re-verified on 2026-10-05 against the Workers AI pricing page
+  (updated 2026-10-01): $0.240 (21,818 Neurons) and $0.090 (8,182 Neurons) per
+  million input tokens, still with no output price. The dollar figures are
+  unchanged; the rows now record the Neuron rate, a test pins one to the
+  other, and their source links to the "Other model pricing" table.
+
+### Fixed
+
+- A Clef or Clef-flash call on a Workers Free account that has spent its
+  daily free allocation now fails at once. Workers AI answers HTTP 429 with
+  Cloudflare code 4006 until 00:00 UTC, and Conclave read it as a rate limit:
+  three backoffs (~7 s per decider per call) before the same error. It is now
+  a `BillingError`, so it is not retried, with Cloudflare's own message and
+  remedy in the error. The code on the wire is 4006, not the 3036 that
+  Cloudflare's errors page lists; both are matched, and only inside
+  Cloudflare's error envelope. "Out of capacity" (3040, also a 429) still
+  retries. Regression tests: `TestClefFreeAllocationSpentIsNotRetried`,
+  `TestBillingIsToldApartFromRateLimits`.
+
 ## [1.5.1] - 2026-10-05
 
 ### Fixed
