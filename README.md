@@ -50,6 +50,14 @@ Diagram sources live in [`docs/diagrams/src/`](docs/diagrams/src/); `python docs
 
 ## Recent Updates
 
+### v1.5.1 — 2026-10-05
+
+**🐛 Retries that match the failure**
+
+Anthropic's 529 "overloaded" (and any other 5xx) now backs off and retries instead of failing on the first spike. Going the other way, failures no resend can fix stop at once: Anthropic's monthly spend cap joins out-of-credit as a billing error, and batch `--retries` skips an item when every provider failed permanently (billing, or a 4xx other than 429). See [Automatic Retry](#automatic-retry).
+
+---
+
 ### v1.5.0 — 2026-10-03
 
 **🎯 Decision models: `conclave decide`**
