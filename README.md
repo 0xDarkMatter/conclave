@@ -854,7 +854,7 @@ Transient failures (429 rate limits, 5xx errors) automatically retry with expone
 - 1s → 2s → 4s delays with jitter
 - Respects `Retry-After` headers
 
-A 429 that means the account is out of credit (OpenAI's "You have no credits remaining" / `insufficient_quota`) is not retried, since waiting won't add credit: it fails on the first call with the vendor's message. The same goes for any 402 and Anthropic's `billing_error`.
+A 429 that means the account is out of credit (OpenAI's "You have no credits remaining" / `insufficient_quota`) or past Anthropic's monthly usage-tier spend cap ("You have reached your API usage limits") is not retried, since a few seconds of backoff won't fix it: it fails on the first call with the vendor's message. The same goes for any 402 and Anthropic's `billing_error`.
 
 This is built-in for **all** single-call queries via API mode. The `--retries` flag is separate and applies only to **batch mode** (`--batch`) — it retries failed items in the JSONL pipeline. Neither path retries a failure that resending can't fix: a billing failure, or a 4xx other than 429 (bad key, rejected parameter, unknown model, prompt too long). In batch an item skips its retries only when every provider in the panel failed that way; one transient cause (a 429, a 5xx, a timeout, a CLI error) still earns the retry. Either way the item stays out of the checkpoint, so `--resume` retries it once you've fixed the key or added credit. A batch that runs out of credit is not aborted: see [Batch Mode](docs/BATCH_MODE.md#retries-and-permanent-failures).
 

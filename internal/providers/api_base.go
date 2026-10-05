@@ -332,7 +332,7 @@ func (p *apiBaseProvider) doRequest(ctx context.Context, method, url string, hea
 // adaptive rate limiter never counts it, whatever its HTTP status.
 // Error() is the vendor's message exactly as parseAPIError renders it.
 type BillingError struct {
-	StatusCode int    // 429 (OpenAI), 402 (Anthropic, OpenRouter)
+	StatusCode int    // 429 (OpenAI, Anthropic spend cap), 402 (Anthropic, OpenRouter)
 	Code       string // the vendor code that classified it; "" for a bare 402
 	Err        error
 }
@@ -346,21 +346,32 @@ func IsBillingError(err error) bool {
 	return errors.As(err, &b)
 }
 
-// billingErrorCodes are matched against error.code, error.type and
-// error.status, whichever the vendor fills. Sources: the vendor table in
-// docs/PLAN-reliability-judging.md, Feature 2 (docs fetched 2026-09-08), and
-// the live OpenAI 429 of 2026-10-01.
+// billingErrorCodes are matched against error.code, error.type,
+// error.status and error.details.error_code, whichever the vendor fills.
+// Sources: the vendor table in docs/PLAN-reliability-judging.md, Feature 2
+// (docs fetched 2026-09-08), the live OpenAI 429 of 2026-10-01, and
+// Anthropic's "Reaching your spend cap" (docs/api/rate-limits, read
+// 2026-10-05).
 //
 // Gemini's RESOURCE_EXHAUSTED is deliberately absent. Gemini sends that one
 // status for per-minute rate limits, which one backoff fixes, and for daily
 // or free-tier quota; telling them apart means parsing details[].quotaId, so
 // it stays retryable. Its billing/location error is FAILED_PRECONDITION, a
 // 400 that already fails at once, as does Anthropic's "credit balance too
-// low" (a 400 on /v1/messages, identified by its message, not a code).
+// low" (a 400 on /v1/messages, identified by its message, not a code) and
+// its user-set spend limit (a 400 invalid_request_error, also message-only).
+//
+// Anthropic's tier spend cap is a 429 with error.type rate_limit_error, the
+// same as a real rate limit; only details.error_code tells them apart. Its
+// other documented tell, a missing retry-after, is NOT used: a proxy can drop
+// the header, and a rate limit misread as billing fails a panel member that
+// one backoff would have saved. A Claude Code workspace limit 429 carries
+// retry-after and no documented code, so it stays retryable.
 var billingErrorCodes = map[string]bool{
-	"credit_balance_exhausted": true, // OpenAI, HTTP 429 (seen live 2026-10-01)
-	"insufficient_quota":       true, // OpenAI, HTTP 429, as code and as type
-	"billing_error":            true, // Anthropic, HTTP 402, as error.type
+	"credit_balance_exhausted":     true, // OpenAI, HTTP 429 (seen live 2026-10-01)
+	"insufficient_quota":           true, // OpenAI, HTTP 429, as code and as type
+	"billing_error":                true, // Anthropic, HTTP 402, as error.type
+	"enforced_spend_limit_reached": true, // Anthropic, HTTP 429, as error.details.error_code (tier spend cap)
 }
 
 // billingCode reports whether a non-2xx response is a billing failure, and
@@ -379,16 +390,21 @@ var billingErrorCodes = map[string]bool{
 func billingCode(statusCode int, body []byte) (string, bool) {
 	var e struct {
 		Error struct {
-			Type   string          `json:"type"`
-			Code   json.RawMessage `json:"code"` // a string (OpenAI) or a number (Gemini, OpenRouter)
-			Status string          `json:"status"`
+			Type    string          `json:"type"`
+			Code    json.RawMessage `json:"code"` // a string (OpenAI) or a number (Gemini, OpenRouter)
+			Status  string          `json:"status"`
+			Details json.RawMessage `json:"details"` // an object (Anthropic) or an array (Gemini)
 		} `json:"error"`
 	}
 	// Best effort: a plain-text body or an odd field type leaves fields empty.
 	_ = json.Unmarshal(body, &e)
 	var code string
 	_ = json.Unmarshal(e.Error.Code, &code)
-	for _, c := range []string{code, e.Error.Type, e.Error.Status} {
+	var details struct {
+		ErrorCode string `json:"error_code"`
+	}
+	_ = json.Unmarshal(e.Error.Details, &details)
+	for _, c := range []string{code, e.Error.Type, e.Error.Status, details.ErrorCode} {
 		if billingErrorCodes[c] {
 			return c, true
 		}

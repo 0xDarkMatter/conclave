@@ -92,7 +92,7 @@ Defaults live in `internal/config/config.go` (`Models`, `CheapModels`) and each 
 
 - API providers use exponential backoff for 429/5xx errors (see `api_base.go`)
 - Up to 3 retries with 1s base delay, respects `Retry-After` headers
-- Except billing: OpenAI's out-of-credit 429s, Anthropic `billing_error` and any 402 return at once as `*providers.BillingError` (codes in `billingErrorCodes`). Batch's rate limiter skips them by type via `orchestrator.AllFailedError.Causes`, never by matching "429" in text. Gemini's 429 `RESOURCE_EXHAUSTED` stays retryable (ADR-004)
+- Except billing: OpenAI's out-of-credit 429s, Anthropic's spend-cap 429 (`enforced_spend_limit_reached` in `error.details.error_code`; its type is the same `rate_limit_error` as a real limit), Anthropic `billing_error` and any 402 return at once as `*providers.BillingError` (codes in `billingErrorCodes`). Batch's rate limiter skips them by type via `orchestrator.AllFailedError.Causes`, never by matching "429" in text. Gemini's 429 `RESOURCE_EXHAUSTED` stays retryable (ADR-004)
 - Every other non-2xx is a `*providers.APIError` whose `Error()` is the old text verbatim; do not reword it. Batch's `--retries` skips an item only when every cause is `providers.IsPermanent` (billing, or 4xx other than 429), and running out of credit warns once rather than aborting the batch (ADR-015)
 - Context cancellation is respected throughout
 
