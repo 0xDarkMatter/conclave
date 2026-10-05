@@ -52,9 +52,9 @@ Diagram sources live in [`docs/diagrams/src/`](docs/diagrams/src/); `python docs
 
 ### v1.5.1 — 2026-10-05
 
-**🐛 Retries that match the failure**
+**🆓 Clef's free daily allocation, on the record**
 
-Anthropic's 529 "overloaded" (and any other 5xx) now backs off and retries instead of failing on the first spike. Going the other way, failures no resend can fix stop at once: Anthropic's monthly spend cap joins out-of-credit as a billing error, and batch `--retries` skips an item when every provider failed permanently (billing, or a 4xx other than 429). See [Automatic Retry](#automatic-retry).
+Every Cloudflare account gets 10,000 Workers AI Neurons a day free, roughly 1,100 Clef calls. `conclave models clef` now shows that allocation beside Clef's re-verified price, and the decision-model frontier marks the rows that have one. Costs stay at the metered price, an upper bound, because Conclave can't see how much of the account's allocation is left. See [Workers AI's free allocation](#workers-ais-free-allocation).
 
 ---
 

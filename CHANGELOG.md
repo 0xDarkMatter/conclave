@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-05
+
 ### Added
 
 - `conclave models` shows Workers AI's free daily allocation beside the Clef
@@ -42,11 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cloudflare's error envelope. "Out of capacity" (3040, also a 429) still
   retries. Regression tests: `TestClefFreeAllocationSpentIsNotRetried`,
   `TestBillingIsToldApartFromRateLimits`.
-
-## [1.5.1] - 2026-10-05
-
-### Fixed
-
 - An API-mode Anthropic query (`-g claude`, `claude@api`) no longer fails on
   the first HTTP 529 `overloaded_error`. The retry rule listed 429, 500, 502,
   503 and 504, so Anthropic's "temporarily overloaded" status got no backoff.
