@@ -464,21 +464,22 @@ Roughly 70 h, 74 h with the optional TUI preview.
 
 ## Proposed ADRs (not written here)
 
-> Numbering note: ADR-011 was taken by the response cache (accepted 2026-09-08) and
-> ADR-012 by per-provider transport (accepted 2026-09-13, open question 3 below) after this
-> plan was drafted, and ADR-013 by claude CLI isolation (2026-09-13), so the proposals
-> start at ADR-014. Take the next free number at
-> writing time; `ls docs/adr/` is the index.
+> Numbering note: these proposals are deliberately unnumbered. Every number they once
+> carried (014-017) was claimed by other work while the plan waited: 014 by the held
+> Perplexity Agent API branch, 015 by batch permanent-failure retries, 016-018 by decision
+> models and frontiers. Take the next free number at writing time (019 as of 2026-10-05):
+> `ls docs/adr/` plus `git log --all -- 'docs/adr/ADR-0*'` for numbers claimed on
+> unmerged branches.
 
-- ADR-014 Partial-panel quorum: a run proceeds at `min_providers` successes,
+- **Quorum ADR.** Partial-panel quorum: a run proceeds at `min_providers` successes,
   `degraded` means any failure, and exit 3 is opt-in.
-- ADR-015 Judge panels aggregate by verdict-string majority (ties are `SPLIT`), not by
-  self-reported confidence.
-- ADR-016 Rubric contract: YAML-front-matter markdown in, fixed `scores` schema out;
-  parse failures keep raw output; ties resolve per criterion type and a red-flag tie
+- **Judge-panel ADR.** Judge panels aggregate by verdict-string majority (ties are
+  `SPLIT`), not by self-reported confidence.
+- **Rubric ADR.** Rubric contract: YAML-front-matter markdown in, fixed `scores` schema
+  out; parse failures keep raw output; ties resolve per criterion type and a red-flag tie
   can never be `triggered`.
-- ADR-017 Request options are best-effort per provider: unsupported `system`,
-  `temperature`, or `max_tokens` warn once and never fail the run.
+- **Request-options ADR.** Request options are best-effort per provider: unsupported
+  `system`, `temperature`, or `max_tokens` warn once and never fail the run.
 
 ## Open questions for the operator
 
@@ -509,4 +510,4 @@ Roughly 70 h, 74 h with the optional TUI preview.
 | F6 | `_CONCLAVE_QUERY` instruction string (moves to `--system`); temperature pinning for determinism, which Praxis cannot do today | none |
 
 Maintenance rule: update the phasing when a feature lands, and delete this plan once
-ADR-014 to ADR-017 exist and the features ship.
+the four proposed ADRs above exist and the features ship.

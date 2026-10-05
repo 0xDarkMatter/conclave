@@ -806,7 +806,8 @@ Batch Mode:
       --workers <n>      Number of parallel workers (default: 5)
   -o, --output <file>    Output file (default: stdout)
       --resume           Resume from checkpoint: skip succeeded items, retry failed ones
-      --retries <n>      Retry failed batch items N times with exponential backoff (batch mode only)
+      --retries <n>      Retry failed batch items N times with exponential backoff (batch mode only;
+                         skipped when every provider failed permanently: billing, or a 4xx other than 429)
       --no-rate-limit    Disable rate limiting (high-tier API accounts)
       --budget <usd>     Stop dispatching once estimated spend hits this cap (also CONCLAVE_BATCH_BUDGET)
 
@@ -849,7 +850,7 @@ All providers are queried simultaneously. Total time ≈ slowest provider, not s
 
 ### Automatic Retry
 
-Transient failures (429 rate limits, 5xx errors) automatically retry with exponential backoff:
+Transient failures (429 rate limits and any 5xx, including Anthropic's 529 "overloaded") automatically retry with exponential backoff:
 - Up to 3 retries
 - 1s → 2s → 4s delays with jitter
 - Respects `Retry-After` headers

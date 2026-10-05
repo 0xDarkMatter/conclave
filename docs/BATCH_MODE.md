@@ -144,7 +144,7 @@ conclave --all "Classify" --batch items.jsonl --output results.jsonl --resume
 
 `--retries N` re-runs a failed item up to N more times, backing off 1s, 2s, 4s… between attempts. It skips the retries when **every** provider in the panel failed in a way resending can't fix:
 
-- a billing failure: out of credit, quota exhausted, any 402
+- a billing failure: out of credit, quota exhausted, Anthropic's tier spend cap, any 402
 - a 4xx other than 429: bad or revoked key, rejected parameter, unknown model, prompt too long
 
 One transient cause is enough to retry (a 429, a 5xx, a timeout, any CLI error), since that provider may answer next time. A skipped retry says so on the item's error line:
@@ -153,7 +153,7 @@ One transient cause is enough to retry (a 429, a 5xx, a timeout, any CLI error),
 query error after 1 of 3 attempts (permanent failure, not retried): all providers failed: openai: HTTP 401 authentication failed: invalid API key
 ```
 
-"Permanent" means permanent for this run. The item still has its error line and stays out of the checkpoint, so `--resume` retries it after you fix the key or the parameter, or add credit.
+"Permanent" means permanent for this run. The item still has its error line and stays out of the checkpoint, so `--resume` retries it after you fix the key or the parameter, add credit, or raise the spend limit.
 
 **Running out of credit does not abort the batch.** With a single key every remaining item will fail the same way, but conclave can't know there is a single key: comma-separated keys rotate per request, so one dead key fails only its share; OpenRouter can refuse one oversized request with a 402 while smaller ones succeed; and a top-up mid-run lets later items through. Each failure costs one unbilled request, so the run continues and prints one warning on stderr the first time an item fails because every provider hit a billing limit (out of credit, or Anthropic's tier spend cap). To stop early, press Ctrl-C, add credit or raise the limit (a spend cap's message names the date access returns), then rerun with `--resume`. The reasoning is recorded in [ADR-015](adr/ADR-015-batch-skips-permanent-failures-and-never-aborts-on-billing.md).
 

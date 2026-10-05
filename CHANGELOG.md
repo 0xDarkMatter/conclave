@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that slows the remaining items. It is told apart from a real rate limit,
   which still backs off and retries, by Anthropic's documented
   `enforced_spend_limit_reached` error code, not by its missing `retry-after`.
+  Batch's once-per-run billing warning now says "hit a billing limit" and
+  names both remedies (add credit, or raise the limit / wait for the date in
+  the message) instead of only "add credit".
 
 ## [1.5.0] - 2026-10-03
 
