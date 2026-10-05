@@ -18,3 +18,6 @@
 | ADR-012 | accepted | 2026-09-13 | Per-provider transport with a `@cli` / `@api` token suffix |
 | ADR-013 | accepted | 2026-09-13 | Claude CLI queries run isolated from the caller's project context |
 | ADR-015 | accepted | 2026-10-01 | Batch retries skip permanent failures, and running out of credit does not abort a batch |
+| ADR-016 | accepted | 2026-10-02 | Decision models are a separate provider class |
+| ADR-017 | accepted | 2026-10-03 | Slash-routed decision models via OpenRouter |
+| ADR-018 | accepted | 2026-10-03 | Price-performance frontiers from external, edition-pinned quality sources |
