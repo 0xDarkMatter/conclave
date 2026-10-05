@@ -11,6 +11,8 @@
 //     calling it either would misstate it.
 //   - Every score shown is attributed: the SOURCES footer names each source,
 //     its as-of date, edition and citation.
+//   - COST is always a list price. A free daily allocation (Point.FreeDaily)
+//     is a "+" mark and a legend line, never a lower number (ADR-019).
 //   - Source errors and warnings are NOT printed here; Warnings returns them
 //     so the caller can send them to stderr (Gotcha 5: advisory, never fatal).
 //   - Deterministic for a given Result: no clock, no map iteration.
@@ -32,6 +34,10 @@ const DominatedShown = 15
 // selfReportedMark suffixes a self-reported name in the terminal; the legend
 // line under the table explains it whenever one is shown.
 const selfReportedMark = " *"
+
+// freeDailyMark suffixes a name whose COST has a free daily allocation in
+// front of it (Point.FreeDaily, ADR-019); a legend names each allocation once.
+const freeDailyMark = " +"
 
 // buckets splits Pareto-ordered points into the four display groups.
 type buckets struct {
@@ -61,6 +67,10 @@ func RenderText(w io.Writer, r Result) error {
 	b := split(r.Points)
 	decision := r.Kind == KindDecision
 	selfShown := false
+	// Allocations in first-shown order, with the names shown under each: a
+	// slice plus a map keyed by it, so the legend never depends on map order.
+	var freeOrder []string
+	freeNames := map[string][]string{}
 
 	fmt.Fprintf(w, "%s frontier: axis %s, cost %s\n", kindLabel(r.Kind), r.Axis, CostBasisLabel(r.CostBasis))
 	fmt.Fprintf(w, "Higher score is better; lower cost is better. Scores are external, never estimated (ADR-018).\n")
@@ -83,6 +93,13 @@ func RenderText(w io.Writer, r Result) error {
 			if p.SelfReported {
 				name += selfReportedMark
 				selfShown = true
+			}
+			if p.FreeDaily != "" {
+				name += freeDailyMark
+				if _, seen := freeNames[p.FreeDaily]; !seen {
+					freeOrder = append(freeOrder, p.FreeDaily)
+				}
+				freeNames[p.FreeDaily] = append(freeNames[p.FreeDaily], p.Name)
 			}
 			if decision {
 				fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", name, FormatScore(r.Kind, p.Score), FormatCost(p.Cost), FormatLatency(p.LatencyMs), FormatECE(p.ECE))
@@ -119,6 +136,10 @@ func RenderText(w io.Writer, r Result) error {
 	}
 	if selfShown {
 		fmt.Fprintf(w, "\n  * self-reported: the vendor's own figure, not recomputed from the upstream source.\n")
+	}
+	for _, alloc := range freeOrder {
+		fmt.Fprintf(w, "\n  + free daily allocation, %s: %s.\n", alloc, strings.Join(freeNames[alloc], ", "))
+		fmt.Fprintf(w, "    Calls inside it are billed $0; COST is the metered list price, which applies once it is spent (ADR-019).\n")
 	}
 
 	fmt.Fprintf(w, "\nUNSCORED (%d, no external score; never estimated)\n", len(b.unscored))

@@ -56,6 +56,13 @@ type reportData struct {
 	Unscored        []string
 	Sources         []Source
 	ZeroCostNote    string
+	FreeDaily       []freeDailyNote // one per distinct allocation, first-seen order
+}
+
+// freeDailyNote is one free daily allocation (Point.FreeDaily) and the models
+// it applies to, comma-joined in Pareto order (ADR-019).
+type freeDailyNote struct {
+	Allocation, Models string
 }
 
 // RenderHTML writes the self-contained report. It re-runs Pareto itself.
@@ -69,9 +76,18 @@ func RenderHTML(w io.Writer, r Result) error {
 		Sources:   r.Sources,
 	}
 	zero := 0
+	freeAt := map[string]int{} // allocation -> index in d.FreeDaily; never ranged over
 	for _, p := range pts {
 		if p.Score == nil {
 			d.Unscored = append(d.Unscored, p.Name)
+		}
+		if p.FreeDaily != "" {
+			if i, ok := freeAt[p.FreeDaily]; ok {
+				d.FreeDaily[i].Models += ", " + p.Name
+			} else {
+				freeAt[p.FreeDaily] = len(d.FreeDaily)
+				d.FreeDaily = append(d.FreeDaily, freeDailyNote{Allocation: p.FreeDaily, Models: p.Name})
+			}
 		}
 		if p.Score != nil && p.Cost != nil && *p.Cost <= 0 {
 			zero++
@@ -330,6 +346,9 @@ func writeMarker(b *strings.Builder, d plotted, c chartSpec) {
 	}
 	if d.p.SelfReported {
 		tip += ", self-reported"
+	}
+	if d.p.FreeDaily != "" {
+		tip += ", free daily allocation"
 	}
 	fmt.Fprintf(b, `<title>%s</title>`, esc(tip))
 	if d.p.SelfReported {

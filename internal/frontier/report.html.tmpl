@@ -111,7 +111,8 @@ footer { margin-top: 32px; color: var(--muted); font-size: 13px; }
 </ul>
 <label class="toggle"><input type="checkbox" data-hide-dom> Hide dominated models</label>
 {{if .ZeroCostNote}}<p class="note">{{.ZeroCostNote}}</p>{{end}}
-</div>
+{{range .FreeDaily}}<p class="note">Free daily allocation, {{.Allocation}}: {{.Models}}. Calls inside it are billed $0; the plotted cost is the metered list price, which applies once it is spent (ADR-019).</p>
+{{end}}</div>
 <p class="note">{{.BasisNote}}</p>
 {{if .LatencyChart}}
 <h2>Score vs median latency</h2>
