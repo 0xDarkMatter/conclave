@@ -615,9 +615,13 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 		// and says so once (ADR-015).
 		if everyCause(lastErr, providers.IsBillingError) {
 			p.billingWarned.Do(func() {
-				fmt.Fprintf(os.Stderr, "\nWarning: item %s failed because every provider is out of credit (%v).\n"+
+				// "Billing limit", not "out of credit": since the spend-cap lane,
+				// a BillingError is also Anthropic's tier spend cap, whose remedy
+				// is a higher tier or the reset date (named in the vendor message
+				// below), not a top-up.
+				fmt.Fprintf(os.Stderr, "\nWarning: item %s failed because every provider hit a billing limit (%v).\n"+
 					"  The batch continues, so later items will likely fail the same way; billing failures are not charged.\n"+
-					"  Ctrl-C stops it; add credit, then rerun with --resume to retry the failed items.\n", item.ID, lastErr)
+					"  Ctrl-C stops it; add credit or raise the spend limit (or wait for the date above), then rerun with --resume to retry the failed items.\n", item.ID, lastErr)
 			})
 		}
 
