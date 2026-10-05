@@ -332,7 +332,7 @@ func (p *apiBaseProvider) doRequest(ctx context.Context, method, url string, hea
 // adaptive rate limiter never counts it, whatever its HTTP status.
 // Error() is the vendor's message exactly as parseAPIError renders it.
 type BillingError struct {
-	StatusCode int    // 429 (OpenAI, Anthropic spend cap), 402 (Anthropic, OpenRouter)
+	StatusCode int    // 429 (OpenAI, Anthropic spend cap, Workers AI free allocation), 402 (Anthropic, OpenRouter)
 	Code       string // the vendor code that classified it; "" for a bare 402
 	Err        error
 }
@@ -374,19 +374,33 @@ var billingErrorCodes = map[string]bool{
 	"enforced_spend_limit_reached": true, // Anthropic, HTTP 429, as error.details.error_code (tier spend cap)
 }
 
+// cloudflareBillingCodes are matched against errors[].code in Cloudflare's v4
+// envelope ({"success":false,"errors":[{"code":N,"message":...}]}) and
+// nowhere else: they are bare numbers, which in another vendor's error.code
+// mean something else entirely.
+//
+// Both mean a Workers AI account has spent its 10,000 free Neurons for the
+// UTC day (only Workers Free fails; Workers Paid bills the excess instead).
+// It lasts until 00:00 UTC, so a backoff only adds ~7 s per call (ADR-019).
+// The wire code is 4006: every public capture found (run logs and test
+// fixtures from unrelated projects, 2026-07 to 2026-10) shows it, and none
+// shows 3036. 3036 is the
+// code Cloudflare's errors table gives the same message
+// (developers.cloudflare.com/workers-ai/platform/errors/, updated
+// 2026-09-17); it is kept in case the wire is brought into line with it.
+//
+// 3040 ("Out of capacity") is deliberately absent: the same 429 and envelope,
+// but Cloudflare's own text says "please try again", and one backoff usually
+// finds capacity.
+var cloudflareBillingCodes = map[string]bool{
+	"4006": true, // Workers AI daily free allocation spent, HTTP 429 (the code on the wire)
+	"3036": true, // the same condition as the errors page documents it, HTTP 429
+}
+
 // billingCode reports whether a non-2xx response is a billing failure, and
 // the vendor code that said so. Any 402 Payment Required counts: OpenRouter's
 // 402 body carries a numeric code ({"error":{"code":402,...}}), so the status
 // is its only reliable signal.
-//
-// TODO(phase0-probe2, decide-p1): Cloudflare Workers AI is suspected to
-// report an exhausted daily free allocation as HTTP 429 with errors[].code
-// 3036 ("Account limited: you have used up your daily free allocation of N
-// neurons"). That should classify as a BillingError under ADR-004 but is
-// currently retried with backoff, because this function does not read the
-// Cloudflare errors[] envelope. 3036 is from memory, not a recorded response;
-// verify it with the Phase 0 error-shape probe (PLAN probe 2) before adding
-// a Cloudflare branch here.
 func billingCode(statusCode int, body []byte) (string, bool) {
 	var e struct {
 		Error struct {
@@ -407,6 +421,21 @@ func billingCode(statusCode int, body []byte) (string, bool) {
 	for _, c := range []string{code, e.Error.Type, e.Error.Status, details.ErrorCode} {
 		if billingErrorCodes[c] {
 			return c, true
+		}
+	}
+	// The success key is what marks the body as Cloudflare's envelope, the
+	// same test apiErrorText uses to render it.
+	var cf struct {
+		Success *bool `json:"success"`
+		Errors  []struct {
+			Code json.RawMessage `json:"code"` // a number on the wire; a string is tolerated
+		} `json:"errors"`
+	}
+	if json.Unmarshal(body, &cf) == nil && cf.Success != nil {
+		for _, ce := range cf.Errors {
+			if c := strings.Trim(strings.TrimSpace(string(ce.Code)), `"`); cloudflareBillingCodes[c] {
+				return c, true
+			}
 		}
 	}
 	if statusCode == http.StatusPaymentRequired {
