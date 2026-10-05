@@ -16,6 +16,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   do, which also covers Cloudflare's 520-524 for any API provider. Batch
   `--retries` already retried a 529 item, but each attempt failed on its
   first call.
+- Batch `--retries` no longer re-sends an item that cannot succeed. The
+  item-level retry loop re-ran any failed item with 1s/2s/4s backoff, so an
+  out-of-credit key, a revoked key or a rejected parameter was sent the same
+  request `--retries` more times for the same refusal, despite the README
+  promising that 400-class errors never retry. An item now fails on its
+  first attempt when every provider in the panel failed permanently: a
+  billing failure, or an HTTP 4xx other than 429. Its error line says so
+  (`query error after 1 of 3 attempts (permanent failure, not retried): ...`);
+  without `--retries` the line is unchanged. One transient cause (a 429, a
+  5xx, a timeout, a CLI error) still earns the retry, and a failed item still
+  stays out of the checkpoint, so `--resume` retries it once the key or the
+  credit is fixed. To classify by status rather than text, API errors are now
+  typed (`*providers.APIError`, classified by `providers.IsPermanent`), with
+  their messages byte-identical. A batch that runs out of credit is
+  deliberately not aborted (keys rotate per request, an OpenRouter 402 can be
+  one oversized request, a top-up can land mid-run); it prints one stderr
+  warning instead. ADR-015. Regression tests:
+  `TestPermanentFailureIsNotRetried`,
+  `TestClientErrorsArePermanentAndKeepTheirText`.
 
 ## [1.5.0] - 2026-10-03
 

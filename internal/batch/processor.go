@@ -1,3 +1,16 @@
+// Package batch runs a JSONL file through the panel, one item per line: a
+// worker pool, an adaptive rate limiter, a checkpoint for --resume, a spend
+// cap (--budget) and per-item retries (--retries).
+//
+// Invariants: only a successful result that reached the output is
+// checkpointed, so --resume retries everything else; a shutdown stops
+// dispatch but never discards a paid-for result; an item is retried unless
+// every provider failed permanently, and running out of credit never aborts
+// the batch (ADR-015).
+//
+// Sections: Types, Construction, Pipeline (Process), Per-item work
+// (processItem: the retry loop), Input parsing, Cost estimation, Lifecycle
+// and helpers (everyCause, isRateLimitError).
 package batch
 
 import (
@@ -143,6 +156,9 @@ type Processor struct {
 	// pricing is the OpenRouter catalog used for cost estimates. May be nil
 	// (offline / disabled); estimateCost then falls back to fallbackCosts.
 	pricing *pricing.Catalog
+	// billingWarned prints the out-of-credit warning once per run rather than
+	// once per item. processItem says why the batch warns instead of aborting.
+	billingWarned sync.Once
 }
 
 // Options configures the batch processor
@@ -515,8 +531,15 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 	// stoppedEarly: the shutdown ended the retry loop with attempts left, so
 	// the failure below is not this item's final answer.
 	stoppedEarly := false
+	// permanent: every provider failed in a way resending cannot fix, so the
+	// loop gave up with attempts left. Unlike stoppedEarly this IS the final
+	// answer for this run; --resume still retries it, since a key or a credit
+	// balance gets fixed between runs.
+	permanent := false
+	attempts := 0
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attempts = attempt
 		// Wait for rate limit
 		if err := p.rateLimiter.Wait(ctx); err != nil {
 			return Result{
@@ -547,6 +570,15 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 			break
 		}
 
+		// An out-of-credit key, a revoked key or a rejected parameter answers
+		// every resend with the same refusal, after a backoff that only makes
+		// the batch slower (TestPermanentFailureIsNotRetried). One transient
+		// cause in the panel keeps the retry: that provider may answer.
+		if everyCause(err, providers.IsPermanent) {
+			permanent = true
+			break
+		}
+
 		// Don't start another attempt once shutting down
 		if ctx.Err() != nil {
 			stoppedEarly = true
@@ -573,11 +605,31 @@ func (p *Processor) processItem(ctx context.Context, item Item, defaultPrompt st
 	}
 
 	if lastErr != nil {
+		// Out of credit is NOT a reason to abort the batch, though with one
+		// key every remaining item will fail the same way. Keys rotate per
+		// request (KeyRotator), so one dead key among several fails only its
+		// share of items; an OpenRouter 402 can be one oversized request; a
+		// top-up or auto-recharge mid-run lets later items succeed; and each
+		// failure now costs one unbilled request, not --retries backoffs. An
+		// abort would drop items that would have answered, so the run goes on
+		// and says so once (ADR-015).
+		if everyCause(lastErr, providers.IsBillingError) {
+			p.billingWarned.Do(func() {
+				fmt.Fprintf(os.Stderr, "\nWarning: item %s failed because every provider is out of credit (%v).\n"+
+					"  The batch continues, so later items will likely fail the same way; billing failures are not charged.\n"+
+					"  Ctrl-C stops it; add credit, then rerun with --resume to retry the failed items.\n", item.ID, lastErr)
+			})
+		}
+
+		errText := fmt.Sprintf("query error after %d attempts: %v", maxAttempts, lastErr)
+		if permanent {
+			errText = fmt.Sprintf("query error after %d of %d attempts (permanent failure, not retried): %v", attempts, maxAttempts, lastErr)
+		}
 		// Failed attempts still consumed tokens on any provider that answered,
 		// so the cost must reach stats.TotalCost or --budget cannot see it.
 		return Result{
 			ID:         item.ID,
-			Error:      fmt.Sprintf("query error after %d attempts: %v", maxAttempts, lastErr),
+			Error:      errText,
 			DurationMs: time.Since(start).Milliseconds(),
 			CostUSD:    p.estimateCost(responses, nil),
 			cancelled:  stoppedEarly,
@@ -805,6 +857,26 @@ func (p *Processor) Close() error {
 		return p.checkpoint.Close()
 	}
 	return nil
+}
+
+// everyCause reports whether pred holds for every provider's error in an
+// all-failed panel, or for err itself when it is not one. It reads the typed
+// Causes, never the joined text: AllFailedError has no Unwrap (see its
+// comment), so errors.As on the whole would see none of them.
+func everyCause(err error, pred func(error) bool) bool {
+	var all *orchestrator.AllFailedError
+	if !errors.As(err, &all) {
+		return err != nil && pred(err)
+	}
+	if len(all.Causes) == 0 {
+		return false
+	}
+	for _, cause := range all.Causes {
+		if cause == nil || !pred(cause) {
+			return false
+		}
+	}
+	return true
 }
 
 // isRateLimitError reports whether a failed item hit a rate limit, which

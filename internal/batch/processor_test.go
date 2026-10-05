@@ -289,6 +289,82 @@ func TestRetriesExhaustedMarksFailure(t *testing.T) {
 	}
 }
 
+// TestPermanentFailureIsNotRetried: the item-level retry loop re-ran ANY
+// failed item --retries times with 1s/2s/4s backoff, so an out-of-credit key
+// was sent the same request again, and waited on, for an answer that cannot
+// change. An item stops retrying once every provider failed permanently; one
+// transient cause is enough to keep retrying, since that provider may answer
+// next time.
+func TestPermanentFailureIsNotRetried(t *testing.T) {
+	billing := &providers.BillingError{
+		StatusCode: 429,
+		Code:       "credit_balance_exhausted",
+		Err:        errors.New("HTTP 429: You have no credits remaining. [code: credit_balance_exhausted]"),
+	}
+	revoked := &providers.APIError{StatusCode: 401, Text: "HTTP 401 authentication failed: invalid API key"}
+	badParam := &providers.APIError{StatusCode: 400, Text: "HTTP 400: Unsupported parameter: 'max_tokens' [code: unsupported_parameter] [param: max_tokens]"}
+	upstream := errors.New("HTTP 500 server error: upstream exploded")
+	// What doRequest returns for a 429 that outlasted its own retries: typed,
+	// 4xx, and still transient, so batch's slower retry may yet get through.
+	limited := fmt.Errorf("%w (after 3 retries)", &providers.APIError{StatusCode: 429, Text: "HTTP 429 rate limited: too many requests"})
+	cases := []struct {
+		name    string
+		errs    []error
+		retries int
+		// calls is how often EACH panel member must be queried.
+		calls int32
+	}{
+		{"out of credit", []error{billing}, 2, 1},
+		{"revoked key", []error{revoked}, 2, 1},
+		{"rejected parameter", []error{badParam}, 2, 1},
+		{"every panel member permanent", []error{billing, revoked}, 2, 1},
+		// Retries 1 keeps the one backoff these cases sit through to 1s.
+		{"permanent beside a transient failure", []error{billing, upstream}, 1, 2},
+		{"rate limited past the HTTP layer", []error{limited}, 1, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var list []*fakeProvider
+			var panel []providers.Provider
+			for i, e := range tc.errs {
+				f := &fakeProvider{
+					name:   fmt.Sprintf("p%d", i),
+					model:  "m",
+					answer: func(int32, string) (string, error) { return "", e },
+				}
+				list = append(list, f)
+				panel = append(panel, f)
+			}
+			p := newTestProcessor(t, Options{Workers: 1, Retries: tc.retries}, panel...)
+			results, stats := runBatch(t, p, `{"id":"a","prompt":"q"}`+"\n", "")
+
+			for _, f := range list {
+				if got := f.calls.Load(); got != tc.calls {
+					t.Errorf("%s queried %d times, want %d", f.name, got, tc.calls)
+				}
+			}
+			// Not retrying must not mean not recording: the item is still a
+			// failure with its own error line, so --resume retries it later.
+			if stats.Failed != 1 || len(results) != 1 {
+				t.Fatalf("stats = %+v, results = %v, want one failed item with a line", stats, results)
+			}
+			e, _ := results[0]["error"].(string)
+			if !strings.Contains(e, tc.errs[0].Error()) {
+				t.Fatalf("error %q lost the provider's message %q", e, tc.errs[0].Error())
+			}
+			// The line must not claim attempts that never happened.
+			want := fmt.Sprintf("after %d attempts", tc.retries+1)
+			if tc.calls == 1 {
+				want = fmt.Sprintf("after 1 of %d attempts (permanent failure, not retried)", tc.retries+1)
+			}
+			if !strings.Contains(e, want) {
+				t.Fatalf("error %q, want it to say %q", e, want)
+			}
+		})
+	}
+}
+
 func TestIsRateLimitError(t *testing.T) {
 	cases := map[string]bool{
 		"HTTP 429 Too Many Requests":     true,

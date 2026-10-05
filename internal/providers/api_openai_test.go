@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -137,6 +138,57 @@ func TestOutOfCredit429IsNotRetried(t *testing.T) {
 	// Batch's rate limiter relies on the type, not the text, to skip it.
 	if !IsBillingError(err) {
 		t.Errorf("error is not a *BillingError, so batch would count it as a rate limit: %T", err)
+	}
+}
+
+// TestClientErrorsArePermanentAndKeepTheirText: parseAPIError returned plain
+// fmt errors, so batch could not tell a revoked key or a rejected parameter
+// from a 500 and re-sent it --retries times. The typed *APIError fixes that
+// only if its text stays exactly what users, batch error lines and tests
+// already read, so the strings below are the pre-typing rendering, verbatim.
+func TestClientErrorsArePermanentAndKeepTheirText(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   string
+	}{
+		{"rejected parameter", 400,
+			`{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.","type":"invalid_request_error","param":"max_tokens","code":"unsupported_parameter"}}`,
+			"HTTP 400: Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead. [code: unsupported_parameter] [param: max_tokens]"},
+		{"revoked key, plain-text body", 401, "Invalid Bearer token",
+			"HTTP 401 authentication failed: Invalid Bearer token"},
+		{"unknown model", 404,
+			`{"error":{"message":"The model gpt-x does not exist","type":"invalid_request_error","code":"model_not_found"}}`,
+			"HTTP 404: The model gpt-x does not exist [code: model_not_found]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+
+			t.Setenv("OPENAI_API_KEY", "test")
+			p := NewOpenAIAPIProvider()
+			p.baseURL = srv.URL
+			_, _, _, err := p.Query(context.Background(), "q", "gpt-6-luna")
+			if err == nil {
+				t.Fatal("expected the API error")
+			}
+			if got := calls.Load(); got != 1 {
+				t.Errorf("sent %d times, want 1", got)
+			}
+			if err.Error() != tc.want {
+				t.Errorf("error text changed:\n got: %s\nwant: %s", err, tc.want)
+			}
+			if !IsPermanent(err) {
+				t.Errorf("%T is not permanent, so batch would re-send it --retries times", err)
+			}
+		})
 	}
 }
 
