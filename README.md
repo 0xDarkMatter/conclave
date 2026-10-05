@@ -50,14 +50,6 @@ Diagram sources live in [`docs/diagrams/src/`](docs/diagrams/src/); `python docs
 
 ## Recent Updates
 
-### v1.5.1 — 2026-10-05
-
-**🆓 Clef's free daily allocation, on the record**
-
-Every Cloudflare account gets 10,000 Workers AI Neurons a day free, roughly 1,100 Clef calls. `conclave models clef` now shows that allocation beside Clef's re-verified price, and the decision-model frontier marks the rows that have one. Costs stay at the metered price, an upper bound, because Conclave can't see how much of the account's allocation is left. See [Workers AI's free allocation](#workers-ais-free-allocation).
-
----
-
 ### v1.5.0 — 2026-10-03
 
 **🎯 Decision models: `conclave decide`**
