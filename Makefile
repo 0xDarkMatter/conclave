@@ -1,4 +1,4 @@
-VERSION := 1.5.0
+VERSION := 1.5.1
 BINARY := conclave
 PLATFORMS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
