@@ -1,32 +1,83 @@
 // Decision-model prices stay outside the OpenRouter catalog under ADR-016.
 // This dated table alone prices deciders; unknown model ids remain unpriced.
 // GUARD: models --check cannot detect drift here, so update AsOf and Source
-// together, and never route these rows through batch fallbackCosts.
-// Costs are advisory and nil-safe under ADR-009: absence means ok=false.
+// together (and a Workers AI row's InPerM with its NeuronsPerMIn), and never
+// route these rows through batch fallbackCosts.
+// Costs are advisory and nil-safe under ADR-009: absence means ok=false. A
+// free daily allocation is recorded, never subtracted (ADR-019).
 package pricing
 
-import "regexp"
+import (
+	"regexp"
+	"strconv"
+)
 
 // DeciderPrice is one row of the hand-maintained decision-model price table.
 // AsOf is the date the price was verified and Source the page it came from;
 // because nothing re-checks the row, the citation IS its provenance.
+//
+// The two Neuron fields are Workers AI's own billing facts (zero elsewhere).
+// Workers AI bills Neurons and shows a per-token price beside each model as
+// an equivalent, so InPerM must stay NeuronsPerMIn at $0.011 per 1,000
+// Neurons (pinned by a test). FreeNeuronsPerDay is a FACT about the vendor,
+// never a discount: the allocation is account-wide, shared with every other
+// Workers AI caller on the account, and Conclave cannot see how much of it is
+// left, so DeciderCost always prices at InPerM (ADR-019).
 type DeciderPrice struct {
-	Decider string  `json:"decider"`
-	Model   string  `json:"model"`
-	InPerM  float64 `json:"in_per_m"`
-	OutPerM float64 `json:"out_per_m"`
-	AsOf    string  `json:"as_of"`
-	Source  string  `json:"source_url"`
+	Decider           string  `json:"decider"`
+	Model             string  `json:"model"`
+	InPerM            float64 `json:"in_per_m"`
+	OutPerM           float64 `json:"out_per_m"`
+	NeuronsPerMIn     float64 `json:"neurons_per_m_in,omitempty"`
+	FreeNeuronsPerDay int     `json:"free_neurons_per_day,omitempty"`
+	AsOf              string  `json:"as_of"`
+	Source            string  `json:"source_url"`
+}
+
+// FreeInputTokensPerDay is the daily free allocation in this model's input
+// tokens, if nothing else on the account spends any of it: an upper bound,
+// derived from two published numbers, not an estimate of what is left. 0 when
+// the row has no free allocation.
+func (p DeciderPrice) FreeInputTokensPerDay() int {
+	if p.FreeNeuronsPerDay <= 0 || p.NeuronsPerMIn <= 0 {
+		return 0
+	}
+	return int(float64(p.FreeNeuronsPerDay) * 1_000_000 / p.NeuronsPerMIn)
+}
+
+// FreeDaily names the free allocation in the vendor's own unit, for listings
+// and the frontier legend; "" when the row has none.
+func (p DeciderPrice) FreeDaily() string {
+	if p.FreeNeuronsPerDay <= 0 {
+		return ""
+	}
+	return groupThousands(p.FreeNeuronsPerDay) + " Neurons/day per Cloudflare account"
+}
+
+// groupThousands writes 10000 as "10,000", the way the pricing page does.
+func groupThousands(n int) string {
+	s := strconv.Itoa(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
 }
 
 // deciderPrices is the table. Prices are USD per million tokens, input-only
 // for every listed row: decision models bill the state+questions tokens and
 // emit a few dozen answer tokens.
 //
-// Clef rows' OutPerM is 0 because Cloudflare had published NO output price as
-// of 2026-10-02 — 0 here means "no known output charge",
-// not "verified free"; revisit with AsOf if Workers AI pricing gains one.
-// jev's 0 is verified: Typesafe states output is FREE.
+// Clef rows' OutPerM is 0 because Cloudflare publishes NO output price (still
+// none on 2026-10-05; Clef reports 0 output tokens anyway) — 0 here means "no
+// known output charge", not "verified free"; revisit with AsOf if Workers AI
+// pricing gains one. jev's 0 is verified: Typesafe states output is FREE.
+//
+// Clef rows, read 2026-10-05 from the "Other model pricing" table (page
+// updated 2026-10-01): Workers AI bills $0.011 per 1,000 Neurons, clef at
+// 21818 Neurons per M input tokens ($0.240) and clef-flash at 8182 ($0.090).
+// Every account gets 10,000 Neurons/day free on both Workers plans, reset
+// 00:00 UTC; past it, Workers Free fails (429 code 4006, a BillingError) and
+// Workers Paid bills the excess at the rates above.
 var deciderPrices = []DeciderPrice{
 	{
 		Decider: "jev", Model: "jev-latest",
@@ -36,15 +87,17 @@ var deciderPrices = []DeciderPrice{
 	},
 	{
 		Decider: "clef", Model: "clef",
-		InPerM: 0.24, OutPerM: 0,
-		AsOf:   "2026-10-02",
-		Source: "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+		InPerM: 0.240, OutPerM: 0,
+		NeuronsPerMIn: 21818, FreeNeuronsPerDay: 10_000,
+		AsOf:   "2026-10-05",
+		Source: "https://developers.cloudflare.com/workers-ai/platform/pricing/#other-model-pricing",
 	},
 	{
 		Decider: "clef-flash", Model: "clef-flash",
 		InPerM: 0.090, OutPerM: 0,
-		AsOf:   "2026-10-02",
-		Source: "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+		NeuronsPerMIn: 8182, FreeNeuronsPerDay: 10_000,
+		AsOf:   "2026-10-05",
+		Source: "https://developers.cloudflare.com/workers-ai/platform/pricing/#other-model-pricing",
 	},
 }
 

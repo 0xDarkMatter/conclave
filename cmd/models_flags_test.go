@@ -59,3 +59,31 @@ func TestModelsDeciderRowsPrintWithoutCatalog(t *testing.T) {
 		t.Fatalf("unfiltered listing dropped the decider rows:\n%s", out)
 	}
 }
+
+// TestModelsListsWorkersAIFreeAllocationAsAFact: the 10,000 free Neurons a
+// day that Workers AI gives every account were invisible, so a listed $0.24/M
+// read as what every Clef call costs. The listing must show the allocation in
+// the model's own input tokens and say which price decide's cost_usd and the
+// frontier use, without claiming one for a decider that has none.
+func TestModelsListsWorkersAIFreeAllocationAsAFact(t *testing.T) {
+	t.Setenv("CONCLAVE_NO_PRICING", "1")
+
+	var err error
+	out := captureStdout(t, func() { err = runModels(modelsCmd, []string{"clef"}) })
+	if err != nil {
+		t.Fatalf("models clef: %v", err)
+	}
+	for _, want := range []string{"FREE/DAY", "458K in tok", "10,000 Neurons/day per Cloudflare account", "00:00 UTC", "metered price", "ADR-019"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("models clef lacks %q:\n%s", want, out)
+		}
+	}
+
+	out = captureStdout(t, func() { err = runModels(modelsCmd, []string{"jev"}) })
+	if err != nil {
+		t.Fatalf("models jev: %v", err)
+	}
+	if strings.Contains(out, "Neurons") || strings.Contains(out, "in tok") {
+		t.Errorf("jev has no free allocation, but the listing claims one:\n%s", out)
+	}
+}

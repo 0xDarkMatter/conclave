@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -236,11 +238,18 @@ type modelsJSON struct {
 // as_of dates; only one decider when only is set. These rows are NOT in the
 // OpenRouter catalog and `--check` does not gate them, so the date is the
 // only staleness signal. A decider with no row prints as unpriced.
+//
+// FREE/DAY is a vendor's free daily allocation in the model's own input
+// tokens, marked "+" and explained once below the table. It is a fact, not a
+// price: the prices beside it are what cost_usd and the frontier use, because
+// the allocation is account-wide and Conclave cannot see how much is left
+// (ADR-019).
 func printDeciderPrices(only string) {
 	rows := pricing.DeciderPrices()
 	fmt.Fprintf(os.Stdout, "\nDECISION MODELS (conclave decide; hand-maintained prices, not checked by --check)\n")
 	tw := tabwriter.NewWriter(os.Stdout, 2, 4, 2, ' ', 0)
-	fmt.Fprintf(tw, "  DECIDER\tMODEL\tIN $/M\tOUT $/M\tAS OF\n")
+	fmt.Fprintf(tw, "  DECIDER\tMODEL\tIN $/M\tOUT $/M\tFREE/DAY\tAS OF\n")
+	var notes []string // distinct allocations shown, in table order
 	for _, d := range providers.AllDeciders() {
 		if only != "" && d.Name() != only {
 			continue
@@ -249,14 +258,40 @@ func printDeciderPrices(only string) {
 		for _, r := range rows {
 			if r.Decider == d.Name() {
 				priced = true
-				fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", r.Decider, r.Model, fmtPrice(r.InPerM), fmtPrice(r.OutPerM), r.AsOf)
+				free := "-"
+				if n := r.FreeInputTokensPerDay(); n > 0 {
+					free = fmtCount(n) + " in tok +"
+					if !slices.Contains(notes, r.FreeDaily()) {
+						notes = append(notes, r.FreeDaily())
+					}
+				}
+				fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", r.Decider, r.Model, fmtPrice(r.InPerM), fmtPrice(r.OutPerM), free, r.AsOf)
 			}
 		}
 		if !priced {
-			fmt.Fprintf(tw, "  %s\t%s\tunpriced\t\t\n", d.Name(), d.DefaultModel())
+			fmt.Fprintf(tw, "  %s\t%s\tunpriced\t\t\t\n", d.Name(), d.DefaultModel())
 		}
 	}
 	tw.Flush()
+	for _, n := range notes {
+		fmt.Fprintf(os.Stdout, "\n  + free: %s, reset 00:00 UTC and shared with all other\n"+
+			"    Workers AI use on the account; shown as input tokens if nothing else spends it.\n"+
+			"    cost_usd and the frontier use the metered price above, which applies once it is\n"+
+			"    spent (Workers Paid; Workers Free fails instead). ADR-019.\n", n)
+	}
+}
+
+// fmtCount abbreviates a token count for a narrow column: 458337 -> "458K",
+// 1222195 -> "1.2M". Truncates, so the column never overstates an allocation.
+func fmtCount(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n/100_000)/10)
+	case n >= 1_000:
+		return fmt.Sprintf("%dK", n/1_000)
+	default:
+		return strconv.Itoa(n)
+	}
 }
 
 // === FRONTIER ===
