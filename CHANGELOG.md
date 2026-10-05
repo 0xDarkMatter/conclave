@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning instead. ADR-015. Regression tests:
   `TestPermanentFailureIsNotRetried`,
   `TestClientErrorsArePermanentAndKeepTheirText`.
+- An API-mode Anthropic key past its usage tier's monthly spend cap
+  (`-g claude`, `claude@api`) now fails on the first call with Anthropic's
+  message ("You will regain access on ..."), instead of retrying the HTTP 429
+  three times (~7 s) per call, and batch no longer counts it as a rate limit
+  that slows the remaining items. It is told apart from a real rate limit,
+  which still backs off and retries, by Anthropic's documented
+  `enforced_spend_limit_reached` error code, not by its missing `retry-after`.
 
 ## [1.5.0] - 2026-10-03
 

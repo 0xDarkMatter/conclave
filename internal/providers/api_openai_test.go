@@ -208,7 +208,10 @@ func TestBillingIsToldApartFromRateLimits(t *testing.T) {
 		{"openai insufficient quota", 429, `{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}`, true},
 		{"anthropic billing_error", 402, `{"type":"error","error":{"type":"billing_error","message":"Billing issue"}}`, true},
 		{"openrouter 402 with a numeric code", 402, `{"error":{"message":"Insufficient credits","code":402}}`, true},
+		{"anthropic tier spend cap", 429, anthropicSpendCapBody, true},
 		{"openai rate limit", 429, `{"error":{"message":"Rate limit reached for requests","type":"requests","param":null,"code":"rate_limit_exceeded"}}`, false},
+		// Same status and error.type as the spend cap; only details.error_code differs.
+		{"anthropic rate limit", 429, `{"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed the rate limit for your organization of 400,000 output tokens per minute."},"request_id":"req_011CSHoEeqs5C35K2UUqR7Fy"}`, false},
 		{"gemini resource exhausted", 429, `{"error":{"code":429,"message":"You exceeded your current quota, please check your plan and billing details.","status":"RESOURCE_EXHAUSTED"}}`, false},
 		{"bare 429", 429, ``, false},
 		{"plain-text 429", 429, `Too Many Requests`, false},
@@ -217,6 +220,48 @@ func TestBillingIsToldApartFromRateLimits(t *testing.T) {
 		if _, got := billingCode(tc.status, []byte(tc.body)); got != tc.billing {
 			t.Errorf("%s: billing = %v, want %v", tc.name, got, tc.billing)
 		}
+	}
+}
+
+// anthropicSpendCapBody is the 429 Anthropic documents for an organization
+// past its usage tier's monthly spend cap, verbatim from
+// https://platform.claude.com/docs/en/api/rate-limits#reaching-your-spend-cap
+// (read 2026-10-05). Usage is paused until the 1st of next month.
+const anthropicSpendCapBody = `{"type":"error","error":{"type":"rate_limit_error","message":"You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set based on your organization's API tier. You will regain access on 2026-09-01 at 00:00 UTC.","details":{"error_code":"enforced_spend_limit_reached"}},"request_id":"req_018EeWyXxfu5pfWkrYcMdjWG"}`
+
+// TestAnthropicSpendCap429IsNotRetried is TestOutOfCredit429IsNotRetried for
+// Anthropic: a tier spend cap answers every call with a rate_limit_error 429
+// and no retry-after until the month turns over, so backing off only adds ~7 s
+// per call, and batch read the "429" in its text as a rate limit to pace for.
+func TestAnthropicSpendCap429IsNotRetried(t *testing.T) {
+	var callCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.WriteHeader(429)
+		_, _ = w.Write([]byte(anthropicSpendCapBody))
+	}))
+	defer srv.Close()
+
+	t.Setenv("ANTHROPIC_API_KEY", "test")
+	p := NewAnthropicAPIProvider()
+	p.baseURL = srv.URL
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, _, _, err := p.Query(ctx, "Reply with exactly: OK", "claude-opus-5-5")
+	if err == nil {
+		t.Fatal("expected the spend-cap error")
+	}
+	if callCount != 1 {
+		t.Errorf("a spend-cap 429 was sent %d times, want exactly 1", callCount)
+	}
+	for _, want := range []string{"HTTP 429", "You have reached your API usage limits", "regain access on 2026-09-01"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should carry the vendor's message (%q); got: %s", want, err)
+		}
+	}
+	if !IsBillingError(err) {
+		t.Errorf("error is not a *BillingError, so batch would count it as a rate limit: %T", err)
 	}
 }
 
